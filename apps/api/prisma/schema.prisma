@@ -154,6 +154,7 @@ model WhatsAppMessage {
   id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId       String   @map("user_id")
   contactId    String   @map("contact_id") @db.Uuid
+  waId         String?  @map("wa_id")
   direction    String
   content      String
   fromAi       Boolean  @default(false) @map("from_ai")
@@ -164,6 +165,7 @@ model WhatsAppMessage {
 
   contact WhatsAppContact @relation(fields: [contactId], references: [id], onDelete: Cascade)
 
+  @@unique([contactId, waId])
   @@index([userId])
   @@index([contactId])
   @@map("wa_messages")

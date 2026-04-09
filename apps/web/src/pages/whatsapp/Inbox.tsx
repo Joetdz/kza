@@ -62,7 +62,7 @@ function LeadBadge({ status }: { status: string }) {
 
 export function Inbox() {
   const {
-    connected, phone, qr, contacts, messages,
+    connected, phone, qr, contacts, messages, sync,
     loadContacts, loadMessages, sendMessage, updateContact,
     initConnect, initDisconnect, setContacts,
   } = useWhatsApp();
@@ -127,8 +127,30 @@ export function Inbox() {
     return <QRScreen qr={qr} onConnect={initConnect} />;
   }
 
+  const syncPct = sync.total > 0 ? Math.round((sync.imported / sync.total) * 100) : 0;
+
   return (
-    <div className="flex h-[calc(100vh-80px)] bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+    <div className="flex flex-col h-[calc(100vh-80px)]">
+    {/* Sync banner */}
+    {sync.status !== 'idle' && (
+      <div className={`flex items-center gap-3 px-4 py-2 text-sm rounded-t-2xl ${sync.status === 'done' ? 'bg-emerald-50 text-emerald-700' : 'bg-indigo-50 text-indigo-700'}`}>
+        {sync.status === 'syncing' ? (
+          <>
+            <span className="w-4 h-4 border-2 border-indigo-300 border-t-indigo-600 rounded-full animate-spin shrink-0" />
+            <span>Synchronisation en cours — {sync.imported} / {sync.total} messages importés ({syncPct}%)</span>
+            <div className="flex-1 h-1.5 bg-indigo-100 rounded-full overflow-hidden">
+              <div className="h-full bg-indigo-500 rounded-full transition-all duration-300" style={{ width: `${syncPct}%` }} />
+            </div>
+          </>
+        ) : (
+          <>
+            <span>✅</span>
+            <span><strong>{sync.imported}</strong> messages importés depuis votre téléphone</span>
+          </>
+        )}
+      </div>
+    )}
+    <div className="flex flex-1 bg-white rounded-b-2xl border border-gray-100 shadow-sm overflow-hidden">
 
       {/* ── Col 1: Contact list ─────────────────────────────────────────────── */}
       <div className="w-72 border-r border-gray-100 flex flex-col shrink-0">
@@ -432,6 +454,7 @@ export function Inbox() {
           </div>
         </div>
       )}
+    </div>
     </div>
   );
 }

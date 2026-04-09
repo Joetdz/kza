@@ -36,6 +36,12 @@ export interface WaMessage {
   sentAt: string;
 }
 
+export interface SyncState {
+  status: 'idle' | 'syncing' | 'done';
+  imported: number;
+  total: number;
+}
+
 export function useWhatsApp() {
   const socketRef = useRef<Socket | null>(null);
   const [connected, setConnected] = useState(false);
@@ -44,6 +50,7 @@ export function useWhatsApp() {
   const [contacts, setContacts] = useState<WaContact[]>([]);
   const [messages, setMessages] = useState<Record<string, WaMessage[]>>({});
   const [socketReady, setSocketReady] = useState(false);
+  const [sync, setSync] = useState<SyncState>({ status: 'idle', imported: 0, total: 0 });
 
   // Init socket
   useEffect(() => {
@@ -67,8 +74,22 @@ export function useWhatsApp() {
         setConnected(true);
         setPhone(p);
         setQr(null);
-        // Load contacts
         loadContacts();
+      });
+
+      sock.on('sync-start', ({ total }: { total: number }) => {
+        setSync({ status: 'syncing', imported: 0, total });
+      });
+
+      sock.on('sync-progress', ({ imported, total }: { imported: number; total: number }) => {
+        setSync(prev => ({ ...prev, status: 'syncing', imported, total }));
+      });
+
+      sock.on('sync-complete', ({ imported, contacts: freshContacts }: { imported: number; contacts: WaContact[] }) => {
+        setSync({ status: 'done', imported, total: imported });
+        setContacts(freshContacts);
+        // Auto-dismiss after 4s
+        setTimeout(() => setSync({ status: 'idle', imported: 0, total: 0 }), 4000);
       });
 
       sock.on('disconnected', () => {
@@ -160,7 +181,7 @@ export function useWhatsApp() {
   }, []);
 
   return {
-    connected, phone, qr, contacts, messages, socketReady,
+    connected, phone, qr, contacts, messages, socketReady, sync,
     loadContacts, loadMessages, sendMessage, updateContact,
     initConnect, initDisconnect,
     setContacts, setMessages,
