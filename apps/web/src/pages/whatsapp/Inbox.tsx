@@ -1,82 +1,165 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  Search, Filter, Bot, BotOff, UserCheck, Tag, StickyNote,
-  Send, Phone, Archive, RefreshCw, ChevronDown, X, Plus,
+  Search, Bot, BotOff, X, Send, Paperclip, Smile,
+  ChevronRight, Info, Phone, Video, MoreVertical,
+  Reply, CheckCheck, Check, Clock, Mic, Image, FileText,
+  UserCheck, Tag, StickyNote, Plus, ChevronDown,
 } from 'lucide-react';
 import { useWhatsApp, WaContact, WaMessage } from '../../hooks/useWhatsApp';
 import { waApi } from '../../api/whatsapp';
-import { useCurrency } from '../../hooks/useCurrency';
+import { STATIC_BASE } from '../../api';
 
-const LEAD_STATUS_CONFIG = {
-  cold:      { label: '❄️ Froid',    bg: 'bg-gray-100',   text: 'text-gray-600' },
-  warm:      { label: '⭐ Tiède',    bg: 'bg-blue-100',   text: 'text-blue-700' },
-  hot:       { label: '🔥 Chaud',    bg: 'bg-orange-100', text: 'text-orange-700' },
-  converted: { label: '✅ Converti', bg: 'bg-emerald-100', text: 'text-emerald-700' },
-  lost:      { label: '❌ Perdu',    bg: 'bg-red-100',    text: 'text-red-700' },
+// ── WA Web color palette ─────────────────────────────────────────────────────
+const C = {
+  panelBg:     '#111b21',
+  panelHover:  '#202c33',
+  activeChat:  '#2a3942',
+  chatBg:      '#0b141a',
+  sentBubble:  '#005c4b',
+  recvBubble:  '#202c33',
+  inputBg:     '#202c33',
+  text:        '#e9edef',
+  textSub:     '#8696a0',
+  icon:        '#aebac1',
+  divider:     '#222d34',
+  badge:       '#00a884',
+  headerBg:    '#202c33',
+  searchBg:    '#111b21',
 };
 
-function QRScreen({ qr, onConnect }: { qr: string | null; onConnect: () => void }) {
+// Couleur d'avatar déterministe par numéro
+const AVATAR_COLORS = ['#d9696d','#b36fff','#2c9c8a','#f0a052','#5aa5d8','#e87d9a','#4db06a','#e06c3b'];
+const avatarColor = (phone: string) => AVATAR_COLORS[phone.charCodeAt(0) % AVATAR_COLORS.length];
+
+function initials(c: WaContact): string {
+  const name = c.displayName || c.leadName || c.phone.replace('@s.whatsapp.net', '').replace('@c.us', '');
+  return name.slice(0, 2).toUpperCase();
+}
+
+function displayName(c: WaContact): string {
+  return c.displayName || c.leadName || c.phone.replace('@s.whatsapp.net', '').replace('@c.us', '');
+}
+
+function formatTime(iso?: string): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const now = new Date();
+  const diffDays = Math.floor((now.getTime() - d.getTime()) / 86400000);
+  if (diffDays === 0) return d.toLocaleTimeString('fr', { hour: '2-digit', minute: '2-digit' });
+  if (diffDays === 1) return 'Hier';
+  if (diffDays < 7) return d.toLocaleDateString('fr', { weekday: 'short' });
+  return d.toLocaleDateString('fr', { day: '2-digit', month: '2-digit', year: '2-digit' });
+}
+
+function formatMsgTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString('fr', { hour: '2-digit', minute: '2-digit' });
+}
+
+// WA checkmarks
+function Ack({ ack, direction }: { ack: number; direction: string }) {
+  if (direction === 'in') return null;
+  if (ack === 0) return <Clock size={12} className="opacity-60" />;
+  if (ack === 1) return <Check size={12} style={{ color: C.textSub }} />;
+  if (ack === 2) return <CheckCheck size={12} style={{ color: C.textSub }} />;
+  return <CheckCheck size={12} style={{ color: '#53bdeb' }} />;
+}
+
+// Media display in bubble
+function MediaContent({ msg }: { msg: WaMessage }) {
+  const url = msg.mediaUrl ? `${STATIC_BASE}${msg.mediaUrl}` : null;
+  const type = msg.mediaType ?? '';
+
+  if (!url && !type) return null;
+
+  if (type === 'image' || type === 'sticker') {
+    return url
+      ? <img src={url} alt="img" className="max-w-[220px] rounded-lg mb-1 block" />
+      : <div className="flex items-center gap-2 text-xs opacity-70"><Image size={16} /> Image</div>;
+  }
+  if (type === 'audio' || type === 'voice' || type === 'ptt') {
+    return url
+      ? <audio controls src={url} className="max-w-[220px] mb-1" />
+      : <div className="flex items-center gap-2 text-xs opacity-70"><Mic size={16} /> Vocal</div>;
+  }
+  if (type === 'video') {
+    return url
+      ? <video controls src={url} className="max-w-[220px] rounded-lg mb-1" />
+      : <div className="flex items-center gap-2 text-xs opacity-70"><Video size={16} /> Vidéo</div>;
+  }
   return (
-    <div className="flex flex-col items-center justify-center h-full gap-6 p-8">
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 max-w-sm w-full text-center">
-        <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-          <Phone size={24} className="text-green-600" />
+    <div className="flex items-center gap-2 text-xs opacity-70">
+      <FileText size={16} /> {type || 'Fichier'}
+    </div>
+  );
+}
+
+// QR / connect screen
+function ConnectScreen({ qr, loading, onConnect }: { qr: string | null; loading: any; onConnect: () => void }) {
+  return (
+    <div className="flex flex-col items-center justify-center h-full gap-6" style={{ background: C.chatBg }}>
+      <div className="bg-[#202c33] rounded-2xl p-8 max-w-sm w-full text-center shadow-xl">
+        <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4"
+          style={{ background: '#00a884' }}>
+          <Phone size={28} color="white" />
         </div>
-        <h2 className="text-xl font-bold text-gray-900 mb-2">Connecter WhatsApp</h2>
-        {qr ? (
+        <h2 className="text-xl font-semibold mb-2" style={{ color: C.text }}>WhatsApp Web</h2>
+        {loading ? (
+          <div className="space-y-3">
+            <div className="w-full bg-[#111b21] rounded-full h-1.5">
+              <div className="h-1.5 rounded-full transition-all duration-500"
+                style={{ width: `${loading.percent}%`, background: '#00a884' }} />
+            </div>
+            <p className="text-sm" style={{ color: C.textSub }}>Chargement... {loading.percent}%</p>
+          </div>
+        ) : qr ? (
           <>
-            <img src={qr} alt="QR Code" className="mx-auto w-56 h-56 my-4 rounded-xl border border-gray-100" />
-            <ol className="text-sm text-gray-500 text-left space-y-1 mt-2">
+            <img src={qr} alt="QR" className="mx-auto w-52 h-52 my-4 rounded-xl border-4 border-white" />
+            <ol className="text-sm text-left space-y-1.5" style={{ color: C.textSub }}>
               <li>1. Ouvre WhatsApp sur ton téléphone</li>
-              <li>2. Menu → <strong>Appareils liés</strong></li>
-              <li>3. Clique sur <strong>+ Lier un appareil</strong></li>
+              <li>2. Paramètres → <strong style={{ color: C.text }}>Appareils liés</strong></li>
+              <li>3. Tap <strong style={{ color: C.text }}>+ Lier un appareil</strong></li>
               <li>4. Scanne ce QR code</li>
             </ol>
           </>
         ) : (
-          <p className="text-sm text-gray-500 mb-4">
-            Clique sur le bouton pour générer le QR code de connexion.
-          </p>
-        )}
-        {!qr && (
-          <button
-            onClick={onConnect}
-            className="mt-4 w-full bg-green-600 hover:bg-green-700 text-white py-2.5 rounded-xl text-sm font-medium transition-colors"
-          >
-            Connecter WhatsApp
-          </button>
+          <>
+            <p className="text-sm mb-6" style={{ color: C.textSub }}>
+              Connectez votre WhatsApp pour accéder à toutes vos conversations en temps réel.
+            </p>
+            <button onClick={onConnect}
+              className="w-full py-3 rounded-xl font-semibold text-sm transition-colors"
+              style={{ background: '#00a884', color: 'white' }}>
+              Connecter WhatsApp
+            </button>
+          </>
         )}
       </div>
     </div>
   );
 }
 
-function LeadBadge({ status }: { status: string }) {
-  const cfg = LEAD_STATUS_CONFIG[status as keyof typeof LEAD_STATUS_CONFIG] ?? LEAD_STATUS_CONFIG.cold;
-  return (
-    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${cfg.bg} ${cfg.text}`}>
-      {cfg.label}
-    </span>
-  );
-}
-
 export function Inbox() {
   const {
-    connected, phone, qr, contacts, messages, sync,
+    connected, phone, qr, loading, contacts, messages, sync,
     loadContacts, loadMessages, sendMessage, updateContact,
     initConnect, initDisconnect, setContacts,
   } = useWhatsApp();
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [filter, setFilter] = useState('');
   const [search, setSearch] = useState('');
+  const [filter, setFilter] = useState('');
   const [msgText, setMsgText] = useState('');
+  const [sending, setSending] = useState(false);
+  const [repliedTo, setRepliedTo] = useState<WaMessage | null>(null);
+  const [showCrmPanel, setShowCrmPanel] = useState(false);
+  // CRM panel state
   const [notes, setNotes] = useState<any[]>([]);
   const [noteText, setNoteText] = useState('');
   const [tags, setTags] = useState<any[]>([]);
   const [showNoteInput, setShowNoteInput] = useState(false);
-  const [sending, setSending] = useState(false);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const selectedContact = contacts.find(c => c.id === selectedId) ?? null;
   const selectedMessages = selectedId ? (messages[selectedId] ?? []) : [];
@@ -86,13 +169,13 @@ export function Inbox() {
   }, [filter, search]);
 
   useEffect(() => {
-    if (selectedId) {
-      loadMessages(selectedId);
-      waApi.markRead(selectedId).catch(() => {});
-      setContacts(prev => prev.map(c => c.id === selectedId ? { ...c, isRead: true } : c));
-      waApi.getNotes(selectedId).then(setNotes).catch(() => {});
-      waApi.getTags().then(setTags).catch(() => {});
-    }
+    if (!selectedId) return;
+    loadMessages(selectedId, true);
+    waApi.markRead(selectedId).catch(() => {});
+    setContacts(prev => prev.map(c => c.id === selectedId ? { ...c, isRead: true } : c));
+    waApi.getNotes(selectedId).then(setNotes).catch(() => {});
+    waApi.getTags().then(setTags).catch(() => {});
+    setRepliedTo(null);
   }, [selectedId]);
 
   useEffect(() => {
@@ -103,8 +186,9 @@ export function Inbox() {
     if (!msgText.trim() || !selectedId || !selectedContact) return;
     setSending(true);
     try {
-      await sendMessage(selectedId, msgText.trim());
+      await sendMessage(selectedId, msgText.trim(), repliedTo?.waId);
       setMsgText('');
+      setRepliedTo(null);
     } finally {
       setSending(false);
     }
@@ -118,118 +202,127 @@ export function Inbox() {
     setShowNoteInput(false);
   };
 
-  const unreadCount = contacts.filter(c => !c.isRead && !c.isArchived).length;
-
-  if (!connected && !qr) {
-    return <QRScreen qr={null} onConnect={initConnect} />;
-  }
-  if (!connected && qr) {
-    return <QRScreen qr={qr} onConnect={initConnect} />;
-  }
+  const selectContact = useCallback((id: string) => {
+    setSelectedId(id);
+    setShowCrmPanel(false);
+  }, []);
 
   const syncPct = sync.total > 0 ? Math.round((sync.imported / sync.total) * 100) : 0;
 
-  return (
-    <div className="flex flex-col h-[calc(100vh-80px)]">
-    {/* Sync banner */}
-    {sync.status !== 'idle' && (
-      <div className={`flex items-center gap-3 px-4 py-2 text-sm rounded-t-2xl ${sync.status === 'done' ? 'bg-emerald-50 text-emerald-700' : 'bg-indigo-50 text-indigo-700'}`}>
-        {sync.status === 'syncing' ? (
-          <>
-            <span className="w-4 h-4 border-2 border-indigo-300 border-t-indigo-600 rounded-full animate-spin shrink-0" />
-            <span>Synchronisation en cours — {sync.imported} / {sync.total} messages importés ({syncPct}%)</span>
-            <div className="flex-1 h-1.5 bg-indigo-100 rounded-full overflow-hidden">
-              <div className="h-full bg-indigo-500 rounded-full transition-all duration-300" style={{ width: `${syncPct}%` }} />
-            </div>
-          </>
-        ) : (
-          <>
-            <span>✅</span>
-            <span><strong>{sync.imported}</strong> messages importés depuis votre téléphone</span>
-          </>
-        )}
-      </div>
-    )}
-    <div className="flex flex-1 bg-white rounded-b-2xl border border-gray-100 shadow-sm overflow-hidden">
+  if (!connected && !qr && !loading) {
+    return <ConnectScreen qr={null} loading={null} onConnect={initConnect} />;
+  }
+  if (!connected) {
+    return <ConnectScreen qr={qr} loading={loading} onConnect={initConnect} />;
+  }
 
-      {/* ── Col 1: Contact list ─────────────────────────────────────────────── */}
-      <div className="w-72 border-r border-gray-100 flex flex-col shrink-0">
+  return (
+    <div className="flex h-[calc(100vh-64px)] overflow-hidden rounded-xl shadow-2xl" style={{ background: C.chatBg }}>
+
+      {/* ── LEFT PANEL — Contact list ──────────────────────────────────────────── */}
+      <div className="flex flex-col w-[360px] shrink-0 border-r" style={{ background: C.panelBg, borderColor: C.divider }}>
+
         {/* Header */}
-        <div className="px-4 py-3 border-b border-gray-100">
-          <div className="flex items-center justify-between mb-2">
-            <div>
-              <span className="text-sm font-semibold text-gray-900">Conversations</span>
-              {unreadCount > 0 && (
-                <span className="ml-2 bg-green-500 text-white text-xs rounded-full px-1.5 py-0.5">{unreadCount}</span>
-              )}
+        <div className="flex items-center justify-between px-4 py-3" style={{ background: C.headerBg }}>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-white text-sm"
+              style={{ background: avatarColor(phone ?? '') }}>
+              {(phone ?? 'M')[0].toUpperCase()}
             </div>
-            <button onClick={initDisconnect} title="Déconnecter" className="text-gray-400 hover:text-red-500 transition-colors">
-              <X size={14} />
+          </div>
+          <div className="flex items-center gap-3">
+            {sync.status === 'syncing' && (
+              <div className="flex items-center gap-1.5 text-xs" style={{ color: C.textSub }}>
+                <span className="w-3 h-3 rounded-full border border-t-transparent animate-spin" style={{ borderColor: '#00a884', borderTopColor: 'transparent' }} />
+                {syncPct}%
+              </div>
+            )}
+            <button onClick={initDisconnect} title="Déconnecter"
+              className="p-1.5 rounded-full hover:bg-[#2a3942] transition-colors">
+              <X size={20} style={{ color: C.icon }} />
             </button>
           </div>
-          <div className="relative mb-2">
-            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+        </div>
+
+        {/* Sync done banner */}
+        {sync.status === 'done' && (
+          <div className="px-3 py-1.5 text-xs text-center" style={{ background: '#00a884', color: 'white' }}>
+            ✅ {sync.imported} conversations synchronisées
+          </div>
+        )}
+
+        {/* Search */}
+        <div className="px-3 py-2" style={{ background: C.panelBg }}>
+          <div className="flex items-center gap-2 rounded-lg px-3 py-1.5" style={{ background: C.inputBg }}>
+            <Search size={16} style={{ color: C.textSub }} />
             <input
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="Rechercher..."
-              className="w-full pl-7 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-indigo-400"
+              placeholder="Rechercher ou démarrer une discussion"
+              className="flex-1 bg-transparent outline-none text-sm"
+              style={{ color: C.text }}
             />
           </div>
-          {/* Filters */}
-          <div className="flex gap-1 flex-wrap">
-            {[
-              { key: '', label: 'Tous' },
-              { key: 'unread', label: 'Non lus' },
-              { key: 'hot', label: '🔥 Chauds' },
-              { key: 'assigned', label: 'Assignés' },
-              { key: 'unassigned', label: 'Non assignés' },
-            ].map(f => (
-              <button
-                key={f.key}
-                onClick={() => setFilter(f.key)}
-                className={`text-xs px-2 py-0.5 rounded-full transition-colors ${
-                  filter === f.key
-                    ? 'bg-indigo-100 text-indigo-700 font-semibold'
-                    : 'text-gray-500 hover:bg-gray-100'
-                }`}
-              >
-                {f.label}
-              </button>
-            ))}
-          </div>
+        </div>
+
+        {/* Filters */}
+        <div className="flex gap-1.5 px-3 pb-2 overflow-x-auto">
+          {[
+            { k: '', l: 'Tous' },
+            { k: 'unread', l: 'Non lus' },
+            { k: 'hot', l: '🔥 Chauds' },
+            { k: 'assigned', l: 'Assignés' },
+          ].map(f => (
+            <button key={f.k} onClick={() => setFilter(f.k)}
+              className="shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-colors"
+              style={{
+                background: filter === f.k ? '#00a884' : C.inputBg,
+                color: filter === f.k ? 'white' : C.textSub,
+              }}>
+              {f.l}
+            </button>
+          ))}
         </div>
 
         {/* Contact list */}
         <div className="flex-1 overflow-y-auto">
           {contacts.length === 0 && (
-            <div className="text-center text-gray-400 text-xs mt-8 px-4">
-              Aucune conversation. Attendez un message entrant.
-            </div>
+            <p className="text-xs text-center mt-10 px-6" style={{ color: C.textSub }}>
+              Aucune conversation. En attente de messages.
+            </p>
           )}
           {contacts.map(c => (
-            <button
-              key={c.id}
-              onClick={() => setSelectedId(c.id)}
-              className={`w-full flex items-start gap-3 px-4 py-3 hover:bg-gray-50 transition-colors border-b border-gray-50 text-left ${
-                selectedId === c.id ? 'bg-indigo-50' : ''
-              }`}
-            >
+            <button key={c.id} onClick={() => selectContact(c.id)}
+              className="w-full flex items-center gap-3 px-4 py-3 transition-colors text-left border-b"
+              style={{
+                background: selectedId === c.id ? C.activeChat : 'transparent',
+                borderColor: C.divider,
+              }}
+              onMouseEnter={e => { if (selectedId !== c.id) (e.currentTarget as HTMLElement).style.background = C.panelHover; }}
+              onMouseLeave={e => { if (selectedId !== c.id) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}>
               {/* Avatar */}
-              <div className="w-9 h-9 bg-gradient-to-br from-indigo-400 to-purple-500 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0">
-                {(c.leadName ?? c.displayName ?? c.phone)[0]?.toUpperCase()}
+              <div className="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-sm shrink-0"
+                style={{ background: avatarColor(c.phone) }}>
+                {initials(c)}
               </div>
               <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between">
-                  <span className={`text-sm truncate ${!c.isRead ? 'font-bold text-gray-900' : 'font-medium text-gray-700'}`}>
-                    {c.leadName ?? c.displayName ?? c.phone.replace('@s.whatsapp.net', '')}
+                <div className="flex items-center justify-between mb-0.5">
+                  <span className="text-sm font-medium truncate" style={{ color: C.text }}>
+                    {displayName(c)}
                   </span>
-                  {!c.isRead && <div className="w-2 h-2 bg-green-500 rounded-full shrink-0" />}
+                  <span className="text-xs shrink-0 ml-2" style={{ color: c.isRead ? C.textSub : '#00a884' }}>
+                    {formatTime(c.lastMessageAt)}
+                  </span>
                 </div>
-                <div className="flex items-center gap-1 mt-0.5">
-                  <LeadBadge status={c.leadStatus} />
-                  {c.assignedAgent && (
-                    <span className="text-xs text-indigo-600 truncate">→ {c.assignedAgent}</span>
+                <div className="flex items-center justify-between">
+                  <p className="text-xs truncate flex-1" style={{ color: C.textSub }}>
+                    {c.lastMessageText ?? ''}
+                  </p>
+                  {!c.isRead && (
+                    <span className="ml-2 shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold text-white"
+                      style={{ background: C.badge }}>
+                      {' '}
+                    </span>
                   )}
                 </div>
               </div>
@@ -238,113 +331,212 @@ export function Inbox() {
         </div>
       </div>
 
-      {/* ── Col 2: Conversation ───────────────────────────────────────────────── */}
-      <div className="flex-1 flex flex-col min-w-0">
+      {/* ── MIDDLE PANEL — Conversation ────────────────────────────────────────── */}
+      <div className="flex flex-1 flex-col min-w-0">
         {!selectedContact ? (
-          <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">
-            Sélectionne une conversation
+          /* Default screen */
+          <div className="flex-1 flex flex-col items-center justify-center gap-4" style={{ background: C.chatBg }}>
+            <div className="w-24 h-24 rounded-full flex items-center justify-center opacity-10"
+              style={{ border: '2px solid #aebac1' }}>
+              <Phone size={40} style={{ color: '#aebac1' }} />
+            </div>
+            <p className="text-lg font-light" style={{ color: C.textSub }}>WhatsApp Web</p>
+            <p className="text-sm" style={{ color: C.textSub }}>
+              Clique sur une conversation pour l'ouvrir
+            </p>
           </div>
         ) : (
           <>
             {/* Chat header */}
-            <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-3">
-              <div className="w-9 h-9 bg-gradient-to-br from-indigo-400 to-purple-500 rounded-full flex items-center justify-center text-white text-sm font-bold">
-                {(selectedContact.leadName ?? selectedContact.displayName ?? selectedContact.phone)[0]?.toUpperCase()}
+            <div className="flex items-center gap-3 px-4 py-2.5 shrink-0" style={{ background: C.headerBg }}>
+              <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm shrink-0"
+                style={{ background: avatarColor(selectedContact.phone) }}>
+                {initials(selectedContact)}
               </div>
               <div className="flex-1 min-w-0">
-                <div className="font-semibold text-gray-900 text-sm truncate">
-                  {selectedContact.leadName ?? selectedContact.displayName ?? selectedContact.phone.replace('@s.whatsapp.net', '')}
-                </div>
-                <div className="text-xs text-gray-400">{selectedContact.phone.replace('@s.whatsapp.net', '')}</div>
+                <p className="font-medium text-sm truncate" style={{ color: C.text }}>
+                  {displayName(selectedContact)}
+                </p>
+                <p className="text-xs" style={{ color: C.textSub }}>
+                  {selectedContact.phone.replace('@s.whatsapp.net', '').replace('@c.us', '')}
+                </p>
               </div>
-              <LeadBadge status={selectedContact.leadStatus} />
-              <button
-                onClick={() => updateContact(selectedContact.id, { aiEnabled: !selectedContact.aiEnabled })}
-                title={selectedContact.aiEnabled ? 'Désactiver IA' : 'Activer IA'}
-                className={`p-1.5 rounded-lg transition-colors ${
-                  selectedContact.aiEnabled
-                    ? 'bg-indigo-100 text-indigo-600 hover:bg-indigo-200'
-                    : 'text-gray-400 hover:bg-gray-100'
-                }`}
-              >
-                {selectedContact.aiEnabled ? <Bot size={16} /> : <BotOff size={16} />}
-              </button>
+              <div className="flex items-center gap-2">
+                <button title={selectedContact.aiEnabled ? 'Désactiver IA' : 'Activer IA'}
+                  onClick={() => updateContact(selectedContact.id, { aiEnabled: !selectedContact.aiEnabled })}
+                  className="p-2 rounded-full hover:bg-[#2a3942] transition-colors">
+                  {selectedContact.aiEnabled
+                    ? <Bot size={20} style={{ color: '#00a884' }} />
+                    : <BotOff size={20} style={{ color: C.icon }} />}
+                </button>
+                <button onClick={() => setShowCrmPanel(v => !v)}
+                  className="p-2 rounded-full hover:bg-[#2a3942] transition-colors">
+                  <Info size={20} style={{ color: showCrmPanel ? '#00a884' : C.icon }} />
+                </button>
+              </div>
             </div>
 
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-2">
-              {selectedMessages.map(m => (
-                <div
-                  key={m.id}
-                  className={`flex ${m.direction === 'out' ? 'justify-end' : 'justify-start'}`}
-                >
-                  <div
-                    className={`max-w-xs lg:max-w-md px-3 py-2 rounded-2xl text-sm ${
-                      m.direction === 'out'
-                        ? 'bg-indigo-600 text-white rounded-tr-sm'
-                        : 'bg-gray-100 text-gray-800 rounded-tl-sm'
-                    }`}
-                  >
-                    {m.content}
-                    {m.fromAi && (
-                      <div className="flex items-center gap-1 mt-1 opacity-70">
-                        <Bot size={10} />
-                        <span className="text-[10px]">IA</span>
+            <div className="flex-1 overflow-y-auto px-16 py-4 space-y-1"
+              style={{ background: C.chatBg, backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'100\' height=\'100\'%3E%3C/svg%3E")' }}>
+              {selectedMessages.map((m, i) => {
+                const isOut = m.direction === 'out';
+                const showDate = i === 0 || new Date(selectedMessages[i - 1].sentAt).toDateString() !== new Date(m.sentAt).toDateString();
+                const quotedMsg = m.quotedMsgId ? selectedMessages.find(x => x.waId === m.quotedMsgId) : null;
+
+                return (
+                  <div key={m.id}>
+                    {showDate && (
+                      <div className="flex justify-center my-3">
+                        <span className="text-xs px-3 py-1 rounded-full" style={{ background: '#182229', color: C.textSub }}>
+                          {new Date(m.sentAt).toLocaleDateString('fr', { day: 'numeric', month: 'long', year: 'numeric' })}
+                        </span>
                       </div>
                     )}
+                    <div className={`flex ${isOut ? 'justify-end' : 'justify-start'} group`}>
+                      <div className="relative max-w-[65%]">
+                        {/* Reply button on hover */}
+                        <button
+                          onClick={() => { setRepliedTo(m); inputRef.current?.focus(); }}
+                          className="absolute -left-8 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-full"
+                          style={{ background: C.panelHover }}>
+                          <Reply size={14} style={{ color: C.icon }} />
+                        </button>
+
+                        <div className="rounded-lg px-3 py-1.5 shadow"
+                          style={{
+                            background: isOut ? C.sentBubble : C.recvBubble,
+                            borderRadius: isOut ? '8px 8px 2px 8px' : '8px 8px 8px 2px',
+                          }}>
+                          {/* Quoted message */}
+                          {quotedMsg && (
+                            <div className="mb-2 px-2 py-1 rounded border-l-4 text-xs opacity-80 cursor-pointer"
+                              style={{ borderColor: '#53bdeb', background: 'rgba(255,255,255,0.05)', color: C.text }}>
+                              <p className="font-semibold" style={{ color: '#53bdeb' }}>
+                                {quotedMsg.direction === 'out' ? 'Vous' : displayName(selectedContact)}
+                              </p>
+                              <p className="truncate">{quotedMsg.content}</p>
+                            </div>
+                          )}
+
+                          {/* Media */}
+                          <MediaContent msg={m} />
+
+                          {/* Text */}
+                          <div className="flex items-end gap-2">
+                            <p className="text-sm leading-relaxed break-words flex-1" style={{ color: C.text }}>
+                              {m.content}
+                            </p>
+                            <div className="flex items-center gap-1 shrink-0 ml-1 mt-1 self-end">
+                              <span className="text-[10px]" style={{ color: C.textSub }}>
+                                {formatMsgTime(m.sentAt)}
+                              </span>
+                              <Ack ack={m.ack} direction={m.direction} />
+                              {m.fromAi && <Bot size={10} style={{ color: '#8696a0' }} />}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Input */}
-            <div className="px-4 py-3 border-t border-gray-100 flex items-center gap-2">
-              <input
-                value={msgText}
-                onChange={e => setMsgText(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleSend()}
-                placeholder="Écrire un message..."
-                className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-              />
+            {/* Reply preview */}
+            {repliedTo && (
+              <div className="flex items-center gap-3 px-4 py-2 border-t" style={{ background: C.inputBg, borderColor: C.divider }}>
+                <div className="flex-1 pl-3 border-l-4 rounded text-sm" style={{ borderColor: '#00a884' }}>
+                  <p className="font-semibold text-xs" style={{ color: '#00a884' }}>
+                    {repliedTo.direction === 'out' ? 'Vous' : displayName(selectedContact)}
+                  </p>
+                  <p className="truncate text-xs" style={{ color: C.textSub }}>{repliedTo.content}</p>
+                </div>
+                <button onClick={() => setRepliedTo(null)}>
+                  <X size={18} style={{ color: C.icon }} />
+                </button>
+              </div>
+            )}
+
+            {/* Input bar */}
+            <div className="flex items-center gap-3 px-4 py-2.5 shrink-0" style={{ background: C.headerBg }}>
+              <button className="p-2 rounded-full hover:bg-[#2a3942] transition-colors">
+                <Smile size={24} style={{ color: C.icon }} />
+              </button>
+              <button className="p-2 rounded-full hover:bg-[#2a3942] transition-colors">
+                <Paperclip size={24} style={{ color: C.icon }} />
+              </button>
+              <div className="flex-1 flex items-center rounded-lg px-4 py-2" style={{ background: C.inputBg }}>
+                <input
+                  ref={inputRef}
+                  value={msgText}
+                  onChange={e => setMsgText(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleSend()}
+                  placeholder="Écrire un message"
+                  className="flex-1 bg-transparent outline-none text-sm"
+                  style={{ color: C.text }}
+                />
+              </div>
               <button
                 onClick={handleSend}
                 disabled={sending || !msgText.trim()}
-                className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white p-2.5 rounded-xl transition-colors"
-              >
-                <Send size={16} />
+                className="p-2.5 rounded-full transition-colors disabled:opacity-40"
+                style={{ background: '#00a884' }}>
+                <Send size={20} color="white" />
               </button>
             </div>
           </>
         )}
       </div>
 
-      {/* ── Col 3: Lead info ──────────────────────────────────────────────────── */}
-      {selectedContact && (
-        <div className="w-72 border-l border-gray-100 flex flex-col shrink-0 overflow-y-auto">
-          <div className="p-4 space-y-4">
-            {/* Score */}
-            <div>
-              <div className="text-xs text-gray-500 mb-1">Score</div>
-              <div className="flex items-center gap-2">
-                <div className="flex-1 bg-gray-100 rounded-full h-2">
-                  <div
-                    className="h-2 rounded-full bg-gradient-to-r from-blue-400 to-orange-500 transition-all"
-                    style={{ width: `${selectedContact.leadScore}%` }}
-                  />
+      {/* ── RIGHT PANEL — CRM Info (slide in) ─────────────────────────────────── */}
+      {selectedContact && showCrmPanel && (
+        <div className="w-[340px] shrink-0 border-l flex flex-col overflow-y-auto"
+          style={{ background: C.panelBg, borderColor: C.divider }}>
+
+          {/* Header */}
+          <div className="flex items-center gap-3 px-4 py-4" style={{ background: C.headerBg }}>
+            <button onClick={() => setShowCrmPanel(false)}>
+              <X size={20} style={{ color: C.icon }} />
+            </button>
+            <span className="font-medium" style={{ color: C.text }}>Infos du contact</span>
+          </div>
+
+          {/* Avatar + name */}
+          <div className="flex flex-col items-center py-6" style={{ background: C.panelBg }}>
+            <div className="w-20 h-20 rounded-full flex items-center justify-center text-white font-bold text-2xl mb-3"
+              style={{ background: avatarColor(selectedContact.phone) }}>
+              {initials(selectedContact)}
+            </div>
+            <p className="font-semibold text-base" style={{ color: C.text }}>{displayName(selectedContact)}</p>
+            <p className="text-sm" style={{ color: C.textSub }}>
+              {selectedContact.phone.replace('@s.whatsapp.net', '').replace('@c.us', '')}
+            </p>
+          </div>
+
+          <div className="px-4 space-y-4 pb-6">
+            {/* Lead score */}
+            <div className="rounded-lg p-3" style={{ background: C.inputBg }}>
+              <p className="text-xs mb-2" style={{ color: C.textSub }}>Score lead</p>
+              <div className="flex items-center gap-3">
+                <div className="flex-1 rounded-full h-1.5" style={{ background: '#111b21' }}>
+                  <div className="h-1.5 rounded-full transition-all"
+                    style={{ width: `${selectedContact.leadScore}%`, background: selectedContact.leadScore > 60 ? '#ff6b35' : selectedContact.leadScore > 30 ? '#00a884' : C.textSub }} />
                 </div>
-                <span className="text-sm font-bold text-gray-700">{selectedContact.leadScore}/100</span>
+                <span className="text-sm font-bold" style={{ color: C.text }}>
+                  {selectedContact.leadScore}/100
+                </span>
               </div>
             </div>
 
             {/* Lead status */}
             <div>
-              <div className="text-xs text-gray-500 mb-1">Statut lead</div>
-              <select
-                value={selectedContact.leadStatus}
-                onChange={e => updateContact(selectedContact.id, { leadStatus: e.target.value })}
-                className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-400"
-              >
+              <p className="text-xs mb-1" style={{ color: C.textSub }}>Statut</p>
+              <select value={selectedContact.leadStatus}
+                onChange={e => updateContact(selectedContact.id, { leadStatus: e.target.value as any })}
+                className="w-full text-sm rounded-lg px-3 py-2 outline-none"
+                style={{ background: C.inputBg, color: C.text, border: 'none' }}>
                 <option value="cold">❄️ Froid</option>
                 <option value="warm">⭐ Tiède</option>
                 <option value="hot">🔥 Chaud</option>
@@ -353,100 +545,76 @@ export function Inbox() {
               </select>
             </div>
 
-            {/* Lead info */}
-            <div className="space-y-1.5">
-              {selectedContact.leadName && (
-                <div className="flex justify-between text-xs">
-                  <span className="text-gray-500">Nom</span>
-                  <span className="text-gray-800 font-medium">{selectedContact.leadName}</span>
-                </div>
-              )}
-              {selectedContact.leadNeed && (
-                <div className="flex justify-between text-xs">
-                  <span className="text-gray-500">Besoin</span>
-                  <span className="text-gray-800 font-medium">{selectedContact.leadNeed}</span>
-                </div>
-              )}
-              {selectedContact.leadBudget && (
-                <div className="flex justify-between text-xs">
-                  <span className="text-gray-500">Budget</span>
-                  <span className="text-gray-800 font-medium">{selectedContact.leadBudget}</span>
-                </div>
-              )}
-              {selectedContact.leadCity && (
-                <div className="flex justify-between text-xs">
-                  <span className="text-gray-500">Ville</span>
-                  <span className="text-gray-800 font-medium">{selectedContact.leadCity}</span>
-                </div>
-              )}
-              {selectedContact.leadProduct && (
-                <div className="flex justify-between text-xs">
-                  <span className="text-gray-500">Produit</span>
-                  <span className="text-gray-800 font-medium">{selectedContact.leadProduct}</span>
-                </div>
-              )}
+            {/* Lead data */}
+            {[
+              { key: 'leadName', label: 'Nom' },
+              { key: 'leadNeed', label: 'Besoin' },
+              { key: 'leadBudget', label: 'Budget' },
+              { key: 'leadCity', label: 'Ville' },
+              { key: 'leadProduct', label: 'Produit' },
+              { key: 'leadUrgency', label: 'Urgence' },
+            ].filter(f => (selectedContact as any)[f.key]).map(f => (
+              <div key={f.key} className="flex justify-between text-xs py-1 border-b"
+                style={{ borderColor: C.divider }}>
+                <span style={{ color: C.textSub }}>{f.label}</span>
+                <span className="font-medium" style={{ color: C.text }}>{(selectedContact as any)[f.key]}</span>
+              </div>
+            ))}
+
+            {/* AI toggle */}
+            <div className="flex items-center justify-between rounded-lg p-3" style={{ background: C.inputBg }}>
+              <span className="text-sm flex items-center gap-2" style={{ color: C.text }}>
+                <Bot size={16} style={{ color: selectedContact.aiEnabled ? '#00a884' : C.textSub }} />
+                Agent IA
+              </span>
+              <div onClick={() => updateContact(selectedContact.id, { aiEnabled: !selectedContact.aiEnabled })}
+                className="w-10 h-5 rounded-full cursor-pointer transition-colors"
+                style={{ background: selectedContact.aiEnabled ? '#00a884' : '#374045' }}>
+                <div className={`w-4 h-4 bg-white rounded-full shadow transition-transform mt-0.5 ${selectedContact.aiEnabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+              </div>
             </div>
 
-            {/* Agent assignment */}
+            {/* Agent */}
             <div>
-              <div className="text-xs text-gray-500 mb-1">Agent assigné</div>
+              <p className="text-xs mb-1" style={{ color: C.textSub }}>Agent assigné</p>
               <input
                 defaultValue={selectedContact.assignedAgent ?? ''}
                 onBlur={e => updateContact(selectedContact.id, { assignedAgent: e.target.value || undefined })}
-                placeholder="Email ou nom de l'agent"
-                className="w-full text-xs border border-gray-200 rounded-xl px-3 py-2 outline-none focus:ring-1 focus:ring-indigo-400"
+                placeholder="Email ou nom..."
+                className="w-full text-xs rounded-lg px-3 py-2 outline-none"
+                style={{ background: C.inputBg, color: C.text, border: 'none' }}
               />
-            </div>
-
-            {/* Tags */}
-            <div>
-              <div className="text-xs text-gray-500 mb-1">Tags</div>
-              <div className="flex flex-wrap gap-1">
-                {selectedContact.tags.map(({ tag }) => (
-                  <span
-                    key={tag.id}
-                    className="text-xs px-2 py-0.5 rounded-full text-white font-medium"
-                    style={{ backgroundColor: tag.color }}
-                  >
-                    {tag.name}
-                  </span>
-                ))}
-              </div>
             </div>
 
             {/* Notes */}
             <div>
-              <div className="flex items-center justify-between mb-1">
-                <div className="text-xs text-gray-500">Notes internes</div>
-                <button
-                  onClick={() => setShowNoteInput(v => !v)}
-                  className="text-indigo-500 hover:text-indigo-700 transition-colors"
-                >
-                  <Plus size={14} />
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs" style={{ color: C.textSub }}>Notes internes</p>
+                <button onClick={() => setShowNoteInput(v => !v)}>
+                  <Plus size={16} style={{ color: C.icon }} />
                 </button>
               </div>
               {showNoteInput && (
-                <div className="mb-2">
-                  <textarea
-                    value={noteText}
-                    onChange={e => setNoteText(e.target.value)}
-                    rows={2}
-                    placeholder="Ajouter une note..."
-                    className="w-full text-xs border border-gray-200 rounded-xl px-3 py-2 outline-none focus:ring-1 focus:ring-indigo-400 resize-none"
-                  />
-                  <button
-                    onClick={handleAddNote}
-                    className="mt-1 text-xs bg-indigo-600 text-white px-3 py-1 rounded-lg"
-                  >
-                    Ajouter
+                <div className="mb-2 space-y-2">
+                  <textarea value={noteText} onChange={e => setNoteText(e.target.value)}
+                    rows={2} placeholder="Ajouter une note..."
+                    className="w-full text-xs rounded-lg px-3 py-2 outline-none resize-none"
+                    style={{ background: C.inputBg, color: C.text, border: 'none' }} />
+                  <button onClick={handleAddNote}
+                    className="text-xs px-3 py-1.5 rounded-lg font-medium"
+                    style={{ background: '#00a884', color: 'white' }}>
+                    Enregistrer
                   </button>
                 </div>
               )}
-              <div className="space-y-1">
+              <div className="space-y-2">
                 {notes.map(n => (
-                  <div key={n.id} className="text-xs bg-amber-50 border border-amber-100 rounded-xl px-3 py-2 text-gray-700">
-                    {n.content}
-                    <div className="text-gray-400 mt-0.5">{new Date(n.createdAt).toLocaleDateString('fr')}</div>
+                  <div key={n.id} className="rounded-lg px-3 py-2 text-xs"
+                    style={{ background: '#1f2c34', color: C.text }}>
+                    <p>{n.content}</p>
+                    <p className="mt-1 text-[10px]" style={{ color: C.textSub }}>
+                      {new Date(n.createdAt).toLocaleDateString('fr')}
+                    </p>
                   </div>
                 ))}
               </div>
@@ -454,7 +622,6 @@ export function Inbox() {
           </div>
         </div>
       )}
-    </div>
     </div>
   );
 }

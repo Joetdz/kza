@@ -40,8 +40,8 @@ export const waApi = {
 
   // Messages
   getMessages: (contactId: string) => req<any[]>(`/whatsapp/contacts/${contactId}/messages`),
-  sendMessage: (contactId: string, message: string) =>
-    req<void>(`/whatsapp/contacts/${contactId}/send`, { method: 'POST', body: JSON.stringify({ message }) }),
+  sendMessage: (contactId: string, message: string, quotedMsgId?: string) =>
+    req<void>(`/whatsapp/contacts/${contactId}/send`, { method: 'POST', body: JSON.stringify({ message, quotedMsgId }) }),
   markRead: (contactId: string) =>
     req<void>(`/whatsapp/contacts/${contactId}/read`, { method: 'PATCH' }),
 

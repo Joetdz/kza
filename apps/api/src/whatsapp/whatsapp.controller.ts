@@ -135,7 +135,11 @@ export class WhatsAppController {
   ) {
     const contact = await this.prisma.whatsAppContact.findFirst({ where: { id, userId: user.id } });
     if (!contact) throw new NotFoundException();
-    await this.wa.sendMessage(user.id, contact.phone, dto.message, contact.id, false);
+    if (dto.quotedMsgId) {
+      await this.wa.sendReply(user.id, contact.phone, dto.message, contact.id, dto.quotedMsgId);
+    } else {
+      await this.wa.sendMessage(user.id, contact.phone, dto.message, contact.id, false);
+    }
     return { ok: true };
   }
 

@@ -2,23 +2,17 @@ import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AiService } from './ai.service';
 import { AutomationService } from './automation.service';
-import makeWASocket, {
-  DisconnectReason,
-  fetchLatestBaileysVersion,
-  makeCacheableSignalKeyStore,
-  useMultiFileAuthState,
-} from '@whiskeysockets/baileys';
-import { Boom } from '@hapi/boom';
+import { Client, LocalAuth, Message } from 'whatsapp-web.js';
 import * as qrcode from 'qrcode';
-import * as fs from 'fs';
 import * as path from 'path';
+import * as fs from 'fs';
 
 export type WaGatewayCallback = (event: string, userId: string, data: any) => void;
 
 @Injectable()
 export class WhatsAppService implements OnModuleDestroy {
   private readonly logger = new Logger(WhatsAppService.name);
-  private connections = new Map<string, ReturnType<typeof makeWASocket>>();
+  private clients = new Map<string, Client>();
   private gatewayEmit: WaGatewayCallback | null = null;
 
   constructor(
@@ -35,287 +29,291 @@ export class WhatsAppService implements OnModuleDestroy {
     if (this.gatewayEmit) this.gatewayEmit(event, userId, data);
   }
 
-  // ── Auth state stored per-user in a temp directory ──────────────────────────
-  private getAuthDir(userId: string): string {
-    const dir = path.join(process.cwd(), '.wa-auth', userId);
-    fs.mkdirSync(dir, { recursive: true });
-    return dir;
-  }
-
   async connect(userId: string): Promise<void> {
-    if (this.connections.has(userId)) {
-      // Already connecting or connected — just emit current status
+    if (this.clients.has(userId)) {
       const session = await this.prisma.whatsAppSession.findUnique({ where: { userId } });
-      if (session?.connected) {
-        this.emit('connected', userId, { phone: session.phone });
-      }
+      if (session?.connected) this.emit('connected', userId, { phone: session.phone });
       return;
     }
 
-    const { version } = await fetchLatestBaileysVersion();
-    const authDir = this.getAuthDir(userId);
-    const { state, saveCreds } = await useMultiFileAuthState(authDir);
-
-    const sock = makeWASocket({
-      version,
-      auth: {
-        creds: state.creds,
-        keys: makeCacheableSignalKeyStore(state.keys, console as any),
+    const client = new Client({
+      authStrategy: new LocalAuth({
+        clientId: userId,
+        dataPath: path.join(process.cwd(), '.wwebjs_auth'),
+      }),
+      puppeteer: {
+        headless: true,
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-gpu',
+          '--disable-dev-shm-usage',
+          '--disable-extensions',
+        ],
       },
-      printQRInTerminal: false,
-      logger: { level: 'silent', trace: () => {}, debug: () => {}, info: () => {}, warn: () => {}, error: () => {}, fatal: () => {}, child: () => ({ level: 'silent', trace: () => {}, debug: () => {}, info: () => {}, warn: () => {}, error: () => {}, fatal: () => {}, child: () => ({} as any) }) } as any,
     });
 
-    this.connections.set(userId, sock);
+    this.clients.set(userId, client);
 
-    sock.ev.on('creds.update', saveCreds);
+    client.on('qr', async (qr) => {
+      const qrDataUrl = await qrcode.toDataURL(qr);
+      this.emit('qr', userId, { qr: qrDataUrl });
+    });
 
-    // ── Display names from phone address book ──────────────────────────────
-    sock.ev.on('contacts.upsert', async (waContacts) => {
-      for (const c of waContacts) {
-        const phone = c.id;
-        if (!phone || phone.includes('@g.us')) continue;
-        const displayName = c.name ?? (c as any).notify ?? null;
-        if (!displayName) continue;
-        await this.prisma.whatsAppContact.updateMany({
-          where: { userId, phone },
-          data: { displayName },
-        });
+    client.on('loading_screen', (percent: number, message: string) => {
+      this.emit('loading', userId, { percent, message });
+    });
+
+    client.on('ready', async () => {
+      const phone = (client as any).info?.wid?.user ?? null;
+      await this.prisma.whatsAppSession.upsert({
+        where: { userId },
+        create: { userId, connected: true, phone },
+        update: { connected: true, phone },
+      });
+      this.emit('connected', userId, { phone });
+      this.logger.log(`WhatsApp ready for ${userId} (${phone})`);
+
+      // Import full chat history in background
+      this.importAllChats(userId, client).catch(err =>
+        this.logger.error(`Import failed for ${userId}:`, err),
+      );
+    });
+
+    client.on('disconnected', async (reason: string) => {
+      this.logger.log(`WhatsApp disconnected for ${userId}: ${reason}`);
+      this.clients.delete(userId);
+      await this.prisma.whatsAppSession.upsert({
+        where: { userId },
+        create: { userId, connected: false },
+        update: { connected: false },
+      });
+      this.emit('disconnected', userId, { reason });
+
+      if (reason !== 'LOGOUT') {
+        setTimeout(() => this.connect(userId), 5000);
       }
     });
 
-    // ── Chat metadata updates ───────────────────────────────────────────────
-    sock.ev.on('chats.upsert', async (chats) => {
-      for (const chat of chats) {
-        const phone = chat.id;
-        if (!phone || phone.includes('@g.us') || phone === 'status@broadcast') continue;
-        const lastAt = chat.conversationTimestamp
-          ? new Date(Number(chat.conversationTimestamp) * 1000) : undefined;
-        if (!lastAt) continue;
-        await this.prisma.whatsAppContact.updateMany({
-          where: { userId, phone },
-          data: { lastMessageAt: lastAt },
-        });
-      }
+    // Incoming messages (from others)
+    client.on('message', async (msg: Message) => {
+      await this.handleIncoming(userId, msg, client);
     });
 
-    // ── Full history sync on connect (clones the phone) ────────────────────
-    sock.ev.on('messaging-history.set', async ({ chats, contacts: histContacts, messages, isLatest }) => {
-      this.logger.log(`[${userId}] History sync: ${chats.length} chats, ${messages.length} msgs`);
-      this.emit('sync-start', userId, { total: messages.length });
+    // Messages sent from the phone (not from our app)
+    client.on('message_create', async (msg: Message) => {
+      if (!msg.fromMe) return;
+      await this.handleOutgoingFromPhone(userId, msg);
+    });
 
-      // Build name map from address book
-      const nameMap = new Map<string, string>();
-      for (const c of histContacts) {
-        if (c.id && (c.name || (c as any).notify)) {
-          nameMap.set(c.id, c.name ?? (c as any).notify);
-        }
-      }
+    // Read receipts / delivery status
+    client.on('message_ack', async (msg: Message, ack: number) => {
+      if (!msg.id?.id) return;
+      await (this.prisma.whatsAppMessage as any).updateMany({
+        where: { waId: msg.id.id, userId },
+        data: { ack },
+      });
+      this.emit('message-ack', userId, { waId: msg.id.id, ack });
+    });
 
-      // Upsert all contacts from chats list
-      for (const chat of chats) {
-        const phone = chat.id;
-        if (!phone || phone.includes('@g.us') || phone === 'status@broadcast') continue;
-        const displayName = nameMap.get(phone) ?? (chat as any).name ?? null;
-        const lastAt = chat.conversationTimestamp
-          ? new Date(Number(chat.conversationTimestamp) * 1000) : new Date();
+    // Deleted messages
+    client.on('message_revoke_everyone', async (_msg: any, revokedMsg: any) => {
+      if (!revokedMsg?.id?.id) return;
+      await (this.prisma.whatsAppMessage as any).updateMany({
+        where: { waId: revokedMsg.id.id, userId },
+        data: { content: '🚫 Message supprimé' },
+      });
+      this.emit('message-revoked', userId, { waId: revokedMsg.id.id });
+    });
 
-        await this.prisma.whatsAppContact.upsert({
+    await client.initialize();
+  }
+
+  // ── Import full history on connect ────────────────────────────────────────────
+
+  private async importAllChats(userId: string, client: Client): Promise<void> {
+    const chats = await client.getChats();
+    const privateChats = chats.filter((c: any) => !c.isGroup && !c.id._serialized.endsWith('@broadcast'));
+
+    this.emit('sync-start', userId, { total: privateChats.length });
+    this.logger.log(`[${userId}] Importing ${privateChats.length} chats`);
+
+    let done = 0;
+    for (const chat of privateChats) {
+      try {
+        const phone: string = chat.id._serialized;
+        const waContact = await client.getContactById(phone).catch(() => null) as any;
+        const displayName: string | null = waContact?.pushname || waContact?.name || (chat as any).name || null;
+        const lastAt = (chat as any).timestamp ? new Date((chat as any).timestamp * 1000) : new Date();
+        const unread: number = (chat as any).unreadCount ?? 0;
+
+        // Fetch last 50 messages
+        const msgs: any[] = await (chat as any).fetchMessages({ limit: 50 }).catch(() => []);
+        const lastMsg = msgs[msgs.length - 1];
+        const lastMessageText: string | null = lastMsg?.body || null;
+
+        const dbContact = await this.prisma.whatsAppContact.upsert({
           where: { userId_phone: { userId, phone } },
           create: {
             userId, phone, displayName,
-            isRead: ((chat as any).unreadCount ?? 0) === 0,
+            isRead: unread === 0,
             lastMessageAt: lastAt,
+            lastMessageText,
           },
           update: {
             ...(displayName ? { displayName } : {}),
+            isRead: unread === 0,
             lastMessageAt: lastAt,
+            ...(lastMessageText ? { lastMessageText } : {}),
           },
         });
-      }
 
-      // Group messages by phone for batch insert
-      const byPhone = new Map<string, Array<(typeof messages)[0]>>();
-      for (const msg of messages) {
-        const phone = msg.key.remoteJid ?? '';
-        if (!phone || phone.includes('@g.us') || phone === 'status@broadcast') continue;
-        if (!msg.message || !msg.key.id) continue;
-        const msgTypes = Object.keys(msg.message);
-        if (msgTypes.some(t => t === 'statusMentionMessage' || t === 'broadcastListMessage')) continue;
-        if (!byPhone.has(phone)) byPhone.set(phone, []);
-        byPhone.get(phone)!.push(msg);
-      }
+        if (msgs.length > 0) {
+          const incomingIds = msgs.map((m: any) => m.id?.id).filter(Boolean);
+          const existing = await (this.prisma.whatsAppMessage as any).findMany({
+            where: { contactId: dbContact.id, waId: { in: incomingIds } },
+            select: { waId: true },
+          });
+          const existingSet = new Set(existing.map((m: any) => m.waId));
 
-      let imported = 0;
-      for (const [phone, msgs] of byPhone.entries()) {
-        const contact = await this.prisma.whatsAppContact.findUnique({
-          where: { userId_phone: { userId, phone } },
-        });
-        if (!contact) continue;
+          const toInsert = msgs
+            .filter((m: any) => m.id?.id && !existingSet.has(m.id.id))
+            .map((m: any) => ({
+              userId,
+              contactId: dbContact.id,
+              waId: m.id.id,
+              direction: m.fromMe ? 'out' : 'in',
+              content: m.body || (m.hasMedia ? `[${m.type}]` : '[Message]'),
+              mediaType: m.hasMedia ? m.type : null,
+              ack: m.ack ?? 0,
+              sentAt: new Date(m.timestamp * 1000),
+            }));
 
-        const toInsert = msgs.map(msg => ({
-          userId,
-          contactId: contact.id,
-          waId: msg.key.id!,
-          direction: msg.key.fromMe ? 'out' : 'in',
-          content: msg.message?.conversation
-            ?? msg.message?.extendedTextMessage?.text
-            ?? msg.message?.imageMessage?.caption
-            ?? '[Media]',
-          sentAt: new Date(Number(msg.messageTimestamp) * 1000),
-        }));
-
-        await this.prisma.whatsAppMessage.createMany({
-          data: toInsert,
-          skipDuplicates: true,
-        });
-        imported += toInsert.length;
-        this.emit('sync-progress', userId, { imported, total: messages.length });
-      }
-
-      // Push refreshed contacts list to all browser tabs
-      const allContacts = await this.prisma.whatsAppContact.findMany({
-        where: { userId, isArchived: false },
-        orderBy: { lastMessageAt: 'desc' },
-      });
-      this.emit('sync-complete', userId, { imported, contacts: allContacts });
-      this.logger.log(`[${userId}] History sync done — ${imported} messages imported`);
-    });
-
-    sock.ev.on('connection.update', async (update) => {
-      const { connection, lastDisconnect, qr } = update;
-
-      if (qr) {
-        const qrDataUrl = await qrcode.toDataURL(qr);
-        this.emit('qr', userId, { qr: qrDataUrl });
-      }
-
-      if (connection === 'open') {
-        const phone = sock.user?.id?.split(':')[0] ?? null;
-        await this.prisma.whatsAppSession.upsert({
-          where: { userId },
-          create: { userId, connected: true, phone },
-          update: { connected: true, phone },
-        });
-        this.emit('connected', userId, { phone });
-        this.logger.log(`WhatsApp connected for user ${userId} (${phone})`);
-      }
-
-      if (connection === 'close') {
-        const code = (lastDisconnect?.error as Boom)?.output?.statusCode;
-        const shouldReconnect = code !== DisconnectReason.loggedOut;
-
-        this.connections.delete(userId);
-        await this.prisma.whatsAppSession.upsert({
-          where: { userId },
-          create: { userId, connected: false },
-          update: { connected: false },
-        });
-        this.emit('disconnected', userId, {});
-
-        if (shouldReconnect) {
-          this.logger.log(`Reconnecting WhatsApp for user ${userId}...`);
-          setTimeout(() => this.connect(userId), 3000);
-        } else {
-          // Logged out — clean auth
-          fs.rmSync(this.getAuthDir(userId), { recursive: true, force: true });
+          if (toInsert.length > 0) {
+            await (this.prisma.whatsAppMessage as any).createMany({ data: toInsert });
+          }
         }
+      } catch (err: any) {
+        this.logger.warn(`Chat import error ${(chat as any).id?._serialized}: ${err.message}`);
       }
+
+      done++;
+      this.emit('sync-progress', userId, { imported: done, total: privateChats.length });
+    }
+
+    const allContacts = await this.prisma.whatsAppContact.findMany({
+      where: { userId, isArchived: false },
+      include: { tags: { include: { tag: true } } },
+      orderBy: { lastMessageAt: 'desc' },
     });
-
-    sock.ev.on('messages.upsert', async ({ messages: msgs, type }) => {
-      if (type !== 'notify') return;
-
-      for (const msg of msgs) {
-        if (msg.key.fromMe) continue;
-        if (!msg.message) continue;
-
-        const phone = msg.key.remoteJid ?? '';
-        if (!phone) continue;
-
-        // Skip group messages
-        if (phone.includes('@g.us')) continue;
-
-        // Skip status broadcasts (WhatsApp Status / Stories)
-        if (phone === 'status@broadcast') continue;
-
-        // Skip status update message types
-        const msgTypes = Object.keys(msg.message);
-        const isStatusMsg = msgTypes.some(t =>
-          t === 'statusMentionMessage' ||
-          t === 'viewOnceMessageV2Extension' ||
-          t === 'broadcastListMessage'
-        );
-        if (isStatusMsg) continue;
-
-        const content =
-          msg.message?.conversation ??
-          msg.message?.extendedTextMessage?.text ??
-          msg.message?.imageMessage?.caption ??
-          '[Media]';
-
-        await this.handleIncoming(userId, phone, content, msg.key.id ?? null);
-      }
-    });
+    this.emit('sync-complete', userId, { imported: done, contacts: allContacts });
+    this.logger.log(`[${userId}] Sync complete — ${done} chats`);
   }
 
-  private async handleIncoming(userId: string, phone: string, content: string, waId: string | null = null): Promise<void> {
-    // 1. Upsert contact
-    const isFirstMessage = !(await this.prisma.whatsAppContact.findUnique({
+  // ── Incoming message handler ──────────────────────────────────────────────────
+
+  private async handleIncoming(userId: string, msg: Message, client: Client): Promise<void> {
+    const phone: string = (msg as any).from;
+    if (!phone || phone === 'status@broadcast' || phone.endsWith('@g.us')) return;
+
+    // Dedup
+    if (msg.id?.id) {
+      const dup = await (this.prisma.whatsAppMessage as any).findFirst({
+        where: { userId, waId: msg.id.id },
+      });
+      if (dup) return;
+    }
+
+    const waContact = await client.getContactById(phone).catch(() => null) as any;
+    const displayName: string | null = waContact?.pushname || waContact?.name || null;
+
+    const isFirst = !(await this.prisma.whatsAppContact.findUnique({
       where: { userId_phone: { userId, phone } },
     }));
 
+    // Download media if any
+    let mediaUrl: string | null = null;
+    let mediaType: string | null = null;
+    if ((msg as any).hasMedia) {
+      try {
+        const media = await (msg as any).downloadMedia();
+        if (media?.data) {
+          const ext = media.mimetype.split('/')[1]?.split(';')[0] ?? 'bin';
+          const filename = `${msg.id.id}.${ext}`;
+          const uploadDir = path.join(process.cwd(), 'uploads');
+          fs.mkdirSync(uploadDir, { recursive: true });
+          fs.writeFileSync(path.join(uploadDir, filename), Buffer.from(media.data, 'base64'));
+          mediaUrl = `/uploads/${filename}`;
+          mediaType = (msg as any).type;
+        }
+      } catch {
+        mediaType = (msg as any).type;
+      }
+    }
+
+    const quotedMsgId: string | null = (msg as any).hasQuotedMsg
+      ? (await (msg as any).getQuotedMessage().catch(() => null))?.id?.id ?? null
+      : null;
+
     const contact = await this.prisma.whatsAppContact.upsert({
       where: { userId_phone: { userId, phone } },
-      create: { userId, phone, isRead: false, lastMessageAt: new Date() },
-      update: { isRead: false, lastMessageAt: new Date() },
-    });
-
-    // 2. Save message (skip if already imported via history sync)
-    const message = await this.prisma.whatsAppMessage.create({
-      data: {
-        userId,
-        contactId: contact.id,
-        waId,
-        direction: 'in',
-        content,
-        sentAt: new Date(),
+      create: {
+        userId, phone, displayName,
+        isRead: false,
+        lastMessageAt: new Date(),
+        lastMessageText: (msg as any).body || null,
+      },
+      update: {
+        ...(displayName ? { displayName } : {}),
+        isRead: false,
+        lastMessageAt: new Date(),
+        lastMessageText: (msg as any).body || null,
       },
     });
 
-    // 3. Emit to frontend
+    const message = await (this.prisma.whatsAppMessage as any).create({
+      data: {
+        userId,
+        contactId: contact.id,
+        waId: msg.id?.id ?? null,
+        direction: 'in',
+        content: (msg as any).body || (mediaType ? `[${mediaType}]` : '[Message]'),
+        mediaUrl,
+        mediaType,
+        quotedMsgId,
+        ack: 3,
+        sentAt: new Date((msg as any).timestamp * 1000),
+      },
+    });
+
     this.emit('message', userId, { contact, message });
 
-    // 4. Run automations
-    const event = isFirstMessage ? 'welcome' : 'message';
-    const autoMessages = await this.automationService.process(userId, contact.id, event, { message: content });
+    // Automations
+    const event = isFirst ? 'welcome' : 'message';
+    const autoMessages = await this.automationService.process(userId, contact.id, event, { message: (msg as any).body });
     for (const autoMsg of autoMessages) {
-      await this.sendMessage(userId, phone, autoMsg, contact.id, null);
+      await this.sendMessage(userId, phone, autoMsg, contact.id, null, client);
     }
 
-    // 5. AI reply (only if no automation message was sent, or always depending on config)
-    if (contact.aiEnabled && autoMessages.length === 0) {
+    // AI reply
+    if (contact.aiEnabled && autoMessages.length === 0 && (msg as any).body) {
       const history = await this.prisma.whatsAppMessage.findMany({
         where: { contactId: contact.id },
         orderBy: { sentAt: 'asc' },
         take: 10,
       });
 
-      const sock = this.connections.get(userId);
-      if (!sock) return;
-
       const aiConfig = await this.prisma.whatsAppAIConfig.findUnique({ where: { userId } });
       const delay = aiConfig?.simulatedDelayMs ?? 2000;
 
-      // Simulate typing delay
-      await sock.sendPresenceUpdate('composing', phone);
+      const chat = await (msg as any).getChat().catch(() => null);
+      if (chat) await chat.sendStateTyping().catch(() => {});
       await new Promise(r => setTimeout(r, delay));
+      if (chat) await chat.clearState().catch(() => {});
 
-      const aiResult = await this.aiService.reply(userId, phone, history, content);
+      const aiResult = await this.aiService.reply(userId, phone, history, (msg as any).body);
       if (aiResult?.text) {
-        await this.sendMessage(userId, phone, aiResult.text, contact.id, true);
-
-        // If escalate — disable AI for this contact
+        await this.sendMessage(userId, phone, aiResult.text, contact.id, true, client);
         if (aiResult.shouldEscalate) {
           await this.prisma.whatsAppContact.update({
             where: { id: contact.id },
@@ -325,17 +323,15 @@ export class WhatsAppService implements OnModuleDestroy {
         }
       }
 
-      await sock.sendPresenceUpdate('available', phone);
-
-      // 6. Qualify lead
-      const updatedHistory = await this.prisma.whatsAppMessage.findMany({
+      // Lead qualification
+      const fullHistory = await this.prisma.whatsAppMessage.findMany({
         where: { contactId: contact.id },
         orderBy: { sentAt: 'asc' },
         take: 10,
       });
-      const qualification = await this.aiService.qualify(userId, updatedHistory);
+      const qualification = await this.aiService.qualify(userId, fullHistory);
       if (qualification && Object.keys(qualification).length > 0) {
-        const updated = await this.prisma.whatsAppContact.update({
+        await this.prisma.whatsAppContact.update({
           where: { id: contact.id },
           data: {
             ...(qualification.leadName && { leadName: qualification.leadName }),
@@ -349,8 +345,6 @@ export class WhatsAppService implements OnModuleDestroy {
           },
         });
         this.emit('lead-updated', userId, { contactId: contact.id, ...qualification });
-
-        // Hot lead → automation trigger
         if (qualification.leadStatus === 'hot' && contact.leadStatus !== 'hot') {
           await this.automationService.process(userId, contact.id, 'lead_status', { status: 'hot' });
         }
@@ -358,20 +352,62 @@ export class WhatsAppService implements OnModuleDestroy {
     }
   }
 
+  // ── Messages sent from the physical phone (not via API) ───────────────────────
+
+  private async handleOutgoingFromPhone(userId: string, msg: Message): Promise<void> {
+    const phone: string = (msg as any).to;
+    if (!phone || phone.endsWith('@g.us') || phone === 'status@broadcast') return;
+
+    if (msg.id?.id) {
+      const dup = await (this.prisma.whatsAppMessage as any).findFirst({
+        where: { userId, waId: msg.id.id },
+      });
+      if (dup) return;
+    }
+
+    const contact = await this.prisma.whatsAppContact.findUnique({
+      where: { userId_phone: { userId, phone } },
+    });
+    if (!contact) return;
+
+    const message = await (this.prisma.whatsAppMessage as any).create({
+      data: {
+        userId,
+        contactId: contact.id,
+        waId: msg.id?.id ?? null,
+        direction: 'out',
+        content: (msg as any).body || `[(msg as any).type]`,
+        mediaType: (msg as any).hasMedia ? (msg as any).type : null,
+        ack: (msg as any).ack ?? 1,
+        sentAt: new Date((msg as any).timestamp * 1000),
+      },
+    });
+
+    await this.prisma.whatsAppContact.update({
+      where: { id: contact.id },
+      data: { lastMessageAt: new Date(), lastMessageText: (msg as any).body || null },
+    });
+
+    this.emit('message', userId, { contact, message });
+  }
+
+  // ── Send message (via API) ────────────────────────────────────────────────────
+
   async sendMessage(
     userId: string,
     phone: string,
     text: string,
     contactId: string,
     fromAi: boolean | null = false,
+    clientOverride?: Client,
   ): Promise<void> {
-    const sock = this.connections.get(userId);
-    if (!sock) throw new Error('WhatsApp non connecté');
+    const client = clientOverride ?? this.clients.get(userId);
+    if (!client) throw new Error('WhatsApp non connecté');
 
-    const result = await sock.sendMessage(phone, { text });
-    const waId = result?.key?.id ?? null;
+    const result = await client.sendMessage(phone, text) as any;
+    const waId: string | null = result?.id?.id ?? null;
 
-    const message = await this.prisma.whatsAppMessage.create({
+    const message = await (this.prisma.whatsAppMessage as any).create({
       data: {
         userId,
         contactId,
@@ -379,55 +415,111 @@ export class WhatsAppService implements OnModuleDestroy {
         direction: 'out',
         content: text,
         fromAi: fromAi ?? false,
+        ack: 1,
         sentAt: new Date(),
       },
     });
 
-    this.emit('message', userId, {
-      contact: { id: contactId },
-      message,
+    await this.prisma.whatsAppContact.update({
+      where: { id: contactId },
+      data: { lastMessageAt: new Date(), lastMessageText: text },
     });
+
+    this.emit('message', userId, { contact: { id: contactId }, message });
   }
 
+  // ── Send message with reply (quoted) ─────────────────────────────────────────
+
+  async sendReply(
+    userId: string,
+    phone: string,
+    text: string,
+    contactId: string,
+    quotedWaId: string,
+  ): Promise<void> {
+    const client = this.clients.get(userId);
+    if (!client) throw new Error('WhatsApp non connecté');
+
+    // Find the original message to quote it
+    const chat = await client.getChatById(phone).catch(() => null);
+    if (!chat) {
+      await this.sendMessage(userId, phone, text, contactId, false);
+      return;
+    }
+
+    // Fetch messages to find the quoted one
+    const fetchedMsgs = await (chat as any).fetchMessages({ limit: 50 }).catch(() => []) as any[];
+    const originalMsg = fetchedMsgs.find((m: any) => m.id?.id === quotedWaId);
+
+    let result: any;
+    if (originalMsg) {
+      result = await originalMsg.reply(text);
+    } else {
+      result = await client.sendMessage(phone, text);
+    }
+
+    const waId: string | null = result?.id?.id ?? null;
+
+    const message = await (this.prisma.whatsAppMessage as any).create({
+      data: {
+        userId,
+        contactId,
+        waId,
+        direction: 'out',
+        content: text,
+        quotedMsgId: quotedWaId,
+        ack: 1,
+        sentAt: new Date(),
+      },
+    });
+
+    await this.prisma.whatsAppContact.update({
+      where: { id: contactId },
+      data: { lastMessageAt: new Date(), lastMessageText: text },
+    });
+
+    this.emit('message', userId, { contact: { id: contactId }, message });
+  }
+
+  // ── Disconnect ────────────────────────────────────────────────────────────────
+
   async disconnect(userId: string): Promise<void> {
-    const sock = this.connections.get(userId);
-    if (sock) {
-      await sock.logout();
-      this.connections.delete(userId);
+    const client = this.clients.get(userId);
+    if (client) {
+      await client.logout().catch(() => {});
+      await client.destroy().catch(() => {});
+      this.clients.delete(userId);
     }
     await this.prisma.whatsAppSession.upsert({
       where: { userId },
       create: { userId, connected: false },
       update: { connected: false },
     });
-    fs.rmSync(this.getAuthDir(userId), { recursive: true, force: true });
     this.emit('disconnected', userId, {});
   }
 
   async getStatus(userId: string) {
     const session = await this.prisma.whatsAppSession.findUnique({ where: { userId } });
-    const isSocketOpen = this.connections.has(userId);
     return {
-      connected: (session?.connected ?? false) && isSocketOpen,
+      connected: (session?.connected ?? false) && this.clients.has(userId),
       phone: session?.phone ?? null,
     };
   }
 
-  // Reconnect all sessions on startup (if auth files exist)
   async reconnectAll(): Promise<void> {
-    const authBase = path.join(process.cwd(), '.wa-auth');
-    if (!fs.existsSync(authBase)) return;
-    const userDirs = fs.readdirSync(authBase);
-    for (const userId of userDirs) {
-      this.logger.log(`Auto-reconnecting WhatsApp for user ${userId}`);
-      this.connect(userId).catch(err => this.logger.error(`Reconnect failed for ${userId}:`, err));
+    const sessions = await this.prisma.whatsAppSession.findMany({ where: { connected: true } });
+    for (const s of sessions) {
+      this.logger.log(`Auto-reconnecting ${s.userId}`);
+      this.connect(s.userId).catch(err =>
+        this.logger.error(`Reconnect failed ${s.userId}:`, err),
+      );
     }
   }
 
   onModuleDestroy() {
-    for (const [, sock] of this.connections) {
-      sock.end(undefined);
+    for (const [, client] of this.clients) {
+      client.destroy().catch(() => {});
     }
-    this.connections.clear();
+    this.clients.clear();
   }
 }

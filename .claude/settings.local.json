@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm --version)",
+      "Bash(\"/c/Users/Silikin Store/AppData/Roaming/npm/pnpm\" --version)",
+      "Bash(node -e \"require\\('child_process'\\).execSync\\('where pnpm', {stdio:'inherit'}\\)\")",
+      "Bash(\"/c/Users/Silikin Store/AppData/Roaming/npm/pnpm\" install)",
+      "Bash(\"/c/Users/Silikin Store/AppData/Roaming/npm/pnpm\" approve-builds)",
+      "Bash(npm install:*)",
+      "Bash(rm \"c:\\\\Users\\\\Silikin Store\\\\kza-mono\\\\pnpm-lock.yaml\")",
+      "Bash(rm -rf \"c:\\\\Users\\\\Silikin Store\\\\kza-mono\\\\node_modules\")",
+      "Bash(node_modules/.bin/turbo run:*)",
+      "Bash(taskkill /F /IM node.exe)",
+      "Bash(\"../../node_modules/.bin/tsc\")",
+      "Bash(node_modules/.bin/prisma migrate:*)",
+      "Bash(npx tsc:*)"
+    ]
+  }
+}

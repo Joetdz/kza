@@ -120,14 +120,15 @@ model WhatsAppSession {
 }
 
 model WhatsAppContact {
-  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId        String    @map("user_id")
-  phone         String
-  displayName   String?   @map("display_name")
-  isRead        Boolean   @default(false) @map("is_read")
-  isArchived    Boolean   @default(false) @map("is_archived")
-  assignedAgent String?   @map("assigned_agent")
-  lastMessageAt DateTime? @map("last_message_at")
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId          String    @map("user_id")
+  phone           String
+  displayName     String?   @map("display_name")
+  isRead          Boolean   @default(false) @map("is_read")
+  isArchived      Boolean   @default(false) @map("is_archived")
+  assignedAgent   String?   @map("assigned_agent")
+  lastMessageAt   DateTime? @map("last_message_at")
+  lastMessageText String?   @map("last_message_text")
   leadStatus    String    @default("cold") @map("lead_status")
   leadScore     Int       @default(0) @map("lead_score")
   leadName      String?   @map("lead_name")
@@ -157,15 +158,17 @@ model WhatsAppMessage {
   waId         String?  @map("wa_id")
   direction    String
   content      String
+  mediaUrl     String?  @map("media_url")
+  mediaType    String?  @map("media_type")
+  quotedMsgId  String?  @map("quoted_msg_id")
+  ack          Int      @default(0)
   fromAi       Boolean  @default(false) @map("from_ai")
   automationId String?  @map("automation_id")
-  status       String   @default("sent")
   sentAt       DateTime @map("sent_at")
   createdAt    DateTime @default(now()) @map("created_at")
 
   contact WhatsAppContact @relation(fields: [contactId], references: [id], onDelete: Cascade)
 
-  @@unique([contactId, waId])
   @@index([userId])
   @@index([contactId])
   @@map("wa_messages")
