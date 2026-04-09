@@ -119,7 +119,22 @@ export class WhatsAppService implements OnModuleDestroy {
         if (!msg.message) continue;
 
         const phone = msg.key.remoteJid ?? '';
-        if (!phone || phone.includes('@g.us')) continue; // skip group messages
+        if (!phone) continue;
+
+        // Skip group messages
+        if (phone.includes('@g.us')) continue;
+
+        // Skip status broadcasts (WhatsApp Status / Stories)
+        if (phone === 'status@broadcast') continue;
+
+        // Skip status update message types
+        const msgTypes = Object.keys(msg.message);
+        const isStatusMsg = msgTypes.some(t =>
+          t === 'statusMentionMessage' ||
+          t === 'viewOnceMessageV2Extension' ||
+          t === 'broadcastListMessage'
+        );
+        if (isStatusMsg) continue;
 
         const content =
           msg.message?.conversation ??

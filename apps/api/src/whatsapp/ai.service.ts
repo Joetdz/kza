@@ -47,7 +47,12 @@ export class AiService {
     const grouped: Record<string, string[]> = {};
     for (const e of entries) {
       if (!grouped[e.category]) grouped[e.category] = [];
-      grouped[e.category].push(`**${e.title}**\n${e.content}`);
+
+      let block = `**${e.title}**\n${e.content}`;
+      if (e.closingScript) {
+        block += `\n\n📌 Script de closing pour ce produit:\n"${e.closingScript}"`;
+      }
+      grouped[e.category].push(block);
     }
 
     return Object.entries(grouped)
@@ -100,6 +105,7 @@ export class AiService {
         : '',
       kb ? `\n\n--- BASE DE CONNAISSANCE ---\n${kb}` : '',
       '\nRéponds de façon concise (2-4 phrases max). Réponds dans la langue du client.',
+      kb ? '\nSi un produit correspond à la demande du client et qu\'un script de closing est disponible, utilise-le naturellement en fin de réponse.' : '',
     ].filter(Boolean).join('\n');
 
     // Construire l'historique (5 derniers messages max)

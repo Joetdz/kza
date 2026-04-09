@@ -10,6 +10,12 @@ export class KbEntryDto {
   @IsString()
   content: string;
 
+  @IsOptional() @IsString()
+  closingScript?: string;
+
+  @IsOptional() @IsString()
+  productId?: string;
+
   @IsOptional() @IsArray() @IsString({ each: true })
   tags?: string[];
 
@@ -26,6 +32,12 @@ export class UpdateKbEntryDto {
 
   @IsOptional() @IsString()
   content?: string;
+
+  @IsOptional() @IsString()
+  closingScript?: string;
+
+  @IsOptional() @IsString()
+  productId?: string;
 
   @IsOptional() @IsArray() @IsString({ each: true })
   tags?: string[];

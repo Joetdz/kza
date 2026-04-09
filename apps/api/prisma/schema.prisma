@@ -226,15 +226,17 @@ model WhatsAppAIConfig {
 }
 
 model WhatsAppKBEntry {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId    String   @map("user_id")
-  category  String
-  title     String
-  content   String
-  tags      String[]
-  enabled   Boolean  @default(true)
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId        String   @map("user_id")
+  category      String
+  title         String
+  content       String
+  closingScript String?  @map("closing_script")
+  productId     String?  @map("product_id")
+  tags          String[]
+  enabled       Boolean  @default(true)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
 
   @@index([userId])
   @@map("wa_kb_entries")
