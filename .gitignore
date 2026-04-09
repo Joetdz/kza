@@ -1,0 +1,26 @@
+node_modules/
+apps/web/node_modules/
+apps/api/node_modules/
+apps/web/dist/
+apps/api/dist/
+
+# Variables d'environnement — NE JAMAIS COMMITTER
+.env
+apps/web/.env.local
+apps/api/.env
+
+# Vite
+apps/web/.vite/
+
+# NestJS
+apps/api/*.tsbuildinfo
+
+# WhatsApp auth sessions (contient des clés privées)
+apps/api/.wa-auth/
+
+# Prisma generated
+apps/api/node_modules/.prisma/
+
+# OS
+.DS_Store
+Thumbs.db

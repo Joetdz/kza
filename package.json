@@ -1,0 +1,28 @@
+{
+  "name": "kza-workspace",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo run dev",
+    "dev:web": "turbo run dev --filter=kza-ecommerce-manager",
+    "dev:api": "turbo run start:dev --filter=kza-api",
+    "build": "turbo run build",
+    "build:web": "turbo run build --filter=kza-ecommerce-manager",
+    "build:api": "turbo run build --filter=kza-api",
+    "start": "turbo run start:prod --filter=kza-api",
+    "migrate": "node scripts/migrate.js"
+  },
+  "devDependencies": {
+    "dotenv": "^17.4.0",
+    "pg": "^8.20.0",
+    "turbo": "^2.3.3"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "packageManager": "npm@11.11.0"
+}

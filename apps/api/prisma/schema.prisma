@@ -1,0 +1,257 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Product {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name            String
+  sku             String   @unique
+  category        String   @default("")
+  quantity        Float    @default(0)
+  alertThreshold  Float    @default(5)  @map("alert_threshold")
+  supplier        String   @default("")
+  acquisitionCost Float    @default(0)  @map("acquisition_cost")
+  sellingPrice    Float    @default(0)  @map("selling_price")
+  imageUrl        String?  @map("image_url")
+  entryDate       DateTime @map("entry_date") @db.Date
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt     @map("updated_at")
+  userId          String?  @map("user_id")
+
+  movements StockMovement[]
+  saleItems SaleItem[]
+  expenses  Expense[]
+
+  @@index([userId])
+  @@map("products")
+}
+
+model StockMovement {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  productId String   @map("product_id") @db.Uuid
+  type      String
+  quantity  Float
+  reason    String   @default("")
+  date      DateTime @db.Date
+  createdAt DateTime @default(now()) @map("created_at")
+  userId    String?  @map("user_id")
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("stock_movements")
+}
+
+model Sale {
+  id           String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  channel      String
+  date         DateTime   @db.Date
+  note         String?
+  status       String     @default("paid")
+  deliveryZone String?    @map("delivery_zone")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  userId       String?    @map("user_id")
+
+  items SaleItem[]
+
+  @@index([userId])
+  @@map("sales")
+}
+
+model SaleItem {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  saleId    String   @map("sale_id") @db.Uuid
+  productId String?  @map("product_id") @db.Uuid
+  quantity  Float
+  unitPrice Float    @map("unit_price")
+
+  sale    Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  product Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@map("sale_items")
+}
+
+model Expense {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  category    String
+  productId   String?  @map("product_id") @db.Uuid
+  channel     String?
+  amount      Float
+  description String   @default("")
+  date        DateTime @db.Date
+  createdAt   DateTime @default(now()) @map("created_at")
+  userId      String?  @map("user_id")
+
+  product Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@map("expenses")
+}
+
+model SalesGoal {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  productId String   @map("product_id")
+  targetQty Int      @default(1) @map("target_qty")
+  createdAt DateTime @default(now()) @map("created_at")
+  userId    String?  @map("user_id")
+
+  @@index([userId])
+  @@map("sales_goals")
+}
+
+// ─── WhatsApp CRM ─────────────────────────────────────────────────────────────
+
+model WhatsAppSession {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @unique @map("user_id")
+  authState Json?    @map("auth_state")
+  connected Boolean  @default(false)
+  phone     String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("wa_sessions")
+}
+
+model WhatsAppContact {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId        String    @map("user_id")
+  phone         String
+  displayName   String?   @map("display_name")
+  isRead        Boolean   @default(false) @map("is_read")
+  isArchived    Boolean   @default(false) @map("is_archived")
+  assignedAgent String?   @map("assigned_agent")
+  lastMessageAt DateTime? @map("last_message_at")
+  leadStatus    String    @default("cold") @map("lead_status")
+  leadScore     Int       @default(0) @map("lead_score")
+  leadName      String?   @map("lead_name")
+  leadNeed      String?   @map("lead_need")
+  leadBudget    String?   @map("lead_budget")
+  leadCity      String?   @map("lead_city")
+  leadUrgency   String?   @map("lead_urgency")
+  leadProduct   String?   @map("lead_product")
+  aiEnabled     Boolean   @default(true) @map("ai_enabled")
+  source        String?
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  messages WhatsAppMessage[]
+  notes    WhatsAppNote[]
+  tags     WhatsAppContactTag[]
+
+  @@unique([userId, phone])
+  @@index([userId])
+  @@map("wa_contacts")
+}
+
+model WhatsAppMessage {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId       String   @map("user_id")
+  contactId    String   @map("contact_id") @db.Uuid
+  direction    String
+  content      String
+  fromAi       Boolean  @default(false) @map("from_ai")
+  automationId String?  @map("automation_id")
+  status       String   @default("sent")
+  sentAt       DateTime @map("sent_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  contact WhatsAppContact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([contactId])
+  @@map("wa_messages")
+}
+
+model WhatsAppNote {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  contactId String   @map("contact_id") @db.Uuid
+  userId    String   @map("user_id")
+  content   String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  contact WhatsAppContact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@map("wa_notes")
+}
+
+model WhatsAppTag {
+  id       String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId   String   @map("user_id")
+  name     String
+  color    String   @default("#6366f1")
+
+  contacts WhatsAppContactTag[]
+
+  @@unique([userId, name])
+  @@map("wa_tags")
+}
+
+model WhatsAppContactTag {
+  contactId String @map("contact_id") @db.Uuid
+  tagId     String @map("tag_id") @db.Uuid
+
+  contact WhatsAppContact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  tag     WhatsAppTag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([contactId, tagId])
+  @@map("wa_contact_tags")
+}
+
+model WhatsAppAIConfig {
+  id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId              String   @unique @map("user_id")
+  enabled             Boolean  @default(true)
+  systemPrompt        String   @default("") @map("system_prompt")
+  businessObjective   String   @default("") @map("business_objective")
+  brandPersonality    String   @default("") @map("brand_personality")
+  primaryLanguage     String   @default("fr") @map("primary_language")
+  blacklistTopics     String[] @map("blacklist_topics")
+  escalationKeywords  String[] @map("escalation_keywords")
+  escalationMessage   String   @default("Je vous transfère à un agent.") @map("escalation_message")
+  activeHours         Json?    @map("active_hours")
+  outsideHoursMessage String   @default("Nous sommes actuellement fermés.") @map("outside_hours_message")
+  simulatedDelayMs    Int      @default(2000) @map("simulated_delay_ms")
+  confidenceThreshold Float    @default(0.7) @map("confidence_threshold")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  @@map("wa_ai_configs")
+}
+
+model WhatsAppKBEntry {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @map("user_id")
+  category  String
+  title     String
+  content   String
+  tags      String[]
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@map("wa_kb_entries")
+}
+
+model WhatsAppAutomation {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId        String   @map("user_id")
+  name          String
+  enabled       Boolean  @default(true)
+  trigger       String
+  triggerConfig Json     @map("trigger_config")
+  action        String
+  actionConfig  Json     @map("action_config")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@map("wa_automations")
+}

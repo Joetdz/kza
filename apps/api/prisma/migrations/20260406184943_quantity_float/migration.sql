@@ -1,0 +1,11 @@
+-- AlterTable
+ALTER TABLE "products" ALTER COLUMN "quantity" SET DEFAULT 0,
+ALTER COLUMN "quantity" SET DATA TYPE DOUBLE PRECISION,
+ALTER COLUMN "alert_threshold" SET DEFAULT 5,
+ALTER COLUMN "alert_threshold" SET DATA TYPE DOUBLE PRECISION;
+
+-- AlterTable
+ALTER TABLE "sale_items" ALTER COLUMN "quantity" SET DATA TYPE DOUBLE PRECISION;
+
+-- AlterTable
+ALTER TABLE "stock_movements" ALTER COLUMN "quantity" SET DATA TYPE DOUBLE PRECISION;
