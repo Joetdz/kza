@@ -36,7 +36,7 @@ export interface WaMessage {
   mediaUrl?: string;
   mediaType?: string;
   quotedMsgId?: string;
-  ack: number; // 0=pending 1=sent 2=delivered 3=read 4=played
+  ack: number;
   fromAi: boolean;
   sentAt: string;
 }
@@ -49,6 +49,8 @@ export interface SyncState {
 
 export function useWhatsApp() {
   const socketRef = useRef<Socket | null>(null);
+  const loadedRef = useRef<Set<string>>(new Set()); // tracks which contactIds are fetched
+
   const [connected, setConnected] = useState(false);
   const [phone, setPhone] = useState<string | null>(null);
   const [qr, setQr] = useState<string | null>(null);
@@ -57,7 +59,23 @@ export function useWhatsApp() {
   const [messages, setMessages] = useState<Record<string, WaMessage[]>>({});
   const [socketReady, setSocketReady] = useState(false);
   const [sync, setSync] = useState<SyncState>({ status: 'idle', imported: 0, total: 0 });
-  const [typingContacts, setTypingContacts] = useState<Set<string>>(new Set());
+
+  // Stable load function — no dependency on messages state
+  const loadMessages = useCallback(async (contactId: string, force = false) => {
+    if (!force && loadedRef.current.has(contactId)) return;
+    try {
+      const data = await waApi.getMessages(contactId);
+      loadedRef.current.add(contactId);
+      setMessages(prev => ({ ...prev, [contactId]: data }));
+    } catch { /* ignore */ }
+  }, []);
+
+  const loadContacts = useCallback(async (params?: { filter?: string; search?: string }) => {
+    try {
+      const data = await waApi.getContacts(params);
+      setContacts(data);
+    } catch { /* ignore */ }
+  }, []);
 
   useEffect(() => {
     let sock: Socket;
@@ -93,9 +111,11 @@ export function useWhatsApp() {
         setConnected(false);
         setPhone(null);
         setLoading(null);
+        setMessages({});
+        loadedRef.current.clear();
       });
 
-      // Sync events
+      // Sync progress
       sock.on('sync-start', ({ total }: { total: number }) => {
         setSync({ status: 'syncing', imported: 0, total });
       });
@@ -105,32 +125,54 @@ export function useWhatsApp() {
       sock.on('sync-complete', ({ imported, contacts: fresh }: { imported: number; contacts: WaContact[] }) => {
         setSync({ status: 'done', imported, total: imported });
         setContacts(fresh);
+        // Clear message cache so they're re-fetched with correct IDs
+        setMessages({});
+        loadedRef.current.clear();
         setTimeout(() => setSync({ status: 'idle', imported: 0, total: 0 }), 4000);
       });
 
-      // Real-time message
+      // Real-time incoming/outgoing message
       sock.on('message', ({ contact, message }: { contact: any; message: WaMessage }) => {
-        setMessages(prev => ({
-          ...prev,
-          [message.contactId]: [...(prev[message.contactId] ?? []), message],
-        }));
+        // Add to message list if the contact is already loaded
+        setMessages(prev => {
+          if (!prev[message.contactId] && !loadedRef.current.has(message.contactId)) {
+            // Contact messages not loaded yet — don't init with just one message,
+            // it will be fetched on demand. Just return prev.
+            return prev;
+          }
+          const existing = prev[message.contactId] ?? [];
+          // Dedup by id
+          if (existing.find(m => m.id === message.id)) return prev;
+          return { ...prev, [message.contactId]: [...existing, message] };
+        });
+
+        // Update contact in list
         setContacts(prev => {
           const exists = prev.find(c => c.id === contact.id);
-          if (!exists) { loadContacts(); return prev; }
+          if (!exists) {
+            // New contact appeared — reload list
+            loadContacts();
+            return prev;
+          }
           return prev.map(c =>
             c.id === contact.id
-              ? { ...c, lastMessageAt: message.sentAt, lastMessageText: message.content, isRead: message.direction === 'out' }
+              ? {
+                  ...c,
+                  lastMessageAt: message.sentAt,
+                  lastMessageText: message.content,
+                  isRead: message.direction === 'out',
+                }
               : c
           );
         });
       });
 
-      // ACK update (checkmarks)
+      // ACK checkmarks update
       sock.on('message-ack', ({ waId, ack }: { waId: string; ack: number }) => {
         setMessages(prev => {
-          const updated = { ...prev };
-          for (const [cid, msgs] of Object.entries(updated)) {
-            updated[cid] = msgs.map(m => m.waId === waId ? { ...m, ack } : m);
+          const updated: Record<string, WaMessage[]> = {};
+          for (const [cid, msgs] of Object.entries(prev)) {
+            updated[cid] = msgs.map(m => (m.waId === waId ? { ...m, ack } : m));
           }
           return updated;
         });
@@ -139,42 +181,39 @@ export function useWhatsApp() {
       // Revoked message
       sock.on('message-revoked', ({ waId }: { waId: string }) => {
         setMessages(prev => {
-          const updated = { ...prev };
-          for (const [cid, msgs] of Object.entries(updated)) {
-            updated[cid] = msgs.map(m => m.waId === waId ? { ...m, content: '🚫 Message supprimé' } : m);
+          const updated: Record<string, WaMessage[]> = {};
+          for (const [cid, msgs] of Object.entries(prev)) {
+            updated[cid] = msgs.map(m =>
+              m.waId === waId ? { ...m, content: '🚫 Message supprimé' } : m
+            );
           }
           return updated;
         });
       });
 
       sock.on('lead-updated', (data: any) => {
-        setContacts(prev => prev.map(c => c.id === data.contactId ? { ...c, ...data } : c));
+        setContacts(prev => prev.map(c => (c.id === data.contactId ? { ...c, ...data } : c)));
       });
       sock.on('contact-updated', (data: any) => {
-        setContacts(prev => prev.map(c => c.id === data.contactId ? { ...c, ...data } : c));
+        setContacts(prev => prev.map(c => (c.id === data.contactId ? { ...c, ...data } : c)));
       });
 
       socketRef.current = sock;
     });
 
     return () => { sock?.disconnect(); };
-  }, []);
-
-  const loadContacts = useCallback(async (params?: { filter?: string; search?: string }) => {
-    const data = await waApi.getContacts(params);
-    setContacts(data);
-  }, []);
-
-  const loadMessages = useCallback(async (contactId: string, force = false) => {
-    if (!force && messages[contactId]) return;
-    const data = await waApi.getMessages(contactId);
-    setMessages(prev => ({ ...prev, [contactId]: data }));
-  }, [messages]);
+  }, [loadContacts]);
 
   const initConnect = useCallback(async () => { await waApi.connect(); }, []);
+
   const initDisconnect = useCallback(async () => {
     await waApi.disconnect();
-    setConnected(false); setPhone(null); setQr(null);
+    setConnected(false);
+    setPhone(null);
+    setQr(null);
+    setContacts([]);
+    setMessages({});
+    loadedRef.current.clear();
   }, []);
 
   const sendMessage = useCallback(async (contactId: string, text: string, quotedMsgId?: string) => {
@@ -183,20 +222,21 @@ export function useWhatsApp() {
 
   const updateContact = useCallback(async (id: string, data: Partial<WaContact>) => {
     const updated = await waApi.updateContact(id, data);
-    setContacts(prev => prev.map(c => c.id === id ? { ...c, ...updated } : c));
+    setContacts(prev => prev.map(c => (c.id === id ? { ...c, ...updated } : c)));
     return updated;
   }, []);
 
-  // Load initial status
+  // Load initial status on mount
   useEffect(() => {
     waApi.getStatus().then(({ connected: c, phone: p }) => {
-      setConnected(c); setPhone(p);
+      setConnected(c);
+      setPhone(p);
       if (c) loadContacts();
     }).catch(() => {});
-  }, []);
+  }, [loadContacts]);
 
   return {
-    connected, phone, qr, loading, contacts, messages, socketReady, sync, typingContacts,
+    connected, phone, qr, loading, contacts, messages, socketReady, sync,
     loadContacts, loadMessages, sendMessage, updateContact,
     initConnect, initDisconnect,
     setContacts, setMessages,

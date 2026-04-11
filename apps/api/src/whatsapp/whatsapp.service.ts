@@ -100,9 +100,17 @@ export class WhatsAppService implements OnModuleDestroy {
       await this.handleIncoming(userId, msg, client);
     });
 
-    // Messages sent from the phone (not from our app)
+    // Messages sent from the phone (not via our API)
+    // message_create fires for ALL outgoing — we skip ones already saved by sendMessage()
     client.on('message_create', async (msg: Message) => {
       if (!msg.fromMe) return;
+      // Skip if this waId was already saved by our sendMessage() call
+      if (msg.id?.id) {
+        const dup = await (this.prisma.whatsAppMessage as any).findFirst({
+          where: { userId, waId: msg.id.id },
+        });
+        if (dup) return;
+      }
       await this.handleOutgoingFromPhone(userId, msg);
     });
 
@@ -126,7 +134,10 @@ export class WhatsAppService implements OnModuleDestroy {
       this.emit('message-revoked', userId, { waId: revokedMsg.id.id });
     });
 
-    await client.initialize();
+    // Fire-and-forget — initialize runs in background, events push via WebSocket
+    client.initialize().catch(err =>
+      this.logger.error(`Initialize failed for ${userId}:`, err),
+    );
   }
 
   // ── Import full history on connect ────────────────────────────────────────────
@@ -358,17 +369,22 @@ export class WhatsAppService implements OnModuleDestroy {
     const phone: string = (msg as any).to;
     if (!phone || phone.endsWith('@g.us') || phone === 'status@broadcast') return;
 
-    if (msg.id?.id) {
-      const dup = await (this.prisma.whatsAppMessage as any).findFirst({
-        where: { userId, waId: msg.id.id },
-      });
-      if (dup) return;
-    }
+    const body: string = (msg as any).body || '';
 
-    const contact = await this.prisma.whatsAppContact.findUnique({
+    // Upsert contact — create if first time sending to this number from phone
+    const contact = await this.prisma.whatsAppContact.upsert({
       where: { userId_phone: { userId, phone } },
+      create: {
+        userId, phone,
+        isRead: true,
+        lastMessageAt: new Date(),
+        lastMessageText: body || null,
+      },
+      update: {
+        lastMessageAt: new Date(),
+        lastMessageText: body || null,
+      },
     });
-    if (!contact) return;
 
     const message = await (this.prisma.whatsAppMessage as any).create({
       data: {
@@ -376,7 +392,7 @@ export class WhatsAppService implements OnModuleDestroy {
         contactId: contact.id,
         waId: msg.id?.id ?? null,
         direction: 'out',
-        content: (msg as any).body || `[(msg as any).type]`,
+        content: (msg as any).body || `[${(msg as any).type ?? 'media'}]`,
         mediaType: (msg as any).hasMedia ? (msg as any).type : null,
         ack: (msg as any).ack ?? 1,
         sentAt: new Date((msg as any).timestamp * 1000),

@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Search, Bot, BotOff, X, Send, Paperclip, Smile,
-  ChevronRight, Info, Phone, Video, MoreVertical,
+  Info, Phone, Video,
   Reply, CheckCheck, Check, Clock, Mic, Image, FileText,
-  UserCheck, Tag, StickyNote, Plus, ChevronDown,
+  Plus,
 } from 'lucide-react';
 import { useWhatsApp, WaContact, WaMessage } from '../../hooks/useWhatsApp';
 import { waApi } from '../../api/whatsapp';
@@ -155,7 +155,6 @@ export function Inbox() {
   // CRM panel state
   const [notes, setNotes] = useState<any[]>([]);
   const [noteText, setNoteText] = useState('');
-  const [tags, setTags] = useState<any[]>([]);
   const [showNoteInput, setShowNoteInput] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -163,6 +162,13 @@ export function Inbox() {
 
   const selectedContact = contacts.find(c => c.id === selectedId) ?? null;
   const selectedMessages = selectedId ? (messages[selectedId] ?? []) : [];
+
+  // If sync completed and selectedId is now stale (contact was re-created with new ID), reset it
+  useEffect(() => {
+    if (sync.status === 'done' && selectedId && !contacts.find(c => c.id === selectedId)) {
+      setSelectedId(null);
+    }
+  }, [sync.status, contacts]);
 
   useEffect(() => {
     loadContacts({ filter: filter || undefined, search: search || undefined });
@@ -174,7 +180,6 @@ export function Inbox() {
     waApi.markRead(selectedId).catch(() => {});
     setContacts(prev => prev.map(c => c.id === selectedId ? { ...c, isRead: true } : c));
     waApi.getNotes(selectedId).then(setNotes).catch(() => {});
-    waApi.getTags().then(setTags).catch(() => {});
     setRepliedTo(null);
   }, [selectedId]);
 
