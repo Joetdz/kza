@@ -23,9 +23,10 @@ function AppInner() {
   const { session, loading: authLoading } = useAuth();
   const { hydrate, loading, error, clearError } = useStore();
 
+  const userId = session?.user?.id;
   useEffect(() => {
-    if (session) hydrate();
-  }, [session, hydrate]);
+    if (userId) hydrate();
+  }, [userId, hydrate]);
 
   // Chargement de l'état d'authentification
   if (authLoading) {
