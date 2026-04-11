@@ -169,7 +169,7 @@ model WhatsAppMessage {
 
   contact WhatsAppContact @relation(fields: [contactId], references: [id], onDelete: Cascade)
 
-  @@index([userId])
+  @@unique([userId, waId])
   @@index([contactId])
   @@map("wa_messages")
 }

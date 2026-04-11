@@ -13,6 +13,7 @@ export type WaGatewayCallback = (event: string, userId: string, data: any) => vo
 export class WhatsAppService implements OnModuleDestroy {
   private readonly logger = new Logger(WhatsAppService.name);
   private clients = new Map<string, Client>();
+  private importedUsers = new Set<string>(); // prevent double import on reconnect
   private gatewayEmit: WaGatewayCallback | null = null;
 
   constructor(
@@ -74,15 +75,19 @@ export class WhatsAppService implements OnModuleDestroy {
       this.emit('connected', userId, { phone });
       this.logger.log(`WhatsApp ready for ${userId} (${phone})`);
 
-      // Import full chat history in background
-      this.importAllChats(userId, client).catch(err =>
-        this.logger.error(`Import failed for ${userId}:`, err),
-      );
+      // Import full chat history only once per session (not on every reconnect)
+      if (!this.importedUsers.has(userId)) {
+        this.importedUsers.add(userId);
+        this.importAllChats(userId, client).catch(err =>
+          this.logger.error(`Import failed for ${userId}:`, err),
+        );
+      }
     });
 
     client.on('disconnected', async (reason: string) => {
       this.logger.log(`WhatsApp disconnected for ${userId}: ${reason}`);
       this.clients.delete(userId);
+      this.importedUsers.delete(userId); // allow re-import if reconnecting after logout
       await this.prisma.whatsAppSession.upsert({
         where: { userId },
         create: { userId, connected: false },
@@ -180,15 +185,8 @@ export class WhatsAppService implements OnModuleDestroy {
         });
 
         if (msgs.length > 0) {
-          const incomingIds = msgs.map((m: any) => m.id?.id).filter(Boolean);
-          const existing = await (this.prisma.whatsAppMessage as any).findMany({
-            where: { contactId: dbContact.id, waId: { in: incomingIds } },
-            select: { waId: true },
-          });
-          const existingSet = new Set(existing.map((m: any) => m.waId));
-
           const toInsert = msgs
-            .filter((m: any) => m.id?.id && !existingSet.has(m.id.id))
+            .filter((m: any) => m.id?.id) // only messages with a waId
             .map((m: any) => ({
               userId,
               contactId: dbContact.id,
@@ -201,7 +199,11 @@ export class WhatsAppService implements OnModuleDestroy {
             }));
 
           if (toInsert.length > 0) {
-            await (this.prisma.whatsAppMessage as any).createMany({ data: toInsert });
+            // skipDuplicates enforced by @@unique([userId, waId]) in DB
+            await (this.prisma.whatsAppMessage as any).createMany({
+              data: toInsert,
+              skipDuplicates: true,
+            });
           }
         }
       } catch (err: any) {
