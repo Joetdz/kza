@@ -37,27 +37,60 @@ export class AiService {
   }
 
   private async getKnowledgeBase(userId: string): Promise<string> {
+    const sections: string[] = [];
+
+    // ── 1. Stock réel (automatique) ────────────────────────────────────────────
+    const products = await this.prisma.product.findMany({
+      where: { userId },
+      orderBy: { name: 'asc' },
+    });
+
+    if (products.length > 0) {
+      const productLines = products.map(p => {
+        const dispo = p.quantity > 0 ? `✅ En stock (${p.quantity} unité${p.quantity > 1 ? 's' : ''})` : '❌ Rupture de stock';
+        const prix = p.sellingPrice > 0 ? `Prix: ${p.sellingPrice}` : '';
+        const cat = p.category ? `Catégorie: ${p.category}` : '';
+        return `- **${p.name}** | ${dispo}${prix ? ` | ${prix}` : ''}${cat ? ` | ${cat}` : ''}`;
+      });
+      sections.push(`=== CATALOGUE PRODUITS (STOCK EN TEMPS RÉEL) ===\n${productLines.join('\n')}`);
+    }
+
+    // ── 2. Base de connaissance manuelle ───────────────────────────────────────
     const entries = await this.prisma.whatsAppKBEntry.findMany({
       where: { userId, enabled: true },
       orderBy: { category: 'asc' },
     });
 
-    if (entries.length === 0) return '';
+    if (entries.length > 0) {
+      const grouped: Record<string, string[]> = {};
+      for (const e of entries) {
+        if (!grouped[e.category]) grouped[e.category] = [];
 
-    const grouped: Record<string, string[]> = {};
-    for (const e of entries) {
-      if (!grouped[e.category]) grouped[e.category] = [];
+        let block = `**${e.title}**\n${e.content}`;
 
-      let block = `**${e.title}**\n${e.content}`;
-      if (e.closingScript) {
-        block += `\n\n📌 Script de closing pour ce produit:\n"${e.closingScript}"`;
+        // Enrichir avec les données stock si l'entrée est liée à un produit
+        if (e.productId) {
+          const linkedProduct = products.find(p => p.id === e.productId);
+          if (linkedProduct) {
+            const dispo = linkedProduct.quantity > 0
+              ? `✅ En stock (${linkedProduct.quantity} unité${linkedProduct.quantity > 1 ? 's' : ''})`
+              : '❌ Rupture de stock';
+            block += `\nDisponibilité: ${dispo} | Prix: ${linkedProduct.sellingPrice}`;
+          }
+        }
+
+        if ((e as any).closingScript) {
+          block += `\n\n📌 Script de closing:\n"${(e as any).closingScript}"`;
+        }
+        grouped[e.category].push(block);
       }
-      grouped[e.category].push(block);
+
+      for (const [cat, items] of Object.entries(grouped)) {
+        sections.push(`=== ${cat.toUpperCase()} ===\n${items.join('\n\n')}`);
+      }
     }
 
-    return Object.entries(grouped)
-      .map(([cat, items]) => `=== ${cat.toUpperCase()} ===\n${items.join('\n\n')}`)
-      .join('\n\n');
+    return sections.join('\n\n');
   }
 
   private isWithinActiveHours(activeHours: any): boolean {
@@ -103,9 +136,13 @@ export class AiService {
       aiConfig.blacklistTopics.length > 0
         ? `Sujets à éviter: ${aiConfig.blacklistTopics.join(', ')}`
         : '',
-      kb ? `\n\n--- BASE DE CONNAISSANCE ---\n${kb}` : '',
-      '\nRéponds de façon concise (2-4 phrases max). Réponds dans la langue du client.',
-      kb ? '\nSi un produit correspond à la demande du client et qu\'un script de closing est disponible, utilise-le naturellement en fin de réponse.' : '',
+      kb ? `\n\n--- BASE DE CONNAISSANCE & STOCK ---\n${kb}` : '',
+      '\nRègles importantes:',
+      '- Réponds de façon concise (2-4 phrases max)',
+      '- Réponds toujours dans la langue du client',
+      '- Si un produit est en rupture de stock (❌), dis-le clairement et propose une alternative si disponible',
+      '- Si un produit est disponible (✅), mentionne la disponibilité pour rassurer le client',
+      '- Si un script de closing est disponible pour le produit demandé, utilise-le naturellement',
     ].filter(Boolean).join('\n');
 
     // Construire l'historique (5 derniers messages max)
