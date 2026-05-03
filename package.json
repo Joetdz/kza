@@ -13,7 +13,7 @@
     "build": "turbo run build",
     "build:web": "turbo run build --filter=kza-ecommerce-manager",
     "build:api": "turbo run build --filter=kza-api",
-    "start": "turbo run start:prod --filter=kza-api",
+    "start": "turbo run start:prod --filter=kza-api --filter=kza-ecommerce-manager",
     "migrate": "node scripts/migrate.js"
   },
   "devDependencies": {
