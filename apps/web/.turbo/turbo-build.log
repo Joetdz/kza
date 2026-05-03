@@ -9,17 +9,17 @@ rendering chunks...
 computing gzip size...
 [2mdist/[22m[32mindex.html                          [39m[1m[2m  0.74 kB[22m[1m[22m[2m │ gzip:   0.38 kB[22m
 [2mdist/[22m[35massets/index-CEa1dOSK.css           [39m[1m[2m 38.91 kB[22m[1m[22m[2m │ gzip:   7.14 kB[22m
-[33m
-(!) Some chunks are larger than 500 kB after minification. Consider:
 [2mdist/[22m[36massets/store-BniF36ou.js            [39m[1m[2m  3.58 kB[22m[1m[22m[2m │ gzip:   1.57 kB[22m
+[33m
 [2mdist/[22m[36massets/purify.es-BwoZCkIS.js        [39m[1m[2m 22.03 kB[22m[1m[22m[2m │ gzip:   8.77 kB[22m
+(!) Some chunks are larger than 500 kB after minification. Consider:
 [2mdist/[22m[36massets/index.es-BFbV4b25.js         [39m[1m[2m150.73 kB[22m[1m[22m[2m │ gzip:  51.57 kB[22m
 [2mdist/[22m[36massets/react-core-B7CI7l7y.js       [39m[1m[2m164.95 kB[22m[1m[22m[2m │ gzip:  53.79 kB[22m
 [2mdist/[22m[36massets/html2canvas.esm-CBrSDip1.js  [39m[1m[2m201.42 kB[22m[1m[22m[2m │ gzip:  48.03 kB[22m
 [2mdist/[22m[36massets/charts-C_FxOc8n.js           [39m[1m[2m411.08 kB[22m[1m[22m[2m │ gzip: 111.00 kB[22m
+- Using dynamic import() to code-split the application
 [2mdist/[22m[36massets/index-B2gO6WxN.js            [39m[1m[33m557.88 kB[39m[22m[2m │ gzip: 140.21 kB[22m
 [2mdist/[22m[36massets/export-libs-BmAA98j8.js      [39m[1m[33m684.32 kB[39m[22m[2m │ gzip: 226.16 kB[22m
-- Using dynamic import() to code-split the application
-[32m✓ built in 11.53s[39m
+[32m✓ built in 9.69s[39m
 - Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
 - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.[39m
