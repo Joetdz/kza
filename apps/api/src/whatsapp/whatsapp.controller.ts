@@ -1,5 +1,5 @@
 import {
-  Controller, Get, Post, Patch, Delete, Body, Param, Query,
+  Controller, Get, Post, Patch, Delete, Body, Param, Query, Req,
   NotFoundException,
 } from '@nestjs/common';
 import { WhatsAppService } from './whatsapp.service';
@@ -11,6 +11,7 @@ import { UpdateContactDto } from './dto/update-contact.dto';
 import { AiConfigDto } from './dto/ai-config.dto';
 import { KbEntryDto, UpdateKbEntryDto } from './dto/kb-entry.dto';
 import { AutomationDto, UpdateAutomationDto } from './dto/automation.dto';
+import { UpdateAudienceContactDto, UpdateUserProfileDto } from './dto/audience.dto';
 import { IsOptional, IsString } from 'class-validator';
 
 class CreateNoteDto {
@@ -29,6 +30,44 @@ export class WhatsAppController {
     private ai: AiService,
     private prisma: PrismaService,
   ) {}
+
+  // ── Helper: resolve or auto-create a contact ─────────────────────────────────
+  // When contacts are deleted from DB, getContacts() returns id = phone number.
+  // This helper auto-creates the DB record on first interaction.
+  private async resolveContact(id: string, userId: string) {
+    if (id.includes('@')) {
+      // id is a phone number — upsert the contact record
+      return this.prisma.whatsAppContact.upsert({
+        where: { userId_phone: { userId, phone: id } },
+        create: { userId, phone: id },
+        update: {},
+        include: { tags: { include: { tag: true } } },
+      });
+    }
+    const contact = await this.prisma.whatsAppContact.findFirst({
+      where: { id, userId },
+      include: { tags: { include: { tag: true } } },
+    });
+    if (!contact) throw new NotFoundException();
+    return contact;
+  }
+
+  // ── Internal: force audience sync (dev only, uses X-Dev-UserId header) ───────
+  @Post('internal/sync')
+  async internalSync(@Req() req: any) {
+    const secret = process.env.INTERNAL_SYNC_SECRET;
+    const userId = req.headers['x-dev-userid'] as string;
+    const key = req.headers['x-dev-secret'] as string;
+    if (!userId || !secret || key !== secret) return { error: 'forbidden' };
+    // Clean up @lid entries first, then re-sync with real phone numbers
+    await this.prisma.$executeRaw`
+      DELETE FROM wa_campaign_contacts
+      WHERE client_id = ${userId}
+      AND phone_number LIKE '%@lid'
+    `;
+    this.wa.syncContactDirectory(userId).catch(() => {});
+    return { ok: true, userId };
+  }
 
   // ── Connexion ────────────────────────────────────────────────────────────────
 
@@ -52,38 +91,13 @@ export class WhatsAppController {
   // ── Contacts ─────────────────────────────────────────────────────────────────
 
   @Get('contacts')
-  async getContacts(
+  getContacts(
     @CurrentUser() user: AuthUser,
     @Query('filter') filter?: string,
     @Query('search') search?: string,
     @Query('tag') tagId?: string,
   ) {
-    const where: any = { userId: user.id };
-
-    if (filter === 'unread') where.isRead = false;
-    else if (filter === 'assigned') where.assignedAgent = { not: null };
-    else if (filter === 'unassigned') where.assignedAgent = null;
-    else if (filter === 'hot') where.leadStatus = 'hot';
-    else if (filter === 'archived') where.isArchived = true;
-    else where.isArchived = false;
-
-    if (search) {
-      where.OR = [
-        { displayName: { contains: search, mode: 'insensitive' } },
-        { phone: { contains: search } },
-        { leadName: { contains: search, mode: 'insensitive' } },
-      ];
-    }
-
-    if (tagId) {
-      where.tags = { some: { tagId } };
-    }
-
-    return this.prisma.whatsAppContact.findMany({
-      where,
-      include: { tags: { include: { tag: true } } },
-      orderBy: { lastMessageAt: 'desc' },
-    });
+    return this.wa.getContacts(user.id, filter, search, tagId);
   }
 
   @Get('contacts/:id')
@@ -102,29 +116,22 @@ export class WhatsAppController {
     @Body() dto: UpdateContactDto,
     @CurrentUser() user: AuthUser,
   ) {
-    const contact = await this.prisma.whatsAppContact.findFirst({ where: { id, userId: user.id } });
-    if (!contact) throw new NotFoundException();
-    return this.prisma.whatsAppContact.update({ where: { id }, data: dto });
+    const contact = await this.resolveContact(id, user.id);
+    return this.prisma.whatsAppContact.update({ where: { id: contact.id }, data: dto });
   }
 
   @Delete('contacts/:id')
   async deleteContact(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    const contact = await this.prisma.whatsAppContact.findFirst({ where: { id, userId: user.id } });
-    if (!contact) throw new NotFoundException();
-    await this.prisma.whatsAppContact.delete({ where: { id } });
-    return { id };
+    const contact = await this.resolveContact(id, user.id);
+    await this.prisma.whatsAppContact.delete({ where: { id: contact.id } });
+    return { id: contact.id };
   }
 
   // ── Messages ─────────────────────────────────────────────────────────────────
 
   @Get('contacts/:id/messages')
-  async getMessages(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    const contact = await this.prisma.whatsAppContact.findFirst({ where: { id, userId: user.id } });
-    if (!contact) throw new NotFoundException();
-    return this.prisma.whatsAppMessage.findMany({
-      where: { contactId: id },
-      orderBy: { sentAt: 'asc' },
-    });
+  getMessages(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.wa.getMessages(user.id, id);
   }
 
   @Post('contacts/:id/send')
@@ -133,8 +140,7 @@ export class WhatsAppController {
     @Body() dto: SendMessageDto,
     @CurrentUser() user: AuthUser,
   ) {
-    const contact = await this.prisma.whatsAppContact.findFirst({ where: { id, userId: user.id } });
-    if (!contact) throw new NotFoundException();
+    const contact = await this.resolveContact(id, user.id);
     if (dto.quotedMsgId) {
       await this.wa.sendReply(user.id, contact.phone, dto.message, contact.id, dto.quotedMsgId);
     } else {
@@ -143,21 +149,31 @@ export class WhatsAppController {
     return { ok: true };
   }
 
+  @Post('contacts/:id/label')
+  async applyLabel(
+    @Param('id') id: string,
+    @Body() body: { label: string },
+    @CurrentUser() user: AuthUser,
+  ) {
+    const contact = await this.resolveContact(id, user.id);
+    const applied = await this.wa.applyLabelToChat(user.id, contact.phone, body.label);
+    return { ok: applied };
+  }
+
   @Patch('contacts/:id/read')
   async markRead(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    const contact = await this.prisma.whatsAppContact.findFirst({ where: { id, userId: user.id } });
-    if (!contact) throw new NotFoundException();
-    return this.prisma.whatsAppContact.update({ where: { id }, data: { isRead: true } });
+    const contact = await this.resolveContact(id, user.id);
+    await this.wa.markRead(user.id, contact.phone);
+    return { ok: true };
   }
 
   // ── Notes ────────────────────────────────────────────────────────────────────
 
   @Get('contacts/:id/notes')
   async getNotes(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    const contact = await this.prisma.whatsAppContact.findFirst({ where: { id, userId: user.id } });
-    if (!contact) throw new NotFoundException();
+    const contact = await this.resolveContact(id, user.id);
     return this.prisma.whatsAppNote.findMany({
-      where: { contactId: id },
+      where: { contactId: contact.id },
       orderBy: { createdAt: 'desc' },
     });
   }
@@ -168,10 +184,9 @@ export class WhatsAppController {
     @Body() dto: CreateNoteDto,
     @CurrentUser() user: AuthUser,
   ) {
-    const contact = await this.prisma.whatsAppContact.findFirst({ where: { id, userId: user.id } });
-    if (!contact) throw new NotFoundException();
+    const contact = await this.resolveContact(id, user.id);
     return this.prisma.whatsAppNote.create({
-      data: { contactId: id, userId: user.id, content: dto.content },
+      data: { contactId: contact.id, userId: user.id, content: dto.content },
     });
   }
 
@@ -210,11 +225,10 @@ export class WhatsAppController {
     @Param('tagId') tagId: string,
     @CurrentUser() user: AuthUser,
   ) {
-    const contact = await this.prisma.whatsAppContact.findFirst({ where: { id, userId: user.id } });
-    if (!contact) throw new NotFoundException();
+    const contact = await this.resolveContact(id, user.id);
     return this.prisma.whatsAppContactTag.upsert({
-      where: { contactId_tagId: { contactId: id, tagId } },
-      create: { contactId: id, tagId },
+      where: { contactId_tagId: { contactId: contact.id, tagId } },
+      create: { contactId: contact.id, tagId },
       update: {},
     });
   }
@@ -225,10 +239,9 @@ export class WhatsAppController {
     @Param('tagId') tagId: string,
     @CurrentUser() user: AuthUser,
   ) {
-    const contact = await this.prisma.whatsAppContact.findFirst({ where: { id, userId: user.id } });
-    if (!contact) throw new NotFoundException();
+    const contact = await this.resolveContact(id, user.id);
     await this.prisma.whatsAppContactTag.delete({
-      where: { contactId_tagId: { contactId: id, tagId } },
+      where: { contactId_tagId: { contactId: contact.id, tagId } },
     });
     return { ok: true };
   }
@@ -323,5 +336,93 @@ export class WhatsAppController {
     if (!auto) throw new NotFoundException();
     await this.prisma.whatsAppAutomation.delete({ where: { id } });
     return { id };
+  }
+
+  // ── Audience ─────────────────────────────────────────────────────────────────
+
+  @Get('audience')
+  async getAudience(
+    @CurrentUser() user: AuthUser,
+    @Query('page') page = '1',
+    @Query('limit') limit = '50',
+    @Query('search') search?: string,
+    @Query('consentStatus') consentStatus?: string,
+    @Query('contactStatus') contactStatus?: string,
+    @Query('segment') segment?: string,
+  ) {
+    const where: any = { clientId: user.id };
+    if (search) {
+      where.OR = [
+        { phoneNumber: { contains: search } },
+        { displayName: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+    if (consentStatus) where.consentStatus = consentStatus;
+    if (contactStatus) where.contactStatus = contactStatus;
+    if (segment) where.segments = { has: segment };
+
+    const [data, total] = await Promise.all([
+      this.prisma.waCampaignContact.findMany({
+        where,
+        skip: (Number(page) - 1) * Number(limit),
+        take: Number(limit),
+        orderBy: { syncedAt: 'desc' },
+      }),
+      this.prisma.waCampaignContact.count({ where }),
+    ]);
+    return { data, total, page: Number(page), limit: Number(limit) };
+  }
+
+  @Post('audience/sync')
+  async triggerAudienceSync(@CurrentUser() user: AuthUser) {
+    this.wa.syncContactDirectory(user.id).catch(() => {});
+    return { message: 'Sync démarrée' };
+  }
+
+  @Get('audience/stats')
+  async getAudienceStats(@CurrentUser() user: AuthUser) {
+    const [total, active, consented] = await Promise.all([
+      this.prisma.waCampaignContact.count({ where: { clientId: user.id } }),
+      this.prisma.waCampaignContact.count({ where: { clientId: user.id, contactStatus: 'active' } }),
+      this.prisma.waCampaignContact.count({ where: { clientId: user.id, consentStatus: 'granted' } }),
+    ]);
+    // Collect all unique segments
+    const contacts = await this.prisma.waCampaignContact.findMany({
+      where: { clientId: user.id },
+      select: { segments: true },
+    });
+    const segments = [...new Set(contacts.flatMap(c => c.segments))].sort();
+    return { total, active, consented, segments };
+  }
+
+  @Patch('audience/:id')
+  async updateAudienceContact(
+    @Param('id') id: string,
+    @Body() dto: UpdateAudienceContactDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    const contact = await this.prisma.waCampaignContact.findFirst({ where: { id, clientId: user.id } });
+    if (!contact) throw new NotFoundException();
+    return this.prisma.waCampaignContact.update({ where: { id }, data: dto });
+  }
+
+  // ── Profil utilisateur ────────────────────────────────────────────────────────
+
+  @Get('profile')
+  getProfile(@CurrentUser() user: AuthUser) {
+    return this.prisma.userProfile.upsert({
+      where: { userId: user.id },
+      create: { userId: user.id },
+      update: {},
+    });
+  }
+
+  @Patch('profile')
+  updateProfile(@Body() dto: UpdateUserProfileDto, @CurrentUser() user: AuthUser) {
+    return this.prisma.userProfile.upsert({
+      where: { userId: user.id },
+      create: { userId: user.id, ...dto },
+      update: dto,
+    });
   }
 }

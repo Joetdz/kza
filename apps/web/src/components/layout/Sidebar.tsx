@@ -1,10 +1,13 @@
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, Package, ShoppingCart, CreditCard,
-  BarChart2, Target, Download, X, LogOut, MessageCircle,
+  BarChart2, Target, Download, X, LogOut, MessageCircle, Shield,
 } from 'lucide-react';
 import { useStore } from '../../store/useStore';
 import { useAuth } from '../../contexts/AuthContext';
+
+const ADMIN_EMAILS = (import.meta.env.VITE_ADMIN_EMAILS ?? '')
+  .split(',').map((e: string) => e.trim().toLowerCase()).filter(Boolean);
 
 const nav = [
   { to: '/',           icon: LayoutDashboard, label: 'Dashboard' },
@@ -20,6 +23,8 @@ const nav = [
 export function Sidebar() {
   const { sidebarOpen, toggleSidebar } = useStore();
   const { user, signOut } = useAuth();
+
+  const isAdmin = !!user?.email && ADMIN_EMAILS.includes(user.email.toLowerCase());
 
   return (
     <>
@@ -63,6 +68,28 @@ export function Sidebar() {
               {label}
             </NavLink>
           ))}
+
+          {/* Admin link — visible only for admin users */}
+          {isAdmin && (
+            <>
+              <div className="my-2 border-t border-gray-700" />
+              <NavLink
+                to="/admin"
+                end
+                onClick={() => sidebarOpen && toggleSidebar()}
+                className={({ isActive }) =>
+                  `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all
+                  ${isActive
+                    ? 'bg-amber-600 text-white shadow-lg shadow-amber-900/30'
+                    : 'text-amber-400 hover:text-white hover:bg-gray-800'
+                  }`
+                }
+              >
+                <Shield size={18} />
+                Admin SaaS
+              </NavLink>
+            </>
+          )}
         </nav>
 
         {/* Footer */}

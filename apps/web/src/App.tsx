@@ -12,10 +12,13 @@ import { Goals } from './pages/Goals';
 import { Export } from './pages/Export';
 import { Login } from './pages/Login';
 import { WhatsAppLayout } from './pages/whatsapp/WhatsAppLayout';
+import { AdminDashboard } from './pages/AdminDashboard';
 import { Inbox } from './pages/whatsapp/Inbox';
 import { AIConfig } from './pages/whatsapp/AIConfig';
 import { Automations } from './pages/whatsapp/Automations';
 import { KnowledgeBase } from './pages/whatsapp/KnowledgeBase';
+import { Audience } from './pages/whatsapp/Audience';
+import { BusinessAdvisor } from './components/BusinessAdvisor';
 import { useStore } from './store/useStore';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 
@@ -93,6 +96,7 @@ function AppInner() {
 
   return (
     <HashRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <BusinessAdvisor />
       <Routes>
         <Route element={<AppShell />}>
           <Route path="/" element={<Dashboard />} />
@@ -102,11 +106,13 @@ function AppInner() {
           <Route path="/analytique" element={<Analytics />} />
           <Route path="/objectifs" element={<Goals />} />
           <Route path="/export" element={<Export />} />
+          <Route path="/admin" element={<AdminDashboard />} />
           <Route path="/whatsapp" element={<WhatsAppLayout />}>
             <Route index element={<Inbox />} />
             <Route path="ia" element={<AIConfig />} />
             <Route path="automatisations" element={<Automations />} />
             <Route path="base" element={<KnowledgeBase />} />
+            <Route path="audience" element={<Audience />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>

@@ -224,6 +224,8 @@ model WhatsAppAIConfig {
   outsideHoursMessage String   @default("Nous sommes actuellement fermés.") @map("outside_hours_message")
   simulatedDelayMs    Int      @default(2000) @map("simulated_delay_ms")
   confidenceThreshold Float    @default(0.7) @map("confidence_threshold")
+  deliveryAgentName   String   @default("") @map("delivery_agent_name")
+  deliveryAgentPhone  String   @default("") @map("delivery_agent_phone")
   createdAt           DateTime @default(now()) @map("created_at")
   updatedAt           DateTime @updatedAt @map("updated_at")
 
@@ -237,6 +239,7 @@ model WhatsAppKBEntry {
   title         String
   content       String
   closingScript String?  @map("closing_script")
+  imageUrl      String?  @map("image_url")
   productId     String?  @map("product_id")
   tags          String[]
   enabled       Boolean  @default(true)
@@ -261,4 +264,62 @@ model WhatsAppAutomation {
 
   @@index([userId])
   @@map("wa_automations")
+}
+
+// ─── Profil utilisateur ────────────────────────────────────────────────────────
+
+model UserProfile {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId         String   @unique @map("user_id")
+  businessSector String?  @map("business_sector")
+  companyName    String?  @map("company_name")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@map("user_profiles")
+}
+
+// ─── Audience (contacts synchronisés depuis WhatsApp) ─────────────────────────
+
+model WaCampaignContact {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clientId        String    @map("client_id")
+  phoneNumber     String    @map("phone_number")
+  displayName     String?   @map("display_name")
+  waAccountId     String?   @map("wa_account_id")
+  businessSector  String?   @map("business_sector")
+  source          String    @default("whatsapp_sync") @map("source")
+  syncedAt        DateTime? @map("synced_at")
+
+  consentStatus   String    @default("unknown") @map("consent_status")
+  contactStatus   String    @default("active")  @map("contact_status")
+  tags            String[]  @default([])
+  segments        String[]  @default([])
+  lastContactedAt DateTime? @map("last_contacted_at")
+
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  campaignHistory WaCampaignContactHistory[]
+
+  @@unique([clientId, phoneNumber])
+  @@index([clientId])
+  @@index([clientId, consentStatus])
+  @@index([clientId, contactStatus])
+  @@map("wa_campaign_contacts")
+}
+
+model WaCampaignContactHistory {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  contactId  String   @map("contact_id") @db.Uuid
+  campaignId String?  @map("campaign_id")
+  action     String
+  metadata   Json?
+  occurredAt DateTime @default(now()) @map("occurred_at")
+
+  contact WaCampaignContact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([contactId])
+  @@index([campaignId])
+  @@map("wa_campaign_contact_history")
 }

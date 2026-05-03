@@ -94,7 +94,17 @@ function MediaContent({ msg }: { msg: WaMessage }) {
 }
 
 // QR / connect screen
-function ConnectScreen({ qr, loading, onConnect }: { qr: string | null; loading: any; onConnect: () => void }) {
+function ConnectScreen({ qr, loading, onConnect }: { qr: string | null; loading: any; onConnect: () => Promise<void> }) {
+  const [connecting, setConnecting] = useState(false);
+
+  const handleConnect = async () => {
+    setConnecting(true);
+    try { await onConnect(); } finally { /* loader stays until qr/loading arrives */ }
+  };
+
+  // Once Puppeteer starts emitting loading events, the connecting spinner is replaced
+  const showSpinner = connecting && !loading && !qr;
+
   return (
     <div className="flex flex-col items-center justify-center h-full gap-6" style={{ background: C.chatBg }}>
       <div className="bg-[#202c33] rounded-2xl p-8 max-w-sm w-full text-center shadow-xl">
@@ -103,13 +113,28 @@ function ConnectScreen({ qr, loading, onConnect }: { qr: string | null; loading:
           <Phone size={28} color="white" />
         </div>
         <h2 className="text-xl font-semibold mb-2" style={{ color: C.text }}>WhatsApp Web</h2>
-        {loading ? (
-          <div className="space-y-3">
+
+        {showSpinner ? (
+          <div className="space-y-3 py-2">
+            <div className="flex items-center justify-center gap-3">
+              <span className="w-5 h-5 border-2 border-[#00a884] border-t-transparent rounded-full animate-spin" />
+              <span className="text-sm" style={{ color: C.textSub }}>Démarrage en cours...</span>
+            </div>
+            <p className="text-xs mt-2" style={{ color: C.textSub }}>
+              Lancement du navigateur, ça peut prendre quelques secondes
+            </p>
+          </div>
+        ) : loading ? (
+          <div className="space-y-3 py-2">
+            <div className="flex items-center justify-center gap-3 mb-2">
+              <span className="w-5 h-5 border-2 border-[#00a884] border-t-transparent rounded-full animate-spin" />
+              <span className="text-sm" style={{ color: C.textSub }}>{loading.message || 'Chargement...'}</span>
+            </div>
             <div className="w-full bg-[#111b21] rounded-full h-1.5">
               <div className="h-1.5 rounded-full transition-all duration-500"
                 style={{ width: `${loading.percent}%`, background: '#00a884' }} />
             </div>
-            <p className="text-sm" style={{ color: C.textSub }}>Chargement... {loading.percent}%</p>
+            <p className="text-xs" style={{ color: C.textSub }}>{loading.percent}%</p>
           </div>
         ) : qr ? (
           <>
@@ -126,8 +151,10 @@ function ConnectScreen({ qr, loading, onConnect }: { qr: string | null; loading:
             <p className="text-sm mb-6" style={{ color: C.textSub }}>
               Connectez votre WhatsApp pour accéder à toutes vos conversations en temps réel.
             </p>
-            <button onClick={onConnect}
-              className="w-full py-3 rounded-xl font-semibold text-sm transition-colors"
+            <button
+              onClick={handleConnect}
+              disabled={connecting}
+              className="w-full py-3 rounded-xl font-semibold text-sm transition-opacity disabled:opacity-60"
               style={{ background: '#00a884', color: 'white' }}>
               Connecter WhatsApp
             </button>

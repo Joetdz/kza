@@ -30,7 +30,9 @@ export const waApi = {
 
   // Contacts
   getContacts: (params?: { filter?: string; search?: string; tag?: string }) => {
-    const qs = new URLSearchParams(params as any).toString();
+    const qs = new URLSearchParams(
+      Object.fromEntries(Object.entries(params ?? {}).filter(([, v]) => v !== undefined && v !== ''))
+    ).toString();
     return req<any[]>(`/whatsapp/contacts${qs ? `?${qs}` : ''}`);
   },
   getContact: (id: string) => req<any>(`/whatsapp/contacts/${id}`),
@@ -80,4 +82,28 @@ export const waApi = {
   updateAutomation: (id: string, data: any) =>
     req<any>(`/whatsapp/automations/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteAutomation: (id: string) => req<void>(`/whatsapp/automations/${id}`, { method: 'DELETE' }),
+
+  // Audience
+  getAudience: (params?: {
+    page?: number; limit?: number; search?: string;
+    consentStatus?: string; contactStatus?: string; segment?: string;
+  }) => {
+    const qs = new URLSearchParams(
+      Object.fromEntries(Object.entries(params ?? {}).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)]))
+    ).toString();
+    return req<{ data: any[]; total: number; page: number; limit: number }>(
+      `/whatsapp/audience${qs ? `?${qs}` : ''}`
+    );
+  },
+  syncAudience: () => req<{ message: string }>('/whatsapp/audience/sync', { method: 'POST' }),
+  getAudienceStats: () =>
+    req<{ total: number; active: number; consented: number; segments: string[] }>('/whatsapp/audience/stats'),
+  updateAudienceContact: (id: string, data: any) =>
+    req<any>(`/whatsapp/audience/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+
+  // Profil utilisateur
+  getProfile: () =>
+    req<{ id: string; businessSector: string | null; companyName: string | null }>('/whatsapp/profile'),
+  updateProfile: (data: { businessSector?: string; companyName?: string }) =>
+    req<any>('/whatsapp/profile', { method: 'PATCH', body: JSON.stringify(data) }),
 };

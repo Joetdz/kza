@@ -1,7 +1,14 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npx prisma:*)"
+      "Bash(npx prisma:*)",
+      "Bash(curl -s http://localhost:3000/api/whatsapp/status -H \"Content-Type: application/json\")",
+      "Bash(curl -s -X POST http://localhost:3000/api/whatsapp/internal/sync -H 'x-dev-userid: 7c1bca28-188e-49c0-863d-cebd4e03564c' -H 'x-dev-secret: kza-sync-2024' -H 'Content-Type: application/json')",
+      "Bash(curl -s http://localhost:3000/api/whatsapp/audience/stats -H 'x-dev-secret: kza-sync-2024' -H 'x-dev-userid: 7c1bca28-188e-49c0-863d-cebd4e03564c')",
+      "Bash(curl -s \"http://localhost:3000/api/whatsapp/audience/stats\" -H \"x-dev-secret: kza-sync-2024\")",
+      "Bash(curl -sf \"http://localhost:3000/api/whatsapp/status\" -H \"x-dev-secret: kza-sync-2024\")",
+      "Bash(curl -s -X POST \"http://localhost:3000/api/whatsapp/internal/sync\" -H \"x-dev-userid: 7c1bca28-188e-49c0-863d-cebd4e03564c\" -H \"x-dev-secret: kza-sync-2024\" -H \"Content-Type: application/json\")",
+      "Bash(curl -s 'http://localhost:3000/api/whatsapp/audience?limit=5' -H 'x-dev-secret: kza-sync-2024' -H 'x-dev-userid: 7c1bca28-188e-49c0-863d-cebd4e03564c')"
     ]
   }
 }

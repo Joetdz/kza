@@ -47,6 +47,12 @@ export interface SyncState {
   total: number;
 }
 
+export interface AudienceSyncState {
+  status: 'idle' | 'syncing' | 'done';
+  done: number;
+  total: number;
+}
+
 export function useWhatsApp() {
   const socketRef = useRef<Socket | null>(null);
   const loadedRef = useRef<Set<string>>(new Set()); // tracks which contactIds are fetched
@@ -59,6 +65,7 @@ export function useWhatsApp() {
   const [messages, setMessages] = useState<Record<string, WaMessage[]>>({});
   const [socketReady, setSocketReady] = useState(false);
   const [sync, setSync] = useState<SyncState>({ status: 'idle', imported: 0, total: 0 });
+  const [audienceSync, setAudienceSync] = useState<AudienceSyncState>({ status: 'idle', done: 0, total: 0 });
 
   // Stable load function — no dependency on messages state
   const loadMessages = useCallback(async (contactId: string, force = false) => {
@@ -129,6 +136,18 @@ export function useWhatsApp() {
         setMessages({});
         loadedRef.current.clear();
         setTimeout(() => setSync({ status: 'idle', imported: 0, total: 0 }), 4000);
+      });
+
+      // Audience sync progress
+      sock.on('audience-sync-start', ({ total }: { total: number }) => {
+        setAudienceSync({ status: 'syncing', done: 0, total });
+      });
+      sock.on('audience-sync-progress', ({ done, total }: { done: number; total: number }) => {
+        setAudienceSync(prev => ({ ...prev, done, total }));
+      });
+      sock.on('audience-sync-complete', ({ total }: { total: number }) => {
+        setAudienceSync({ status: 'done', done: total, total });
+        setTimeout(() => setAudienceSync({ status: 'idle', done: 0, total: 0 }), 4000);
       });
 
       // Real-time incoming/outgoing message
@@ -236,7 +255,7 @@ export function useWhatsApp() {
   }, [loadContacts]);
 
   return {
-    connected, phone, qr, loading, contacts, messages, socketReady, sync,
+    connected, phone, qr, loading, contacts, messages, socketReady, sync, audienceSync,
     loadContacts, loadMessages, sendMessage, updateContact,
     initConnect, initDisconnect,
     setContacts, setMessages,

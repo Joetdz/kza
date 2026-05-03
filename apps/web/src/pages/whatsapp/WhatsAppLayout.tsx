@@ -1,11 +1,12 @@
 import { NavLink, Outlet } from 'react-router-dom';
-import { MessageCircle, Bot, Zap, BookOpen } from 'lucide-react';
+import { MessageCircle, Bot, Zap, BookOpen, Users } from 'lucide-react';
 
 const TABS = [
-  { to: '/whatsapp',                end: true, icon: MessageCircle, label: 'Boîte de réception' },
+  { to: '/whatsapp',                end: true,  icon: MessageCircle, label: 'Boîte de réception' },
   { to: '/whatsapp/ia',             end: false, icon: Bot,           label: 'Agent IA' },
   { to: '/whatsapp/automatisations',end: false, icon: Zap,           label: 'Automatisations' },
   { to: '/whatsapp/base',           end: false, icon: BookOpen,      label: 'Base de connaissance' },
+  { to: '/whatsapp/audience',       end: false, icon: Users,         label: 'Audience' },
 ];
 
 export function WhatsAppLayout() {

@@ -11,6 +11,8 @@ import { ExpensesModule } from './expenses/expenses.module';
 import { GoalsModule } from './goals/goals.module';
 import { UploadModule } from './upload/upload.module';
 import { WhatsAppModule } from './whatsapp/whatsapp.module';
+import { AdminModule } from './admin/admin.module';
+import { BusinessAiModule } from './business-ai/business-ai.module';
 
 @Module({
   imports: [
@@ -24,6 +26,8 @@ import { WhatsAppModule } from './whatsapp/whatsapp.module';
     GoalsModule,
     UploadModule,
     WhatsAppModule,
+    AdminModule,
+    BusinessAiModule,
   ],
   providers: [
     {
