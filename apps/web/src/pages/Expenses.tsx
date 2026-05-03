@@ -93,7 +93,7 @@ export function Expenses() {
         amount: form.amount,
         description: form.description,
         date: form.date,
-        channel: form.channel,
+        channel:  form.channel as "WhatsApp" | "Meta Ads" | "TikTok" | "Instagram" | "Boutique" | "Autre" | undefined,
         productId: selectedProductIds[0] ?? undefined,
       };
       updateExpense(editing.id, patch);
