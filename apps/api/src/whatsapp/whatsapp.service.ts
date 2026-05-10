@@ -6,6 +6,22 @@ import { Client, LocalAuth, Message, MessageMedia } from 'whatsapp-web.js';
 import * as qrcode from 'qrcode';
 import * as path from 'path';
 import * as fs from 'fs';
+import { execFileSync } from 'child_process';
+
+function findSystemChrome(): string | undefined {
+  const candidates = [
+    '/usr/bin/google-chrome',
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/chromium-browser',
+    '/usr/bin/chromium',
+    '/snap/bin/chromium',
+    '/usr/local/bin/chromium',
+  ];
+  for (const p of candidates) {
+    try { execFileSync('test', ['-f', p]); return p; } catch { /* not found */ }
+  }
+  return undefined;
+}
 
 export type WaGatewayCallback = (event: string, userId: string, data: any) => void;
 
@@ -93,12 +109,18 @@ export class WhatsAppService implements OnModuleDestroy {
       }),
       puppeteer: {
         headless: true,
+        executablePath: findSystemChrome(),
         args: [
           '--no-sandbox',
           '--disable-setuid-sandbox',
           '--disable-gpu',
           '--disable-dev-shm-usage',
           '--disable-extensions',
+          '--disable-software-rasterizer',
+          '--no-first-run',
+          '--no-zygote',
+          '--single-process',
+          '--ignore-certificate-errors',
         ],
       },
     });
