@@ -180,17 +180,17 @@ export function Goals() {
     : 0;
 
   return (
-    <div className="space-y-5">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Objectifs de Vente</h1>
-          <p className="text-sm text-gray-500">{goals.length} objectif{goals.length !== 1 ? 's' : ''} définis</p>
+    <div className="space-y-5 overflow-x-hidden">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 truncate">Objectifs de Vente</h1>
+          <p className="text-xs sm:text-sm text-gray-500">{goals.length} objectif{goals.length !== 1 ? 's' : ''} définis</p>
         </div>
         <button
           onClick={openAdd}
-          className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-colors"
+          className="shrink-0 flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-3 sm:px-4 py-2.5 rounded-xl text-sm font-medium transition-colors"
         >
-          <Plus size={16} /> Définir objectif
+          <Plus size={16} /><span className="hidden sm:inline">Définir objectif</span>
         </button>
       </div>
 

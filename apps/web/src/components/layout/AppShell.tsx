@@ -92,7 +92,7 @@ export function AppShell() {
         </header>
 
         {/* Page content — fade in on route change */}
-        <main key={location.pathname} className="flex-1 p-4 sm:p-6 pb-24 lg:pb-6 animate-fade-in-up">
+        <main key={location.pathname} className="flex-1 p-4 sm:p-6 pb-24 lg:pb-6 animate-fade-in-up overflow-x-hidden">
           <Outlet />
         </main>
 

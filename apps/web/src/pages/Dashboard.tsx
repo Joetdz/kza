@@ -106,10 +106,10 @@ export function Dashboard() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+    <div className="space-y-6 overflow-x-hidden">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="min-w-0">
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Dashboard</h1>
           <p className="text-sm text-gray-500 mt-1">
             {selectedProduct ? `Vue produit — ${selectedProduct.name}` : 'Vue CEO — Toute la boutique'}
           </p>
