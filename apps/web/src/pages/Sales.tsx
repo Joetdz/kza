@@ -307,7 +307,7 @@ export function Sales() {
       {/* Sale Modal */}
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Enregistrer une vente" size="lg">
         <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="text-xs font-medium text-gray-600 mb-1 block">Canal *</label>
               <select
@@ -336,8 +336,8 @@ export function Sales() {
             </div>
             <div className="space-y-2">
               {items.map((item, idx) => (
-                <div key={idx} className="flex gap-2 items-end">
-                  <div className="flex-1">
+                <div key={idx} className="flex flex-wrap gap-x-2 gap-y-1.5 items-end border-b border-gray-50 pb-2 last:border-0 last:pb-0 sm:border-0 sm:pb-0">
+                  <div className="w-full sm:flex-1">
                     {idx === 0 && <div className="text-xs text-gray-400 mb-1">Produit</div>}
                     <select
                       value={item.productId}
@@ -348,7 +348,7 @@ export function Sales() {
                       {products.map(p => <option key={p.id} value={p.id}>{p.name} ({p.sku})</option>)}
                     </select>
                   </div>
-                  <div className="w-20">
+                  <div className="w-16 sm:w-20">
                     {idx === 0 && <div className="text-xs text-gray-400 mb-1">Qté</div>}
                     <NumberInput
                       value={item.quantity}
@@ -357,15 +357,15 @@ export function Sales() {
                       className="w-full border border-gray-200 rounded-xl px-2 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-300"
                     />
                   </div>
-                  <div className="w-28">
-                    {idx === 0 && <div className="text-xs text-gray-400 mb-1">Prix unitaire ({currency})</div>}
+                  <div className="flex-1 sm:w-28">
+                    {idx === 0 && <div className="text-xs text-gray-400 mb-1">Prix ({currency})</div>}
                     <NumberInput
                       value={item.unitPrice}
                       onChange={val => updateItem(idx, 'unitPrice', val)}
                       className="w-full border border-gray-200 rounded-xl px-2 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-300"
                     />
                   </div>
-                  <div className="w-24 text-right pb-2">
+                  <div className="w-20 sm:w-24 text-right pb-2">
                     {idx === 0 && <div className="text-xs text-gray-400 mb-1">Total</div>}
                     <div className="text-sm font-medium text-gray-700">{MAD(item.quantity * item.unitPrice)}</div>
                   </div>

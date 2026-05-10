@@ -57,8 +57,8 @@ export function AppShell() {
             ))}
           </div>
 
-          {/* Date range picker */}
-          <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-xl px-3 py-1.5">
+          {/* Date range picker — hidden on mobile to avoid overflow */}
+          <div className="hidden lg:flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-xl px-3 py-1.5">
             <Calendar size={14} className="text-gray-400" />
             <input
               type="date"

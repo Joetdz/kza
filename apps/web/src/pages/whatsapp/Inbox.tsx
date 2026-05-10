@@ -3,7 +3,7 @@ import {
   Search, Bot, BotOff, X, Send, Paperclip, Smile,
   Info, Phone, Video,
   Reply, CheckCheck, Check, Clock, Mic, Image, FileText,
-  Plus,
+  Plus, ChevronLeft,
 } from 'lucide-react';
 import { useWhatsApp, WaContact, WaMessage } from '../../hooks/useWhatsApp';
 import { waApi } from '../../api/whatsapp';
@@ -179,6 +179,7 @@ export function Inbox() {
   const [sending, setSending] = useState(false);
   const [repliedTo, setRepliedTo] = useState<WaMessage | null>(null);
   const [showCrmPanel, setShowCrmPanel] = useState(false);
+  const [mobilePanel, setMobilePanel] = useState<'contacts' | 'chat' | 'crm'>('contacts');
   // CRM panel state
   const [notes, setNotes] = useState<any[]>([]);
   const [noteText, setNoteText] = useState('');
@@ -237,6 +238,7 @@ export function Inbox() {
   const selectContact = useCallback((id: string) => {
     setSelectedId(id);
     setShowCrmPanel(false);
+    setMobilePanel('chat');
   }, []);
 
   const syncPct = sync.total > 0 ? Math.round((sync.imported / sync.total) * 100) : 0;
@@ -252,7 +254,7 @@ export function Inbox() {
     <div className="flex h-[calc(100vh-64px)] overflow-hidden rounded-xl shadow-2xl" style={{ background: C.chatBg }}>
 
       {/* ── LEFT PANEL — Contact list ──────────────────────────────────────────── */}
-      <div className="flex flex-col w-[360px] shrink-0 border-r" style={{ background: C.panelBg, borderColor: C.divider }}>
+      <div className={`flex-col w-full lg:w-[360px] lg:shrink-0 border-r ${mobilePanel === 'contacts' ? 'flex' : 'hidden lg:flex'}`} style={{ background: C.panelBg, borderColor: C.divider }}>
 
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3" style={{ background: C.headerBg }}>
@@ -364,7 +366,7 @@ export function Inbox() {
       </div>
 
       {/* ── MIDDLE PANEL — Conversation ────────────────────────────────────────── */}
-      <div className="flex flex-1 flex-col min-w-0">
+      <div className={`flex-1 flex-col min-w-0 ${mobilePanel === 'chat' ? 'flex' : 'hidden lg:flex'}`}>
         {!selectedContact ? (
           /* Default screen */
           <div className="flex-1 flex flex-col items-center justify-center gap-4" style={{ background: C.chatBg }}>
@@ -381,6 +383,12 @@ export function Inbox() {
           <>
             {/* Chat header */}
             <div className="flex items-center gap-3 px-4 py-2.5 shrink-0" style={{ background: C.headerBg }}>
+              {/* Back to contacts — mobile only */}
+              <button onClick={() => setMobilePanel('contacts')}
+                className="lg:hidden p-1.5 rounded-full hover:bg-[#2a3942] transition-colors shrink-0"
+                style={{ color: C.icon }}>
+                <ChevronLeft size={20} />
+              </button>
               <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm shrink-0"
                 style={{ background: avatarColor(selectedContact.phone) }}>
                 {initials(selectedContact)}
@@ -401,15 +409,18 @@ export function Inbox() {
                     ? <Bot size={20} style={{ color: '#00a884' }} />
                     : <BotOff size={20} style={{ color: C.icon }} />}
                 </button>
-                <button onClick={() => setShowCrmPanel(v => !v)}
+                <button onClick={() => {
+                    if (window.innerWidth < 1024) { setMobilePanel('crm'); }
+                    else { setShowCrmPanel(v => !v); }
+                  }}
                   className="p-2 rounded-full hover:bg-[#2a3942] transition-colors">
-                  <Info size={20} style={{ color: showCrmPanel ? '#00a884' : C.icon }} />
+                  <Info size={20} style={{ color: (showCrmPanel || mobilePanel === 'crm') ? '#00a884' : C.icon }} />
                 </button>
               </div>
             </div>
 
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto px-16 py-4 space-y-1"
+            <div className="flex-1 overflow-y-auto px-3 sm:px-8 lg:px-16 py-4 space-y-1"
               style={{ background: C.chatBg, backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'100\' height=\'100\'%3E%3C/svg%3E")' }}>
               {selectedMessages.map((m, i) => {
                 const isOut = m.direction === 'out';
@@ -522,14 +533,19 @@ export function Inbox() {
         )}
       </div>
 
-      {/* ── RIGHT PANEL — CRM Info (slide in) ─────────────────────────────────── */}
-      {selectedContact && showCrmPanel && (
-        <div className="w-[340px] shrink-0 border-l flex flex-col overflow-y-auto"
+      {/* ── RIGHT PANEL — CRM Info ────────────────────────────────────────────── */}
+      {selectedContact && (showCrmPanel || mobilePanel === 'crm') && (
+        <div className={`w-full lg:w-[340px] lg:shrink-0 border-l flex-col overflow-y-auto ${mobilePanel === 'crm' ? 'flex' : 'hidden lg:flex'}`}
           style={{ background: C.panelBg, borderColor: C.divider }}>
 
           {/* Header */}
           <div className="flex items-center gap-3 px-4 py-4" style={{ background: C.headerBg }}>
-            <button onClick={() => setShowCrmPanel(false)}>
+            {/* Mobile: back to chat */}
+            <button onClick={() => setMobilePanel('chat')} className="lg:hidden">
+              <ChevronLeft size={20} style={{ color: C.icon }} />
+            </button>
+            {/* Desktop: close panel */}
+            <button onClick={() => setShowCrmPanel(false)} className="hidden lg:block">
               <X size={20} style={{ color: C.icon }} />
             </button>
             <span className="font-medium" style={{ color: C.text }}>Infos du contact</span>

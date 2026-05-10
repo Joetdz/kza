@@ -19,7 +19,7 @@ async function bootstrap() {
 
   // CORS — autorise le frontend React
   app.enableCors({
-    origin: process.env.FRONTEND_URL ?? /^http:\/\/localhost:\d+$/,
+    origin: process.env.FRONTEND_URL ??/^http:\/\/(localhost|127\.0\.0\.1|172\.16\.\d+\.\d+):\d+$/,
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
   });
@@ -38,6 +38,7 @@ async function bootstrap() {
 
   const port = process.env.PORT ?? 3000;
   await app.listen(port);
+ 
   console.log(`🚀 KZA API running on http://localhost:${port}/api`);
 }
 bootstrap();

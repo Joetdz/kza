@@ -136,17 +136,17 @@ export function Stock() {
   );
 
   return (
-    <div className="space-y-5">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Gestion du Stock</h1>
-          <p className="text-sm text-gray-500">{products.length} produits enregistrés</p>
+    <div className="space-y-5 overflow-x-hidden">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 truncate">Gestion du Stock</h1>
+          <p className="text-xs sm:text-sm text-gray-500">{products.length} produits enregistrés</p>
         </div>
         <button
           onClick={openAdd}
-          className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-colors"
+          className="shrink-0 flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-3 sm:px-4 py-2.5 rounded-xl text-sm font-medium transition-colors"
         >
-          <Plus size={16} /> Ajouter
+          <Plus size={16} /><span className="hidden sm:inline">Ajouter</span>
         </button>
       </div>
 
@@ -164,7 +164,7 @@ export function Stock() {
       {loading ? (
         <CardsSkeleton count={6} />
       ) : (
-        <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
           {filtered.map(p => {
             const isLow = p.quantity <= p.alertThreshold;
             return (
@@ -172,69 +172,80 @@ export function Stock() {
                 key={p.id}
                 className={`bg-white rounded-2xl p-4 shadow-sm border transition-all ${isLow ? 'border-red-200 bg-red-50/30' : 'border-gray-100'}`}
               >
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex items-center gap-3 flex-1 min-w-0">
-                    {p.imageUrl ? (
-                      <img src={`${STATIC_BASE}${p.imageUrl}`} alt={p.name} className="w-12 h-12 rounded-xl object-cover flex-shrink-0 border border-gray-100" />
-                    ) : (
-                      <div className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center flex-shrink-0">
-                        <ImagePlus size={18} className="text-gray-300" />
-                      </div>
-                    )}
-                    <div className="min-w-0">
-                      <div className="font-semibold text-gray-900 truncate">{p.name}</div>
-                      <div className="text-xs text-gray-500 mt-0.5">{p.sku} · {p.category}</div>
+                {/* Header : image + nom + badge */}
+                <div className="flex items-center gap-3 mb-3">
+                  {p.imageUrl ? (
+                    <img src={`${STATIC_BASE}${p.imageUrl}`} alt={p.name} className="w-11 h-11 rounded-xl object-cover shrink-0 border border-gray-100" />
+                  ) : (
+                    <div className="w-11 h-11 rounded-xl bg-gray-100 flex items-center justify-center shrink-0">
+                      <ImagePlus size={16} className="text-gray-300" />
                     </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="font-semibold text-gray-900 truncate text-sm">{p.name}</div>
+                    <div className="text-xs text-gray-400 truncate">{p.sku}{p.category ? ` · ${p.category}` : ''}</div>
                   </div>
-                  {isLow && <Badge color="red" size="sm">Stock bas</Badge>}
+                  {isLow && <Badge color="red" size="sm">Bas</Badge>}
                 </div>
 
+                {/* Stats : 3 colonnes */}
                 <div className="grid grid-cols-3 gap-2 mb-3">
-                  <div className="bg-gray-50 rounded-xl p-2.5">
-                    <div className="text-xs text-gray-500">Stock</div>
-                    <div className={`text-xl font-bold ${isLow ? 'text-red-600' : 'text-gray-900'}`}>{p.quantity}</div>
-                    <div className="text-xs text-gray-400">Seuil: {p.alertThreshold}</div>
+                  <div className={`rounded-xl p-2.5 text-center ${isLow ? 'bg-red-50' : 'bg-gray-50'}`}>
+                    <div className="text-xs text-gray-500 mb-0.5">Stock</div>
+                    <div className={`text-xl font-black ${isLow ? 'text-red-600' : 'text-gray-900'}`}>{p.quantity}</div>
+                    <div className="text-[10px] text-gray-400">/{p.alertThreshold}</div>
                   </div>
-                  <div className="bg-gray-50 rounded-xl p-2.5">
-                    <div className="text-xs text-gray-500">Achat</div>
-                    <div className="text-sm font-bold text-gray-900">{MAD(p.acquisitionCost)}</div>
-                    <div className="text-xs text-gray-400">par unité</div>
+                  <div className="bg-gray-50 rounded-xl p-2.5 text-center">
+                    <div className="text-xs text-gray-500 mb-0.5">Achat</div>
+                    <div className="text-xs font-bold text-gray-900 truncate">{MAD(p.acquisitionCost)}</div>
+                    <div className="text-[10px] text-gray-400">/unité</div>
                   </div>
-                  <div className="bg-emerald-50 rounded-xl p-2.5">
-                    <div className="text-xs text-emerald-600">Valeur stock</div>
-                    <div className="text-sm font-bold text-emerald-700">
+                  <div className="bg-emerald-50 rounded-xl p-2.5 text-center">
+                    <div className="text-xs text-emerald-600 mb-0.5">Valeur</div>
+                    <div className="text-xs font-bold text-emerald-700 truncate">
                       {p.sellingPrice > 0 ? MAD(p.sellingPrice * p.quantity) : '—'}
                     </div>
-                    <div className="text-xs text-gray-400">{p.sellingPrice > 0 ? `${MAD(p.sellingPrice)}/u` : 'Prix non défini'}</div>
+                    <div className="text-[10px] text-gray-400 truncate">
+                      {p.sellingPrice > 0 ? `${MAD(p.sellingPrice)}/u` : '—'}
+                    </div>
                   </div>
                 </div>
 
-                <div className="text-xs text-gray-500 mb-3">
-                  <span className="font-medium">Fournisseur:</span> {p.supplier}
-                </div>
+                {/* Fournisseur */}
+                {p.supplier && (
+                  <div className="text-xs text-gray-400 mb-3 truncate">
+                    <span className="font-medium text-gray-500">Fournisseur:</span> {p.supplier}
+                  </div>
+                )}
 
-                <div className="flex gap-2">
+                {/* Actions */}
+                <div className="grid grid-cols-2 gap-1.5">
                   <button
                     onClick={() => { setMovementProduct(p); setMovForm({ type: 'in', quantity: 1, reason: '', date: new Date().toISOString().split('T')[0], purchaseCost: 0, freightCost: 0 }); }}
-                    className="flex-1 flex items-center justify-center gap-1 py-2 rounded-xl bg-emerald-50 text-emerald-700 text-xs font-medium hover:bg-emerald-100 transition-colors"
+                    className="flex items-center justify-center gap-1.5 py-2 rounded-xl bg-emerald-50 text-emerald-700 text-xs font-medium hover:bg-emerald-100 transition-colors"
                   >
-                    <TrendingUp size={14} /> Entrée
+                    <TrendingUp size={13} /> Entrée
                   </button>
                   <button
                     onClick={() => { setMovementProduct(p); setMovForm({ type: 'out', quantity: 1, reason: '', date: new Date().toISOString().split('T')[0], purchaseCost: 0, freightCost: 0 }); }}
-                    className="flex-1 flex items-center justify-center gap-1 py-2 rounded-xl bg-amber-50 text-amber-700 text-xs font-medium hover:bg-amber-100 transition-colors"
+                    className="flex items-center justify-center gap-1.5 py-2 rounded-xl bg-amber-50 text-amber-700 text-xs font-medium hover:bg-amber-100 transition-colors"
                   >
-                    <TrendingDown size={14} /> Sortie
+                    <TrendingDown size={13} /> Sortie
                   </button>
-                  <button onClick={() => setHistProduct(p)} className="p-2 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors">
-                    <History size={14} />
+                  <button onClick={() => setHistProduct(p)}
+                    className="flex items-center justify-center gap-1.5 py-2 rounded-xl bg-blue-50 text-blue-600 text-xs font-medium hover:bg-blue-100 transition-colors">
+                    <History size={13} /> Historique
                   </button>
-                  <button onClick={() => openEdit(p)} className="p-2 rounded-xl bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors">
-                    <Edit2 size={14} />
-                  </button>
-                  <button onClick={() => setDeleteId(p.id)} className="p-2 rounded-xl bg-red-50 text-red-500 hover:bg-red-100 transition-colors">
-                    <Trash2 size={14} />
-                  </button>
+                  <div className="flex gap-1.5">
+                    <button onClick={() => openEdit(p)}
+                      className="flex-1 flex items-center justify-center py-2 rounded-xl bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors">
+                      <Edit2 size={13} />
+                    </button>
+                    <button onClick={() => setDeleteId(p.id)}
+                      className="flex-1 flex items-center justify-center py-2 rounded-xl bg-red-50 text-red-500 hover:bg-red-100 transition-colors">
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
                 </div>
               </div>
             );
@@ -288,7 +299,7 @@ export function Stock() {
             <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {field('name', 'Nom du produit *')}
             {field('sku', 'SKU *')}
             {field('category', 'Catégorie', 'text', categories)}
@@ -338,7 +349,7 @@ export function Stock() {
 
           {movForm.type === 'in' && (
             <>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-medium text-gray-600 mb-1 block">Coût d'achat total ({currency})</label>
                   <NumberInput value={movForm.purchaseCost} onChange={val => setMovForm(f => ({ ...f, purchaseCost: val }))}

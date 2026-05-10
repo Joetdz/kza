@@ -50,7 +50,7 @@ export function DashboardSkeleton() {
 
 export function CardsSkeleton({ count = 6 }: { count?: number }) {
   return (
-    <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-4 animate-fade-in">
+    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 animate-fade-in">
       {Array.from({ length: count }).map((_, i) => (
         <div key={i} className="bg-white rounded-2xl p-4 border border-gray-100 space-y-3">
           <div className="flex items-center gap-3">
