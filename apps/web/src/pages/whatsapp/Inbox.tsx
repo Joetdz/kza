@@ -3,7 +3,7 @@ import {
   Search, Bot, BotOff, X, Send, Paperclip, Smile,
   Info, Phone, Video,
   Reply, CheckCheck, Check, Clock, Mic, Image, FileText,
-  Plus, ChevronLeft,
+  Plus, ChevronLeft, Copy, Check as CheckIcon, Hash,
 } from 'lucide-react';
 import { useWhatsApp, WaContact, WaMessage } from '../../hooks/useWhatsApp';
 import { waApi } from '../../api/whatsapp';
@@ -94,72 +94,130 @@ function MediaContent({ msg }: { msg: WaMessage }) {
 }
 
 // QR / connect screen
-function ConnectScreen({ qr, loading, onConnect }: { qr: string | null; loading: any; onConnect: () => Promise<void> }) {
+function ConnectScreen({
+  pairingCode, pairingError, loading, onConnectPairing,
+}: {
+  pairingCode: string | null;
+  pairingError: string | null;
+  loading: any;
+  onConnectPairing: (phone: string) => Promise<void>;
+}) {
+  const [phoneInput, setPhoneInput] = useState('');
   const [connecting, setConnecting] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const handleConnect = async () => {
+    if (!phoneInput.trim()) return;
     setConnecting(true);
-    try { await onConnect(); } finally { /* loader stays until qr/loading arrives */ }
+    try { await onConnectPairing(phoneInput.trim()); } catch { setConnecting(false); }
   };
 
-  // Once Puppeteer starts emitting loading events, the connecting spinner is replaced
-  const showSpinner = connecting && !loading && !qr;
+  useEffect(() => {
+    if (pairingError) setConnecting(false);
+  }, [pairingError]);
 
-  return (
-    <div className="flex flex-col items-center justify-center h-full gap-6" style={{ background: C.chatBg }}>
-      <div className="bg-[#202c33] rounded-2xl p-8 max-w-sm w-full text-center shadow-xl">
-        <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4"
-          style={{ background: '#00a884' }}>
-          <Phone size={28} color="white" />
-        </div>
-        <h2 className="text-xl font-semibold mb-2" style={{ color: C.text }}>WhatsApp Web</h2>
+  const handleCopy = () => {
+    if (!pairingCode) return;
+    navigator.clipboard.writeText(pairingCode.replace(/-/g, ''));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
-        {showSpinner ? (
-          <div className="space-y-3 py-2">
-            <div className="flex items-center justify-center gap-3">
-              <span className="w-5 h-5 border-2 border-[#00a884] border-t-transparent rounded-full animate-spin" />
-              <span className="text-sm" style={{ color: C.textSub }}>Démarrage en cours...</span>
-            </div>
-            <p className="text-xs mt-2" style={{ color: C.textSub }}>
-              Lancement du navigateur, ça peut prendre quelques secondes
-            </p>
+  // ── Code reçu ──
+  if (pairingCode) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full px-4" style={{ background: C.chatBg }}>
+        <div className="bg-[#202c33] rounded-2xl p-8 max-w-sm w-full text-center shadow-xl space-y-5">
+          <div className="w-14 h-14 rounded-full flex items-center justify-center mx-auto" style={{ background: '#00a884' }}>
+            <Hash size={24} color="white" />
           </div>
-        ) : loading ? (
-          <div className="space-y-3 py-2">
-            <div className="flex items-center justify-center gap-3 mb-2">
-              <span className="w-5 h-5 border-2 border-[#00a884] border-t-transparent rounded-full animate-spin" />
-              <span className="text-sm" style={{ color: C.textSub }}>{loading.message || 'Chargement...'}</span>
-            </div>
-            <div className="w-full bg-[#111b21] rounded-full h-1.5">
-              <div className="h-1.5 rounded-full transition-all duration-500"
-                style={{ width: `${loading.percent}%`, background: '#00a884' }} />
-            </div>
-            <p className="text-xs" style={{ color: C.textSub }}>{loading.percent}%</p>
+          <div>
+            <p className="text-base font-semibold mb-1" style={{ color: C.text }}>Votre code de liaison</p>
+            <p className="text-xs" style={{ color: C.textSub }}>Ouvre WhatsApp sur ton téléphone</p>
           </div>
-        ) : qr ? (
-          <>
-            <img src={qr} alt="QR" className="mx-auto w-52 h-52 my-4 rounded-xl border-4 border-white" />
-            <ol className="text-sm text-left space-y-1.5" style={{ color: C.textSub }}>
-              <li>1. Ouvre WhatsApp sur ton téléphone</li>
-              <li>2. Paramètres → <strong style={{ color: C.text }}>Appareils liés</strong></li>
-              <li>3. Tap <strong style={{ color: C.text }}>+ Lier un appareil</strong></li>
-              <li>4. Scanne ce QR code</li>
-            </ol>
-          </>
-        ) : (
-          <>
-            <p className="text-sm mb-6" style={{ color: C.textSub }}>
-              Connectez votre WhatsApp pour accéder à toutes vos conversations en temps réel.
-            </p>
-            <button
-              onClick={handleConnect}
-              disabled={connecting}
-              className="w-full py-3 rounded-xl font-semibold text-sm transition-opacity disabled:opacity-60"
-              style={{ background: '#00a884', color: 'white' }}>
-              Connecter WhatsApp
+          <div className="rounded-2xl py-4 px-6 flex items-center justify-center gap-4"
+            style={{ background: '#111b21', border: '1px solid #374151' }}>
+            <span className="text-4xl font-black tracking-[0.25em] font-mono" style={{ color: '#00a884' }}>
+              {pairingCode}
+            </span>
+            <button onClick={handleCopy} title="Copier"
+              className="p-2 rounded-xl transition-colors"
+              style={{ background: copied ? '#00a884' : '#2a3942', color: 'white' }}>
+              {copied ? <CheckIcon size={16} /> : <Copy size={16} />}
             </button>
-          </>
+          </div>
+          <ol className="text-sm text-left space-y-2" style={{ color: C.textSub }}>
+            <li>1. Paramètres → <strong style={{ color: C.text }}>Appareils liés</strong></li>
+            <li>2. <strong style={{ color: C.text }}>+ Lier un appareil</strong></li>
+            <li>3. <strong style={{ color: C.text }}>Lier avec un numéro de téléphone</strong></li>
+            <li>4. Entrez le code ci-dessus</li>
+          </ol>
+          <p className="text-xs" style={{ color: '#6b7280' }}>Le code se renouvelle toutes les 3 minutes</p>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Chargement Chrome ──
+  if (loading || connecting) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full px-4" style={{ background: C.chatBg }}>
+        <div className="bg-[#202c33] rounded-2xl p-8 max-w-sm w-full text-center shadow-xl space-y-4">
+          <div className="flex items-center justify-center gap-3">
+            <span className="w-5 h-5 border-2 border-[#00a884] border-t-transparent rounded-full animate-spin" />
+            <span className="text-sm" style={{ color: C.textSub }}>
+              {loading ? (loading.message || 'Chargement...') : 'Démarrage du navigateur...'}
+            </span>
+          </div>
+          {loading && (
+            <>
+              <div className="w-full bg-[#111b21] rounded-full h-1.5">
+                <div className="h-1.5 rounded-full transition-all duration-500"
+                  style={{ width: `${loading.percent}%`, background: '#00a884' }} />
+              </div>
+              <p className="text-xs" style={{ color: C.textSub }}>{loading.percent}%</p>
+            </>
+          )}
+          <p className="text-xs" style={{ color: C.textSub }}>Génération du code en cours...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Saisie du numéro ──
+  return (
+    <div className="flex flex-col items-center justify-center h-full px-4" style={{ background: C.chatBg }}>
+      <div className="bg-[#202c33] rounded-2xl p-6 sm:p-8 max-w-sm w-full shadow-xl space-y-5">
+        <div className="text-center">
+          <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-3" style={{ background: '#00a884' }}>
+            <Phone size={28} color="white" />
+          </div>
+          <h2 className="text-xl font-semibold" style={{ color: C.text }}>Connecter WhatsApp</h2>
+          <p className="text-xs mt-1" style={{ color: C.textSub }}>
+            Entrez votre numéro pour recevoir un code de liaison
+          </p>
+        </div>
+        {pairingError && (
+          <div className="rounded-xl px-4 py-3 text-sm" style={{ background: '#3b1515', color: '#f87171', border: '1px solid #7f1d1d' }}>
+            {pairingError}
+          </div>
         )}
+        <input
+          type="tel"
+          value={phoneInput}
+          onChange={e => setPhoneInput(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && handleConnect()}
+          placeholder="+243 812 345 678"
+          className="w-full rounded-xl px-4 py-3 text-sm outline-none"
+          style={{ background: '#111b21', color: C.text, border: '1px solid #374151' }}
+        />
+        <button
+          onClick={handleConnect}
+          disabled={!phoneInput.trim()}
+          className="w-full py-3 rounded-xl font-semibold text-sm transition-opacity disabled:opacity-50"
+          style={{ background: '#00a884', color: 'white' }}>
+          Obtenir le code de liaison
+        </button>
       </div>
     </div>
   );
@@ -167,9 +225,9 @@ function ConnectScreen({ qr, loading, onConnect }: { qr: string | null; loading:
 
 export function Inbox() {
   const {
-    connected, phone, qr, loading, contacts, messages, sync,
+    connected, phone, pairingCode, pairingError, loading, contacts, messages, sync,
     loadContacts, loadMessages, sendMessage, updateContact,
-    initConnect, initDisconnect, setContacts,
+    initConnectPairing, initDisconnect, setContacts,
   } = useWhatsApp();
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -243,11 +301,8 @@ export function Inbox() {
 
   const syncPct = sync.total > 0 ? Math.round((sync.imported / sync.total) * 100) : 0;
 
-  if (!connected && !qr && !loading) {
-    return <ConnectScreen qr={null} loading={null} onConnect={initConnect} />;
-  }
   if (!connected) {
-    return <ConnectScreen qr={qr} loading={loading} onConnect={initConnect} />;
+    return <ConnectScreen pairingCode={pairingCode} pairingError={pairingError} loading={loading} onConnectPairing={initConnectPairing} />;
   }
 
   return (

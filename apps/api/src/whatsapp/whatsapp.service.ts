@@ -7,6 +7,7 @@ import * as qrcode from 'qrcode';
 import * as path from 'path';
 import * as fs from 'fs';
 import { execFileSync } from 'child_process';
+import puppeteer from 'puppeteer';
 
 function findSystemChrome(): string | undefined {
   const candidates = [
@@ -38,6 +39,11 @@ export class WhatsAppService implements OnModuleDestroy {
   private keepAliveTimers = new Map<string, NodeJS.Timeout>();
   // Set of users that explicitly logged out — do not auto-reconnect
   private loggedOut = new Set<string>();
+  // Phone number to use for pairing code instead of QR (per user)
+  private pairingPhones = new Map<string, string>();
+  // Shared Puppeteer browser — launched once, reused by all clients
+  private sharedBrowser: any = null;
+  private browserLaunching = false;
   // Per-contact sequential queue: key = `userId:phone`, value = last promise in chain
   private messageQueues = new Map<string, Promise<void>>();
   // Buffer of recent AI responses not yet visible in fetchMessages: key = `userId:phone`
@@ -93,6 +99,61 @@ export class WhatsAppService implements OnModuleDestroy {
     }, delay);
   }
 
+  // ── Shared browser — launched once, reused by all clients ────────────────────
+
+  private readonly CHROME_ARGS = [
+    '--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu',
+    '--disable-dev-shm-usage', '--disable-software-rasterizer',
+    '--no-first-run', '--ignore-certificate-errors', '--disable-extensions',
+    '--disable-background-networking', '--disable-background-timer-throttling',
+    '--disable-backgrounding-occluded-windows', '--disable-breakpad',
+    '--disable-client-side-phishing-detection', '--disable-component-update',
+    '--disable-default-apps', '--disable-domain-reliability',
+    '--disable-hang-monitor', '--disable-ipc-flooding-protection',
+    '--disable-notifications', '--disable-popup-blocking',
+    '--disable-prompt-on-repost', '--disable-renderer-backgrounding',
+    '--disable-sync', '--disable-translate', '--metrics-recording-only',
+    '--mute-audio', '--no-default-browser-check',
+    '--safebrowsing-disable-auto-update', '--password-store=basic',
+    '--use-mock-keychain',
+  ];
+
+  private async getSharedBrowser(): Promise<string> {
+    // Return existing healthy browser
+    if (this.sharedBrowser?.isConnected?.()) {
+      return this.sharedBrowser.wsEndpoint();
+    }
+    // Wait if already launching (concurrent callers)
+    if (this.browserLaunching) {
+      await new Promise<void>((resolve, reject) => {
+        const start = Date.now();
+        const check = setInterval(() => {
+          if (!this.browserLaunching) { clearInterval(check); resolve(); }
+          if (Date.now() - start > 60_000) { clearInterval(check); reject(new Error('Browser launch timeout')); }
+        }, 300);
+      });
+      if (!this.sharedBrowser?.isConnected?.()) throw new Error('Shared browser unavailable after wait');
+      return this.sharedBrowser.wsEndpoint();
+    }
+    this.browserLaunching = true;
+    try {
+      this.logger.log('Launching shared Chrome browser...');
+      this.sharedBrowser = await puppeteer.launch({
+        headless: true,
+        executablePath: findSystemChrome(),
+        args: this.CHROME_ARGS,
+      });
+      this.sharedBrowser.on('disconnected', () => {
+        this.logger.warn('Shared browser disconnected — will relaunch on next connect');
+        this.sharedBrowser = null;
+      });
+      this.logger.log(`Shared Chrome ready (${this.sharedBrowser.wsEndpoint()})`);
+      return this.sharedBrowser.wsEndpoint();
+    } finally {
+      this.browserLaunching = false;
+    }
+  }
+
   // ── Connect ───────────────────────────────────────────────────────────────────
 
   async connect(userId: string): Promise<void> {
@@ -102,32 +163,55 @@ export class WhatsAppService implements OnModuleDestroy {
       return;
     }
 
-    const client = new Client({
+    const pairingPhone = this.pairingPhones.get(userId);
+
+    // Get (or launch) the shared browser — fast on subsequent calls
+    let browserWSEndpoint: string | undefined;
+    try {
+      browserWSEndpoint = await this.getSharedBrowser();
+    } catch (err: any) {
+      this.logger.error('Failed to get shared browser:', err?.message);
+    }
+
+    const clientOptions: any = {
       authStrategy: new LocalAuth({
         clientId: userId,
         dataPath: path.join(process.cwd(), '.wwebjs_auth'),
       }),
-      puppeteer: {
-        headless: true,
-        executablePath: findSystemChrome(),
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-gpu',
-          '--disable-dev-shm-usage',
-          '--disable-extensions',
-          '--disable-software-rasterizer',
-          '--no-first-run',
-          '--no-zygote',
-          '--single-process',
-          '--ignore-certificate-errors',
-        ],
-      },
-    });
+      puppeteer: browserWSEndpoint
+        ? { browserWSEndpoint }
+        : { headless: true, executablePath: findSystemChrome(), args: this.CHROME_ARGS },
+    };
+
+    const client = new Client(clientOptions);
 
     this.clients.set(userId, client);
 
+    // Pairing code — emitted when requestPairingCode succeeds
+    client.on('code', (code: string) => {
+      this.pairingPhones.delete(userId);
+      this.logger.log(`Pairing code for ${userId}: ${code}`);
+      this.emit('pairing_code', userId, { code });
+    });
+
     client.on('qr', async (qr) => {
+      const phone = this.pairingPhones.get(userId);
+      if (phone) {
+        // Manually call requestPairingCode — library already polls for PairingCodeLinkUtils
+        client.requestPairingCode(phone).then((code: string) => {
+          this.pairingPhones.delete(userId);
+          this.logger.log(`Pairing code for ${userId}: ${code}`);
+          this.emit('pairing_code', userId, { code });
+        }).catch((err: any) => {
+          const msg = err?.message ?? String(err);
+          this.logger.warn(`requestPairingCode failed for ${userId}: ${msg}`);
+          this.pairingPhones.delete(userId);
+          this.emit('pairing_error', userId, {
+            message: 'Impossible de générer le code. Patientez quelques minutes puis réessayez.',
+          });
+        });
+        return;
+      }
       const qrDataUrl = await qrcode.toDataURL(qr);
       this.emit('qr', userId, { qr: qrDataUrl });
     });
@@ -146,6 +230,7 @@ export class WhatsAppService implements OnModuleDestroy {
         })
       );
       this.reconnectDelay.set(userId, 5000); // reset backoff on success
+      this.pairingPhones.delete(userId);
       this.emit('connected', userId, { phone });
       this.logger.log(`WhatsApp ready for ${userId} (${phone})`);
 
@@ -220,9 +305,43 @@ export class WhatsAppService implements OnModuleDestroy {
       this.emit('message-revoked', userId, { waId: revokedMsg.id.id });
     });
 
-    client.initialize().catch(err =>
-      this.logger.error(`Initialize failed for ${userId}:`, err),
-    );
+    client.initialize()
+      .then(() => {
+        // Prevent whatsapp-web.js from closing our shared browser.
+        // When connected via browserWSEndpoint, replace close() with disconnect()
+        // so the browser process stays alive for other clients.
+        const pupBrowser = (client as any).pupBrowser;
+        if (browserWSEndpoint && pupBrowser) {
+          pupBrowser.close = () => pupBrowser.disconnect();
+        }
+      })
+      .catch((err: any) => {
+        const msg = err?.message ?? String(err);
+        this.logger.error(`Initialize failed for ${userId}: ${msg}`);
+        this.clients.delete(userId);
+        this.clearKeepAlive(userId);
+        if (this.pairingPhones.has(userId)) {
+          this.pairingPhones.delete(userId);
+          this.emit('pairing_error', userId, { message: 'Échec de connexion. Réessayez.' });
+        }
+        if (!this.loggedOut.has(userId)) {
+          this.scheduleReconnect(userId);
+        }
+      });
+  }
+
+  async connectWithPairingCode(userId: string, phone: string): Promise<void> {
+    // Normalize: strip +, spaces, dashes
+    const normalized = phone.replace(/[^0-9]/g, '');
+    this.pairingPhones.set(userId, normalized);
+    // If client already exists, it already passed the qr stage — clear and reconnect
+    if (this.clients.has(userId)) {
+      const client = this.clients.get(userId)!;
+      this.clients.delete(userId);
+      this.clearKeepAlive(userId);
+      try { await client.destroy(); } catch { /* ignore */ }
+    }
+    await this.connect(userId);
   }
 
   // ── Contacts — live from WA client + CRM overlay from DB ─────────────────────
@@ -872,5 +991,10 @@ export class WhatsAppService implements OnModuleDestroy {
     for (const [userId] of this.keepAliveTimers) this.clearKeepAlive(userId);
     for (const [, client] of this.clients) client.destroy().catch(() => {});
     this.clients.clear();
+    // Actually close the shared browser on shutdown
+    if (this.sharedBrowser?.isConnected?.()) {
+      const orig = this.sharedBrowser.close.bind(this.sharedBrowser);
+      orig().catch(() => {});
+    }
   }
 }

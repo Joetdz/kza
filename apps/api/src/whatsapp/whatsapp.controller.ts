@@ -12,10 +12,14 @@ import { AiConfigDto } from './dto/ai-config.dto';
 import { KbEntryDto, UpdateKbEntryDto } from './dto/kb-entry.dto';
 import { AutomationDto, UpdateAutomationDto } from './dto/automation.dto';
 import { UpdateAudienceContactDto, UpdateUserProfileDto } from './dto/audience.dto';
-import { IsOptional, IsString } from 'class-validator';
+import { IsOptional, IsString, IsPhoneNumber } from 'class-validator';
 
 class CreateNoteDto {
   @IsString() content: string;
+}
+
+class ConnectPairingDto {
+  @IsString() phone: string;
 }
 
 class CreateTagDto {
@@ -86,6 +90,12 @@ export class WhatsAppController {
   async disconnect(@CurrentUser() user: AuthUser) {
     await this.wa.disconnect(user.id);
     return { message: 'Déconnecté' };
+  }
+
+  @Post('connect-pairing')
+  async connectPairing(@CurrentUser() user: AuthUser, @Body() dto: ConnectPairingDto) {
+    await this.wa.connectWithPairingCode(user.id, dto.phone);
+    return { message: 'Connexion par code initialisée' };
   }
 
   // ── Contacts ─────────────────────────────────────────────────────────────────

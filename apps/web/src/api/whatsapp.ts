@@ -26,6 +26,7 @@ export const waApi = {
   // Connexion
   getStatus: () => req<{ connected: boolean; phone: string | null }>('/whatsapp/status'),
   connect: () => req<void>('/whatsapp/connect', { method: 'POST' }),
+  connectPairing: (phone: string) => req<void>('/whatsapp/connect-pairing', { method: 'POST', body: JSON.stringify({ phone }) }),
   disconnect: () => req<void>('/whatsapp/disconnect', { method: 'POST' }),
 
   // Contacts

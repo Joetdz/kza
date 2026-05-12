@@ -56,16 +56,19 @@ export interface AudienceSyncState {
 export function useWhatsApp() {
   const socketRef = useRef<Socket | null>(null);
   const loadedRef = useRef<Set<string>>(new Set()); // tracks which contactIds are fetched
+  const pairingDoneRef = useRef(false); // true once pairing code received — ignore subsequent QR events
 
   const [connected, setConnected] = useState(false);
   const [phone, setPhone] = useState<string | null>(null);
   const [qr, setQr] = useState<string | null>(null);
+  const [pairingCode, setPairingCode] = useState<string | null>(null);
   const [loading, setLoading] = useState<{ percent: number; message: string } | null>(null);
   const [contacts, setContacts] = useState<WaContact[]>([]);
   const [messages, setMessages] = useState<Record<string, WaMessage[]>>({});
   const [socketReady, setSocketReady] = useState(false);
   const [sync, setSync] = useState<SyncState>({ status: 'idle', imported: 0, total: 0 });
   const [audienceSync, setAudienceSync] = useState<AudienceSyncState>({ status: 'idle', done: 0, total: 0 });
+  const [pairingError, setPairingError] = useState<string | null>(null);
 
   // Stable load function — no dependency on messages state
   const loadMessages = useCallback(async (contactId: string, force = false) => {
@@ -97,8 +100,24 @@ export function useWhatsApp() {
       sock.on('disconnect', () => setSocketReady(false));
 
       sock.on('qr', ({ qr: q }: { qr: string }) => {
+        if (pairingDoneRef.current) return; // pairing code already shown — ignore QR refreshes
         setQr(q);
+        setPairingCode(null);
         setConnected(false);
+        setLoading(null);
+      });
+
+      sock.on('pairing_code', ({ code }: { code: string }) => {
+        pairingDoneRef.current = true;
+        setPairingCode(code);
+        setQr(null);
+        setLoading(null);
+        setPairingError(null);
+      });
+
+      sock.on('pairing_error', ({ message }: { message: string }) => {
+        setPairingError(message);
+        setPairingCode(null);
         setLoading(null);
       });
 
@@ -110,14 +129,20 @@ export function useWhatsApp() {
         setConnected(true);
         setPhone(p);
         setQr(null);
+        setPairingCode(null);
+        setPairingError(null);
         setLoading(null);
         loadContacts();
       });
 
       sock.on('disconnected', () => {
+        pairingDoneRef.current = false;
         setConnected(false);
         setPhone(null);
         setLoading(null);
+        setQr(null);
+        setPairingCode(null);
+        setPairingError(null);
         setMessages({});
         loadedRef.current.clear();
       });
@@ -225,6 +250,11 @@ export function useWhatsApp() {
 
   const initConnect = useCallback(async () => { await waApi.connect(); }, []);
 
+  const initConnectPairing = useCallback(async (phone: string) => {
+    pairingDoneRef.current = false;
+    await waApi.connectPairing(phone);
+  }, []);
+
   const initDisconnect = useCallback(async () => {
     await waApi.disconnect();
     setConnected(false);
@@ -255,9 +285,9 @@ export function useWhatsApp() {
   }, [loadContacts]);
 
   return {
-    connected, phone, qr, loading, contacts, messages, socketReady, sync, audienceSync,
+    connected, phone, qr, pairingCode, pairingError, loading, contacts, messages, socketReady, sync, audienceSync,
     loadContacts, loadMessages, sendMessage, updateContact,
-    initConnect, initDisconnect,
+    initConnect, initConnectPairing, initDisconnect,
     setContacts, setMessages,
   };
 }
