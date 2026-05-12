@@ -15,6 +15,8 @@ function findSystemChrome(): string | undefined {
     '/usr/bin/google-chrome-stable',
     '/usr/bin/chromium-browser',
     '/usr/bin/chromium',
+    // snap real binary (not the wrapper script at /snap/bin/chromium)
+    '/snap/chromium/current/usr/lib/chromium-browser/chromium-browser',
     '/snap/bin/chromium',
     '/usr/local/bin/chromium',
   ];

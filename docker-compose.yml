@@ -1,0 +1,37 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      FRONTEND_URL: ${FRONTEND_URL}
+      DATABASE_URL: ${DATABASE_URL:-}
+      INTERNAL_SYNC_SECRET: ${INTERNAL_SYNC_SECRET:-}
+    volumes:
+      - wwebjs_auth:/app/.wwebjs_auth
+      - uploads:/app/apps/api/uploads
+    shm_size: '512mb'
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+      args:
+        VITE_API_URL: ${VITE_API_URL}
+        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL}
+        VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY}
+        VITE_ADMIN_EMAILS: ${VITE_ADMIN_EMAILS:-}
+    restart: unless-stopped
+    ports:
+      - "4173:80"
+
+volumes:
+  wwebjs_auth:
+  uploads:
