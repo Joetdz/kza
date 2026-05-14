@@ -1,13 +1,13 @@
 import { IsString, IsNumber, IsOptional, IsDateString, Min } from 'class-validator';
 import { Type } from 'class-transformer';
-import type { CreateProductDto as ICreateProductDto } from '@kza/shared';
 
-export class CreateProductDto implements ICreateProductDto {
+export class CreateProductDto {
   @IsString()
   name: string;
 
   @IsString()
-  sku: string;
+  @IsOptional()
+  sku?: string;
 
   @IsString()
   @IsOptional()

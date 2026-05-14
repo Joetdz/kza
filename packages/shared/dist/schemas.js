@@ -29,7 +29,7 @@ exports.DELIVERY_ZONES = [
 // ─── Product ─────────────────────────────────────────────────────────────────
 exports.CreateProductSchema = zod_1.z.object({
     name: zod_1.z.string().min(1),
-    sku: zod_1.z.string().min(1),
+    sku: zod_1.z.string().optional().default(''),
     category: zod_1.z.string().default(''),
     quantity: zod_1.z.number().min(0),
     alertThreshold: zod_1.z.number().min(0),

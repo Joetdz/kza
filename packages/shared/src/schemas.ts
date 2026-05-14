@@ -36,7 +36,7 @@ export type DeliveryZone = typeof DELIVERY_ZONES[number];
 
 export const CreateProductSchema = z.object({
   name: z.string().min(1),
-  sku: z.string().min(1),
+  sku: z.string().optional().default(''),
   category: z.string().default(''),
   quantity: z.number().min(0),
   alertThreshold: z.number().min(0),

@@ -12,8 +12,10 @@ import { formatDate } from '../utils/formatters';
 import { uploadApi, STATIC_BASE } from '../api';
 import type { Product, StockMovement } from '../types';
 
+const generateSku = () => 'PRD-' + Math.random().toString(36).slice(2, 8).toUpperCase();
+
 const emptyProduct = (): Omit<Product, 'id' | 'createdAt' | 'updatedAt'> => ({
-  name: '', sku: '', category: '', quantity: 0, alertThreshold: 5,
+  name: '', sku: generateSku(), category: '', quantity: 0, alertThreshold: 5,
   supplier: '', acquisitionCost: 0, sellingPrice: 0, imageUrl: undefined,
   entryDate: new Date().toISOString().split('T')[0],
 });
@@ -56,7 +58,8 @@ export function Stock() {
   const openAdd = () => { setEditing(null); setForm(emptyProduct()); setModalOpen(true); };
   const openEdit = (p: Product) => {
     setEditing(p);
-    setForm({ name: p.name, sku: p.sku, category: p.category, quantity: p.quantity, alertThreshold: p.alertThreshold, supplier: p.supplier, acquisitionCost: p.acquisitionCost, sellingPrice: p.sellingPrice ?? 0, imageUrl: p.imageUrl, entryDate: p.entryDate });
+    // acquisitionCost stored as unit cost → show as total in form
+    setForm({ name: p.name, sku: p.sku, category: p.category, quantity: p.quantity, alertThreshold: p.alertThreshold, supplier: p.supplier, acquisitionCost: p.acquisitionCost * p.quantity, sellingPrice: p.sellingPrice ?? 0, imageUrl: p.imageUrl, entryDate: p.entryDate });
     setModalOpen(true);
   };
 
@@ -73,11 +76,14 @@ export function Stock() {
   };
 
   const handleSave = async () => {
-    if (!form.name || !form.sku) return;
+    if (!form.name) return;
     setSubmitting(true);
+    // Convert total acquisition cost → unit cost before saving
+    const unitCost = form.quantity > 0 ? form.acquisitionCost / form.quantity : form.acquisitionCost;
+    const payload = { ...form, acquisitionCost: unitCost };
     try {
-      if (editing) await updateProduct(editing.id, form);
-      else await addProduct(form);
+      if (editing) await updateProduct(editing.id, payload);
+      else await addProduct(payload);
       setModalOpen(false);
     } finally {
       setSubmitting(false);
@@ -106,7 +112,7 @@ export function Stock() {
   const productMovements = (productId: string): StockMovement[] =>
     movements.filter(m => m.productId === productId).sort((a, b) => b.date.localeCompare(a.date));
 
-  const field = (key: keyof typeof form, label: string, type = 'text', opts?: string[]) => (
+  const field = (key: keyof typeof form, label: string, type = 'text', opts?: string[], hint?: string) => (
     <div>
       <label className="text-xs font-medium text-gray-600 mb-1 block">{label}</label>
       {opts ? (
@@ -132,6 +138,7 @@ export function Stock() {
           className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300"
         />
       )}
+      {hint && <p className="text-[11px] text-gray-400 mt-1">{hint}</p>}
     </div>
   );
 
@@ -300,15 +307,22 @@ export function Stock() {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {field('name', 'Nom du produit *')}
-            {field('sku', 'SKU *')}
-            {field('category', 'Catégorie', 'text', categories)}
-            {field('supplier', 'Fournisseur')}
-            {field('acquisitionCost', `Coût achat (${currency})`, 'number')}
-            {field('sellingPrice', `Prix de vente (${currency})`, 'number')}
-            {field('quantity', 'Quantité en stock', 'number')}
-            {field('alertThreshold', "Seuil d'alerte", 'number')}
-            {field('entryDate', "Date d'entrée", 'date')}
+            {field('name', 'Nom du produit *', 'text', undefined, 'Nom complet tel qu\'il apparaîtra dans le stock')}
+            {field('sku', 'Référence (SKU)', 'text', undefined, 'Code unique du produit — auto-généré si vide')}
+            {field('category', 'Catégorie', 'text', categories, 'Famille de produit pour filtrer et regrouper')}
+            {field('supplier', 'Fournisseur', 'text', undefined, 'Nom du fournisseur ou grossiste')}
+            {field('quantity', 'Quantité en stock', 'number', undefined, 'Nombre d\'unités actuellement disponibles')}
+            {field('alertThreshold', "Seuil d'alerte", 'number', undefined, 'Alerte stock bas déclenchée en dessous de ce seuil')}
+            {field('entryDate', "Date d'entrée", 'date', undefined, 'Date à laquelle ce stock est entré')}
+            <div>
+              {field('acquisitionCost', `Coût d'achat total (${currency})`, 'number', undefined, 'Montant total payé pour tout le lot (transport inclus)')}
+              {form.quantity > 0 && form.acquisitionCost > 0 && (
+                <p className="text-[11px] text-indigo-500 mt-1 font-medium">
+                  → {MAD(form.acquisitionCost / form.quantity)} / unité
+                </p>
+              )}
+            </div>
+            {field('sellingPrice', `Prix de vente unitaire (${currency})`, 'number', undefined, 'Prix auquel vous vendez une unité à votre client')}
           </div>
           <div className="flex gap-3 pt-2">
             <Button variant="secondary" onClick={() => setModalOpen(false)} className="flex-1" disabled={submitting}>Annuler</Button>

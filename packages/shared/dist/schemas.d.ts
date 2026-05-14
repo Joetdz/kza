@@ -9,7 +9,7 @@ export declare const DELIVERY_ZONES: readonly [...string[], "Lubumbashi", "Mbuji
 export type DeliveryZone = typeof DELIVERY_ZONES[number];
 export declare const CreateProductSchema: z.ZodObject<{
     name: z.ZodString;
-    sku: z.ZodString;
+    sku: z.ZodDefault<z.ZodOptional<z.ZodString>>;
     category: z.ZodDefault<z.ZodString>;
     quantity: z.ZodNumber;
     alertThreshold: z.ZodNumber;
@@ -31,11 +31,11 @@ export declare const CreateProductSchema: z.ZodObject<{
     imageUrl?: string | undefined;
 }, {
     name: string;
-    sku: string;
     quantity: number;
     alertThreshold: number;
     acquisitionCost: number;
     entryDate: string;
+    sku?: string | undefined;
     category?: string | undefined;
     supplier?: string | undefined;
     sellingPrice?: number | undefined;
@@ -43,7 +43,7 @@ export declare const CreateProductSchema: z.ZodObject<{
 }>;
 export declare const UpdateProductSchema: z.ZodObject<{
     name: z.ZodOptional<z.ZodString>;
-    sku: z.ZodOptional<z.ZodString>;
+    sku: z.ZodOptional<z.ZodDefault<z.ZodOptional<z.ZodString>>>;
     category: z.ZodOptional<z.ZodDefault<z.ZodString>>;
     quantity: z.ZodOptional<z.ZodNumber>;
     alertThreshold: z.ZodOptional<z.ZodNumber>;
@@ -77,7 +77,7 @@ export declare const UpdateProductSchema: z.ZodObject<{
 }>;
 export declare const ProductSchema: z.ZodObject<{
     name: z.ZodString;
-    sku: z.ZodString;
+    sku: z.ZodDefault<z.ZodOptional<z.ZodString>>;
     category: z.ZodDefault<z.ZodString>;
     quantity: z.ZodNumber;
     alertThreshold: z.ZodNumber;
@@ -106,7 +106,6 @@ export declare const ProductSchema: z.ZodObject<{
     imageUrl?: string | undefined;
 }, {
     name: string;
-    sku: string;
     quantity: number;
     alertThreshold: number;
     acquisitionCost: number;
@@ -114,6 +113,7 @@ export declare const ProductSchema: z.ZodObject<{
     id: string;
     createdAt: string;
     updatedAt: string;
+    sku?: string | undefined;
     category?: string | undefined;
     supplier?: string | undefined;
     sellingPrice?: number | undefined;

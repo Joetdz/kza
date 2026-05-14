@@ -11,7 +11,7 @@ datasource db {
 model Product {
   id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name            String
-  sku             String   @unique
+  sku             String
   category        String   @default("")
   quantity        Float    @default(0)
   alertThreshold  Float    @default(5)  @map("alert_threshold")
@@ -28,6 +28,7 @@ model Product {
   saleItems SaleItem[]
   expenses  Expense[]
 
+  @@unique([userId, sku])
   @@index([userId])
   @@map("products")
 }

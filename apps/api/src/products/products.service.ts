@@ -14,10 +14,20 @@ export class ProductsService {
   }
 
   async create(dto: CreateProductDto, userId: string) {
+    let sku = dto.sku?.trim() || '';
+    if (!sku) {
+      let attempts = 0;
+      do {
+        sku = 'PRD-' + Math.random().toString(36).slice(2, 8).toUpperCase();
+        const exists = await this.prisma.product.findFirst({ where: { userId, sku } });
+        if (!exists) break;
+      } while (++attempts < 10);
+    }
+
     const product = await this.prisma.product.create({
       data: {
         name: dto.name,
-        sku: dto.sku,
+        sku,
         category: dto.category ?? '',
         quantity: dto.quantity,
         alertThreshold: dto.alertThreshold,
