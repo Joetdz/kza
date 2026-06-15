@@ -9,6 +9,13 @@ export default defineConfig({
       '@kza/shared': path.resolve(__dirname, '../../packages/shared/src/index.ts'),
     },
   },
+
+  preview: {
+    allowedHosts: [
+      'kzion.tdzempire.com',
+    ],
+  },
+
   build: {
     rollupOptions: {
       output: {
