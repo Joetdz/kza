@@ -8,6 +8,7 @@ import {
 import { useWhatsApp, WaContact, WaMessage } from '../../hooks/useWhatsApp';
 import { waApi } from '../../api/whatsapp';
 import { STATIC_BASE } from '../../api';
+import { useStore } from '../../store/useStore';
 
 // ── WA Web color palette ─────────────────────────────────────────────────────
 const C = {
@@ -95,14 +96,15 @@ function MediaContent({ msg }: { msg: WaMessage }) {
 
 // QR / connect screen
 function ConnectScreen({
-  pairingCode, pairingError, loading, onConnectPairing,
+  pairingCode, pairingError, loading, onConnectPairing, businessPhone,
 }: {
   pairingCode: string | null;
   pairingError: string | null;
   loading: any;
   onConnectPairing: (phone: string) => Promise<void>;
+  businessPhone?: string;
 }) {
-  const [phoneInput, setPhoneInput] = useState('');
+  const [phoneInput, setPhoneInput] = useState(businessPhone ?? '');
   const [connecting, setConnecting] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -205,12 +207,18 @@ function ConnectScreen({
         <input
           type="tel"
           value={phoneInput}
-          onChange={e => setPhoneInput(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && handleConnect()}
+          onChange={e => !businessPhone && setPhoneInput(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && !businessPhone && handleConnect()}
           placeholder="+243 812 345 678"
+          readOnly={!!businessPhone}
           className="w-full rounded-xl px-4 py-3 text-sm outline-none"
-          style={{ background: '#111b21', color: C.text, border: '1px solid #374151' }}
+          style={{ background: '#111b21', color: C.text, border: '1px solid #374151', opacity: businessPhone ? 0.7 : 1 }}
         />
+        {businessPhone && (
+          <p className="text-xs text-center" style={{ color: C.textSub }}>
+            Numéro configuré dans les paramètres du business
+          </p>
+        )}
         <button
           onClick={handleConnect}
           disabled={!phoneInput.trim()}
@@ -229,6 +237,9 @@ export function Inbox() {
     loadContacts, loadMessages, sendMessage, updateContact,
     initConnectPairing, initDisconnect, setContacts,
   } = useWhatsApp();
+
+  const { businesses, currentBusinessId } = useStore();
+  const currentBusiness = businesses.find(b => b.id === currentBusinessId);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
@@ -302,7 +313,7 @@ export function Inbox() {
   const syncPct = sync.total > 0 ? Math.round((sync.imported / sync.total) * 100) : 0;
 
   if (!connected) {
-    return <ConnectScreen pairingCode={pairingCode} pairingError={pairingError} loading={loading} onConnectPairing={initConnectPairing} />;
+    return <ConnectScreen pairingCode={pairingCode} pairingError={pairingError} loading={loading} onConnectPairing={initConnectPairing} businessPhone={currentBusiness?.whatsappPhone} />;
   }
 
   return (

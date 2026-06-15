@@ -13,6 +13,9 @@ import { UploadModule } from './upload/upload.module';
 import { WhatsAppModule } from './whatsapp/whatsapp.module';
 import { AdminModule } from './admin/admin.module';
 import { BusinessAiModule } from './business-ai/business-ai.module';
+import { StoreModule } from './store/store.module';
+import { CategoriesModule } from './categories/categories.module';
+import { BusinessModule } from './business/business.module';
 
 @Module({
   imports: [
@@ -28,6 +31,9 @@ import { BusinessAiModule } from './business-ai/business-ai.module';
     WhatsAppModule,
     AdminModule,
     BusinessAiModule,
+    StoreModule,
+    CategoriesModule,
+    BusinessModule,
   ],
   providers: [
     {

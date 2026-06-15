@@ -45,6 +45,7 @@ export const CreateProductSchema = z.object({
   sellingPrice: z.number().min(0).default(0),
   imageUrl: z.string().optional(),
   entryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  trackStock: z.boolean().default(true),
 });
 
 export const UpdateProductSchema = CreateProductSchema.partial();
@@ -85,6 +86,8 @@ export const CreateSaleSchema = z.object({
   note: z.string().optional(),
   status: z.enum(SALE_STATUSES).default('paid'),
   deliveryZone: z.string().optional(),
+  customerName: z.string().optional(),
+  customerPhone: z.string().optional(),
 });
 
 export const SaleSchema = CreateSaleSchema.extend({
@@ -125,3 +128,27 @@ export const GoalSchema = CreateGoalSchema.extend({
   id: z.string().uuid(),
   createdAt: z.string(),
 });
+
+// ─── Business ─────────────────────────────────────────────────────────────────
+
+export const SUPPORTED_CURRENCIES = ['USD', 'CDF', 'EUR', 'XAF', 'XOF', 'RWF', 'UGX', 'GNF', 'MAD'] as const;
+export type SupportedCurrency = typeof SUPPORTED_CURRENCIES[number];
+
+export const CreateBusinessSchema = z.object({
+  name: z.string().min(1),
+  sector: z.string().optional(),
+  country: z.string().length(2).default('CD'),
+  currency: z.enum(SUPPORTED_CURRENCIES).default('USD'),
+  whatsappPhone: z.string().min(1),
+  logoUrl: z.string().optional(),
+  isDefault: z.boolean().default(false),
+});
+
+export const UpdateBusinessSchema = CreateBusinessSchema.partial();
+
+export const BusinessSchema = CreateBusinessSchema.extend({
+  id: z.string().uuid(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+

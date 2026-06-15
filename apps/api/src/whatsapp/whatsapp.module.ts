@@ -10,5 +10,6 @@ import { PrismaModule } from '../prisma/prisma.module';
   imports: [PrismaModule],
   controllers: [WhatsAppController],
   providers: [WhatsAppService, WhatsAppGateway, AiService, AutomationService],
+  exports: [WhatsAppService],
 })
 export class WhatsAppModule {}

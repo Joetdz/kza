@@ -1,4 +1,5 @@
-import { Controller, Post, Body, Get } from '@nestjs/common';
+import { Controller, Post, Body, Get, Delete, Res } from '@nestjs/common';
+import { Response } from 'express';
 import { PrismaService } from '../prisma/prisma.service';
 import { CurrentUser, AuthUser } from '../auth/current-user.decorator';
 import OpenAI from 'openai';
@@ -87,7 +88,6 @@ export class BusinessAiController {
       : '0';
 
     // Top products names
-    const productMap = new Map(products.map(p => [p.name, p]));
     const topProductIds = topProducts.map(t => t.productId).filter(Boolean);
     const topProductNames = await this.prisma.product.findMany({
       where: { id: { in: topProductIds as string[] } },
@@ -149,18 +149,86 @@ DATE ACTUELLE: ${now.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long'
 `;
   }
 
+  // ── Call session endpoints (rate limit: 5 min / 3 h) ────────────────────
+
+  private get THREE_HOURS() { return 3 * 60 * 60 * 1000; }
+
+  @Get('call/status')
+  async callStatus(@CurrentUser() user: AuthUser) {
+    const last = await this.prisma.aiCallSession.findFirst({
+      where: { userId: user.id, endedAt: { not: null } },
+      orderBy: { endedAt: 'desc' },
+    });
+    if (last?.endedAt && Date.now() - last.endedAt.getTime() < this.THREE_HOURS) {
+      const nextAt = new Date(last.endedAt.getTime() + this.THREE_HOURS);
+      return { available: false, nextAvailableAt: nextAt.toISOString() };
+    }
+    return { available: true };
+  }
+
+  @Post('call/start')
+  async startCall(@CurrentUser() user: AuthUser) {
+    const last = await this.prisma.aiCallSession.findFirst({
+      where: { userId: user.id, endedAt: { not: null } },
+      orderBy: { endedAt: 'desc' },
+    });
+    if (last?.endedAt && Date.now() - last.endedAt.getTime() < this.THREE_HOURS) {
+      const nextAt = new Date(last.endedAt.getTime() + this.THREE_HOURS);
+      return { ok: false, nextAvailableAt: nextAt.toISOString() };
+    }
+    // Close any dangling sessions
+    await this.prisma.aiCallSession.updateMany({
+      where: { userId: user.id, endedAt: null },
+      data: { endedAt: new Date() },
+    });
+    const session = await this.prisma.aiCallSession.create({ data: { userId: user.id } });
+    return { ok: true, sessionId: session.id };
+  }
+
+  @Post('call/end')
+  async endCall(@CurrentUser() user: AuthUser, @Body() body: { sessionId: string }) {
+    await this.prisma.aiCallSession.updateMany({
+      where: { id: body.sessionId, userId: user.id, endedAt: null },
+      data: { endedAt: new Date() },
+    });
+    return { ok: true };
+  }
+
+  // ── History endpoints ────────────────────────────────────────────────────
+
+  @Get('history')
+  async getHistory(@CurrentUser() user: AuthUser) {
+    const rows = await this.prisma.aiMessage.findMany({
+      where: { userId: user.id },
+      orderBy: { createdAt: 'asc' },
+      take: 200,
+    });
+    return { messages: rows.map(r => ({ role: r.role, content: r.content })) };
+  }
+
+  @Delete('history')
+  async clearHistory(@CurrentUser() user: AuthUser) {
+    await this.prisma.aiMessage.deleteMany({ where: { userId: user.id } });
+    return { ok: true };
+  }
+
   // ── Chat endpoint ────────────────────────────────────────────────────────
 
   @Post('chat')
   async chat(
     @CurrentUser() user: AuthUser,
-    @Body() body: { message: string; history?: ChatMessage[] },
+    @Body() body: { message: string; history?: ChatMessage[]; voiceMode?: boolean },
   ) {
     const context = await this.buildContext(user.id);
+    const isVoice = !!body.voiceMode;
 
-    const systemPrompt = `Tu es un Business Developer IA expert et consultant stratégique personnel pour ce client.
+    const systemPrompt = isVoice
+      ? `Tu es Kayden Zion, experte en développement business. Tu parles à voix haute avec ton client dans un appel vocal. Réponds en français, de façon naturelle et conversationnelle — comme une vraie consultante lors d'un appel téléphonique. Maximum 2-3 phrases courtes et directes. Zéro liste, zéro bullet point, zéro markdown. Si pertinent, cite un chiffre clé, puis propose une action concrète. Ton ton : chaleureux, expert, naturel.
+
+${context}`
+      : `Tu es Kayden Zion, experte en développement business et consultante stratégique personnelle pour ce client.
 Tu as accès à toutes ses données commerciales en temps réel (ci-dessous).
-Tu parles TOUJOURS en français, tu es proactif, direct et concret.
+Tu parles TOUJOURS en français, tu es proactive, directe et concrète.
 
 Ton rôle:
 1. Analyser les données et identifier des opportunités de croissance
@@ -169,7 +237,7 @@ Ton rôle:
 4. Proposer des actions prioritaires avec un impact estimé
 5. Répondre aux questions avec des chiffres concrets tirés des données
 
-Style: expert, bienveillant, direct. Utilise des bullet points et des chiffres. Sois proactif — si tu vois un problème dans les données, mentionne-le même si on ne t'en a pas parlé.
+Style: experte, bienveillante, directe. Utilise des bullet points et des chiffres. Sois proactive — si tu vois un problème dans les données, mentionne-le même si on ne t'en a pas parlé.
 
 ${context}`;
 
@@ -184,13 +252,21 @@ ${context}`;
         { role: 'system', content: systemPrompt },
         ...messages,
       ],
-      max_tokens: 800,
-      temperature: 0.7,
+      max_tokens: isVoice ? 120 : 800,
+      temperature: isVoice ? 0.85 : 0.7,
     });
 
-    return {
-      message: completion.choices[0]?.message?.content ?? 'Désolé, je n\'ai pas pu générer une réponse.',
-    };
+    const reply = completion.choices[0]?.message?.content ?? 'Désolé, je n\'ai pas pu générer une réponse.';
+
+    // Persist both messages to DB
+    await this.prisma.aiMessage.createMany({
+      data: [
+        { userId: user.id, role: 'user', content: body.message },
+        { userId: user.id, role: 'assistant', content: reply },
+      ],
+    });
+
+    return { message: reply };
   }
 
   // ── Quick insights (called on open) ──────────────────────────────────────
@@ -218,5 +294,31 @@ ${context}`;
     } catch {
       return { insights: [] };
     }
+  }
+
+  // ── TTS (OpenAI voice) ───────────────────────────────────────────────────
+
+  @Post('speak')
+  async speak(
+    @CurrentUser() _user: AuthUser,
+    @Body() body: { text: string },
+    @Res() res: Response,
+  ) {
+    const clean = body.text
+      .replace(/\*\*/g, '')
+      .replace(/^[•\-] /gm, '')
+      .slice(0, 500);
+
+    const mp3 = await this.openai.audio.speech.create({
+      model: 'tts-1',
+      voice: 'nova',
+      input: clean,
+      speed: 1.05,
+    });
+
+    const buffer = Buffer.from(await mp3.arrayBuffer());
+    res.setHeader('Content-Type', 'audio/mpeg');
+    res.setHeader('Content-Length', buffer.length);
+    res.end(buffer);
   }
 }

@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, HttpException, HttpStatus } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AiService } from './ai.service';
 import { AutomationService } from './automation.service';
@@ -741,7 +741,7 @@ export class WhatsAppService implements OnModuleDestroy {
     clientOverride?: Client,
   ): Promise<void> {
     const client = clientOverride ?? this.clients.get(userId);
-    if (!client) throw new Error('WhatsApp non connecté');
+    if (!client || !client.info) throw new HttpException('WhatsApp non connecté', HttpStatus.SERVICE_UNAVAILABLE);
 
     let result: any;
     try {
@@ -779,7 +779,7 @@ export class WhatsAppService implements OnModuleDestroy {
 
   async sendImage(userId: string, phone: string, imageUrl: string, clientOverride?: Client): Promise<void> {
     const client = clientOverride ?? this.clients.get(userId);
-    if (!client) throw new Error('WhatsApp non connecté');
+    if (!client || !client.info) throw new HttpException('WhatsApp non connecté', HttpStatus.SERVICE_UNAVAILABLE);
 
     let media: MessageMedia;
     if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
@@ -799,6 +799,37 @@ export class WhatsAppService implements OnModuleDestroy {
     }
   }
 
+  // ── Send document (PDF, etc.) ────────────────────────────────────────────────
+
+  async sendDocument(userId: string, phone: string, buffer: Buffer, filename: string, mimetype: string): Promise<void> {
+    const client = this.clients.get(userId);
+    // client.info is undefined until the 'ready' event fires — treat as disconnected
+    if (!client || !client.info) {
+      throw new HttpException('WhatsApp non connecté', HttpStatus.SERVICE_UNAVAILABLE);
+    }
+
+    // Normalize phone → WhatsApp chatId (digits only + @c.us)
+    const chatId = (() => {
+      if (phone.includes('@')) return phone;
+      let digits = phone.replace(/\D/g, '');
+      if (digits.startsWith('00')) digits = digits.slice(2);
+      if (digits.startsWith('0') && digits.length <= 10) digits = '243' + digits.slice(1);
+      return `${digits}@c.us`;
+    })();
+
+
+    const media = new MessageMedia(mimetype, buffer.toString('base64'), filename);
+    try {
+      await client.sendMessage(chatId, media);
+    } catch (err: any) {
+      this.logger.warn(`sendDocument error (chatId=${chatId}): ${err?.message}`);
+      throw new HttpException(
+        `Envoi impossible : numéro inaccessible sur WhatsApp (${phone})`,
+        HttpStatus.BAD_GATEWAY,
+      );
+    }
+  }
+
   // ── Send quoted reply ─────────────────────────────────────────────────────────
 
   async sendReply(
@@ -809,7 +840,7 @@ export class WhatsAppService implements OnModuleDestroy {
     quotedWaId: string,
   ): Promise<void> {
     const client = this.clients.get(userId);
-    if (!client) throw new Error('WhatsApp non connecté');
+    if (!client || !client.info) throw new HttpException('WhatsApp non connecté', HttpStatus.SERVICE_UNAVAILABLE);
 
     const chat = await client.getChatById(phone).catch(() => null) as any;
     let result: any;
@@ -986,6 +1017,19 @@ export class WhatsAppService implements OnModuleDestroy {
       this.connect(s.userId).catch(err =>
         this.logger.error(`Reconnect failed ${s.userId}:`, err),
       );
+    }
+  }
+
+  // Send a plain notification message — used for store order alerts
+  async notifyOrder(userId: string, toPhone: string, text: string): Promise<boolean> {
+    const client = this.clients.get(userId);
+    if (!client) return false;
+    try {
+      const chatId = toPhone.replace(/\D/g, '') + '@c.us';
+      await client.sendMessage(chatId, text);
+      return true;
+    } catch {
+      return false;
     }
   }
 

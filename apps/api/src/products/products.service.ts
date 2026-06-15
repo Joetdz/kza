@@ -6,14 +6,12 @@ import { CreateProductDto } from './dto/create-product.dto';
 export class ProductsService {
   constructor(private prisma: PrismaService) {}
 
-  findAll(userId: string) {
-    return this.prisma.product.findMany({
-      where: { userId },
-      orderBy: { createdAt: 'desc' },
-    });
+  findAll(userId: string, businessId?: string) {
+    const where = businessId ? { businessId } : { userId };
+    return this.prisma.product.findMany({ where, orderBy: { createdAt: 'desc' } });
   }
 
-  async create(dto: CreateProductDto, userId: string) {
+  async create(dto: CreateProductDto, userId: string, businessId?: string) {
     let sku = dto.sku?.trim() || '';
     if (!sku) {
       let attempts = 0;
@@ -36,12 +34,13 @@ export class ProductsService {
         sellingPrice: dto.sellingPrice ?? 0,
         imageUrl: dto.imageUrl ?? null,
         entryDate: new Date(dto.entryDate),
+        trackStock: dto.trackStock ?? true,
         userId,
+        ...(businessId ? { businessId } : {}),
       },
     });
 
-    // Créer un mouvement initial si quantité > 0
-    if (dto.quantity > 0) {
+    if (dto.quantity > 0 && (dto.trackStock ?? true)) {
       await this.prisma.stockMovement.create({
         data: {
           productId: product.id,
@@ -50,6 +49,7 @@ export class ProductsService {
           reason: 'Stock initial',
           date: new Date(dto.entryDate),
           userId,
+          ...(businessId ? { businessId } : {}),
         },
       });
     }
@@ -57,8 +57,8 @@ export class ProductsService {
     return product;
   }
 
-  async update(id: string, dto: Partial<CreateProductDto>, userId: string) {
-    const existing = await this.findOneOrFail(id, userId);
+  async update(id: string, dto: Partial<CreateProductDto>, userId: string, businessId?: string) {
+    const existing = await this.findOneOrFail(id, userId, businessId);
 
     const updated = await this.prisma.product.update({
       where: { id },
@@ -73,11 +73,12 @@ export class ProductsService {
         ...(dto.sellingPrice !== undefined && { sellingPrice: dto.sellingPrice }),
         ...(dto.imageUrl !== undefined && { imageUrl: dto.imageUrl }),
         ...(dto.entryDate !== undefined && { entryDate: new Date(dto.entryDate) }),
+        ...(dto.trackStock !== undefined && { trackStock: dto.trackStock }),
       },
     });
 
-    // Si la quantité est modifiée manuellement, créer un mouvement d'ajustement
-    if (dto.quantity !== undefined && dto.quantity !== existing.quantity) {
+    const tracksStock = dto.trackStock !== undefined ? dto.trackStock : (existing as any).trackStock ?? true;
+    if (dto.quantity !== undefined && dto.quantity !== existing.quantity && tracksStock) {
       const delta = dto.quantity - existing.quantity;
       if (delta !== 0) {
         await this.prisma.stockMovement.create({
@@ -88,6 +89,7 @@ export class ProductsService {
             reason: 'Ajustement manuel',
             date: new Date(),
             userId,
+            ...(businessId ? { businessId } : {}),
           },
         });
       }
@@ -96,15 +98,19 @@ export class ProductsService {
     return updated;
   }
 
-  async remove(id: string, userId: string) {
-    await this.findOneOrFail(id, userId);
+  async remove(id: string, userId: string, businessId?: string) {
+    await this.findOneOrFail(id, userId, businessId);
     await this.prisma.product.delete({ where: { id } });
     return { id };
   }
 
-  private async findOneOrFail(id: string, userId: string) {
+  private async findOneOrFail(id: string, userId: string, businessId?: string) {
     const product = await this.prisma.product.findUnique({ where: { id } });
-    if (!product || product.userId !== userId) throw new NotFoundException('Produit introuvable');
+    if (!product) throw new NotFoundException('Produit introuvable');
+    if (businessId && product.businessId && product.businessId !== businessId) {
+      throw new NotFoundException('Produit introuvable');
+    }
+    if (!businessId && product.userId !== userId) throw new NotFoundException('Produit introuvable');
     return product;
   }
 }

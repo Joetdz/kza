@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { useStore } from '../../store/useStore';
 import { useAuth } from '../../contexts/AuthContext';
+import { useCurrency } from '../../hooks/useCurrency';
 import { Sidebar } from './Sidebar';
 import { Toaster } from '../ui/Toaster';
 
@@ -19,8 +20,9 @@ const mobileNav = [
 ];
 
 export function AppShell() {
-  const { toggleSidebar, dateRange, setDateRange, currency, setCurrency } = useStore();
+  const { toggleSidebar, dateRange, setDateRange, showInUsd, toggleCurrencyDisplay } = useStore();
   const { user, signOut } = useAuth();
+  const { bizCurrency } = useCurrency();
   const location = useLocation();
 
   return (
@@ -40,22 +42,27 @@ export function AppShell() {
 
           <div className="flex-1" />
 
-          {/* Currency selector */}
-          <div className="flex items-center gap-1 bg-gray-50 border border-gray-200 rounded-xl p-1">
-            {(['USD', 'CDF'] as const).map(c => (
-              <button
-                key={c}
-                onClick={() => setCurrency(c)}
-                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all duration-200 ${
-                  currency === c
-                    ? 'bg-indigo-600 text-white shadow-sm'
-                    : 'text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                {c}
-              </button>
-            ))}
-          </div>
+          {/* Currency toggle — shown only when business currency is not USD */}
+          {bizCurrency !== 'USD' && (
+            <div className="flex items-center gap-1 bg-gray-50 border border-gray-200 rounded-xl p-1">
+              {[bizCurrency, 'USD'].map(c => (
+                <button
+                  key={c}
+                  onClick={() => {
+                    const wantUsd = c === 'USD';
+                    if (wantUsd !== showInUsd) toggleCurrencyDisplay();
+                  }}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all duration-200 ${
+                    (c === 'USD') === showInUsd
+                      ? 'bg-indigo-600 text-white shadow-sm'
+                      : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  {c}
+                </button>
+              ))}
+            </div>
+          )}
 
           {/* Date range picker — hidden on mobile to avoid overflow */}
           <div className="hidden lg:flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-xl px-3 py-1.5">

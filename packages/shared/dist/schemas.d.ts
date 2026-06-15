@@ -18,6 +18,7 @@ export declare const CreateProductSchema: z.ZodObject<{
     sellingPrice: z.ZodDefault<z.ZodNumber>;
     imageUrl: z.ZodOptional<z.ZodString>;
     entryDate: z.ZodString;
+    trackStock: z.ZodDefault<z.ZodBoolean>;
 }, "strip", z.ZodTypeAny, {
     name: string;
     sku: string;
@@ -28,6 +29,7 @@ export declare const CreateProductSchema: z.ZodObject<{
     acquisitionCost: number;
     sellingPrice: number;
     entryDate: string;
+    trackStock: boolean;
     imageUrl?: string | undefined;
 }, {
     name: string;
@@ -40,6 +42,7 @@ export declare const CreateProductSchema: z.ZodObject<{
     supplier?: string | undefined;
     sellingPrice?: number | undefined;
     imageUrl?: string | undefined;
+    trackStock?: boolean | undefined;
 }>;
 export declare const UpdateProductSchema: z.ZodObject<{
     name: z.ZodOptional<z.ZodString>;
@@ -52,6 +55,7 @@ export declare const UpdateProductSchema: z.ZodObject<{
     sellingPrice: z.ZodOptional<z.ZodDefault<z.ZodNumber>>;
     imageUrl: z.ZodOptional<z.ZodOptional<z.ZodString>>;
     entryDate: z.ZodOptional<z.ZodString>;
+    trackStock: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
 }, "strip", z.ZodTypeAny, {
     name?: string | undefined;
     sku?: string | undefined;
@@ -63,6 +67,7 @@ export declare const UpdateProductSchema: z.ZodObject<{
     sellingPrice?: number | undefined;
     imageUrl?: string | undefined;
     entryDate?: string | undefined;
+    trackStock?: boolean | undefined;
 }, {
     name?: string | undefined;
     sku?: string | undefined;
@@ -74,6 +79,7 @@ export declare const UpdateProductSchema: z.ZodObject<{
     sellingPrice?: number | undefined;
     imageUrl?: string | undefined;
     entryDate?: string | undefined;
+    trackStock?: boolean | undefined;
 }>;
 export declare const ProductSchema: z.ZodObject<{
     name: z.ZodString;
@@ -86,6 +92,7 @@ export declare const ProductSchema: z.ZodObject<{
     sellingPrice: z.ZodDefault<z.ZodNumber>;
     imageUrl: z.ZodOptional<z.ZodString>;
     entryDate: z.ZodString;
+    trackStock: z.ZodDefault<z.ZodBoolean>;
 } & {
     id: z.ZodString;
     createdAt: z.ZodString;
@@ -100,6 +107,7 @@ export declare const ProductSchema: z.ZodObject<{
     acquisitionCost: number;
     sellingPrice: number;
     entryDate: string;
+    trackStock: boolean;
     id: string;
     createdAt: string;
     updatedAt: string;
@@ -118,6 +126,7 @@ export declare const ProductSchema: z.ZodObject<{
     supplier?: string | undefined;
     sellingPrice?: number | undefined;
     imageUrl?: string | undefined;
+    trackStock?: boolean | undefined;
 }>;
 export declare const CreateMovementSchema: z.ZodObject<{
     productId: z.ZodString;
@@ -196,6 +205,8 @@ export declare const CreateSaleSchema: z.ZodObject<{
     note: z.ZodOptional<z.ZodString>;
     status: z.ZodDefault<z.ZodEnum<["paid", "pending", "cancelled"]>>;
     deliveryZone: z.ZodOptional<z.ZodString>;
+    customerName: z.ZodOptional<z.ZodString>;
+    customerPhone: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
     status: "paid" | "pending" | "cancelled";
     date: string;
@@ -207,6 +218,8 @@ export declare const CreateSaleSchema: z.ZodObject<{
     channel: "WhatsApp" | "Meta Ads" | "TikTok" | "Instagram" | "Boutique" | "Autre";
     note?: string | undefined;
     deliveryZone?: string | undefined;
+    customerName?: string | undefined;
+    customerPhone?: string | undefined;
 }, {
     date: string;
     items: {
@@ -218,6 +231,8 @@ export declare const CreateSaleSchema: z.ZodObject<{
     status?: "paid" | "pending" | "cancelled" | undefined;
     note?: string | undefined;
     deliveryZone?: string | undefined;
+    customerName?: string | undefined;
+    customerPhone?: string | undefined;
 }>;
 export declare const SaleSchema: z.ZodObject<{
     items: z.ZodArray<z.ZodObject<{
@@ -236,6 +251,8 @@ export declare const SaleSchema: z.ZodObject<{
     channel: z.ZodEnum<["WhatsApp", "Meta Ads", "TikTok", "Instagram", "Boutique", "Autre"]>;
     date: z.ZodString;
     note: z.ZodOptional<z.ZodString>;
+    customerName: z.ZodOptional<z.ZodString>;
+    customerPhone: z.ZodOptional<z.ZodString>;
 } & {
     id: z.ZodString;
     status: z.ZodEnum<["paid", "pending", "cancelled"]>;
@@ -254,6 +271,8 @@ export declare const SaleSchema: z.ZodObject<{
     channel: "WhatsApp" | "Meta Ads" | "TikTok" | "Instagram" | "Boutique" | "Autre";
     note?: string | undefined;
     deliveryZone?: string | undefined;
+    customerName?: string | undefined;
+    customerPhone?: string | undefined;
 }, {
     status: "paid" | "pending" | "cancelled";
     id: string;
@@ -267,6 +286,8 @@ export declare const SaleSchema: z.ZodObject<{
     channel: "WhatsApp" | "Meta Ads" | "TikTok" | "Instagram" | "Boutique" | "Autre";
     note?: string | undefined;
     deliveryZone?: string | undefined;
+    customerName?: string | undefined;
+    customerPhone?: string | undefined;
 }>;
 export declare const CreateExpenseSchema: z.ZodObject<{
     category: z.ZodEnum<["pub", "transport", "stock", "other"]>;
@@ -377,4 +398,91 @@ export declare const GoalSchema: z.ZodObject<{
     createdAt: string;
     productId: string;
     targetQty: number;
+}>;
+export declare const SUPPORTED_CURRENCIES: readonly ["USD", "CDF", "EUR", "XAF", "XOF", "RWF", "UGX", "GNF", "MAD"];
+export type SupportedCurrency = typeof SUPPORTED_CURRENCIES[number];
+export declare const CreateBusinessSchema: z.ZodObject<{
+    name: z.ZodString;
+    sector: z.ZodOptional<z.ZodString>;
+    country: z.ZodDefault<z.ZodString>;
+    currency: z.ZodDefault<z.ZodEnum<["USD", "CDF", "EUR", "XAF", "XOF", "RWF", "UGX", "GNF", "MAD"]>>;
+    whatsappPhone: z.ZodString;
+    logoUrl: z.ZodOptional<z.ZodString>;
+    isDefault: z.ZodDefault<z.ZodBoolean>;
+}, "strip", z.ZodTypeAny, {
+    name: string;
+    country: string;
+    currency: "USD" | "CDF" | "EUR" | "XAF" | "XOF" | "RWF" | "UGX" | "GNF" | "MAD";
+    whatsappPhone: string;
+    isDefault: boolean;
+    sector?: string | undefined;
+    logoUrl?: string | undefined;
+}, {
+    name: string;
+    whatsappPhone: string;
+    sector?: string | undefined;
+    country?: string | undefined;
+    currency?: "USD" | "CDF" | "EUR" | "XAF" | "XOF" | "RWF" | "UGX" | "GNF" | "MAD" | undefined;
+    logoUrl?: string | undefined;
+    isDefault?: boolean | undefined;
+}>;
+export declare const UpdateBusinessSchema: z.ZodObject<{
+    name: z.ZodOptional<z.ZodString>;
+    sector: z.ZodOptional<z.ZodOptional<z.ZodString>>;
+    country: z.ZodOptional<z.ZodDefault<z.ZodString>>;
+    currency: z.ZodOptional<z.ZodDefault<z.ZodEnum<["USD", "CDF", "EUR", "XAF", "XOF", "RWF", "UGX", "GNF", "MAD"]>>>;
+    whatsappPhone: z.ZodOptional<z.ZodString>;
+    logoUrl: z.ZodOptional<z.ZodOptional<z.ZodString>>;
+    isDefault: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+}, "strip", z.ZodTypeAny, {
+    name?: string | undefined;
+    sector?: string | undefined;
+    country?: string | undefined;
+    currency?: "USD" | "CDF" | "EUR" | "XAF" | "XOF" | "RWF" | "UGX" | "GNF" | "MAD" | undefined;
+    whatsappPhone?: string | undefined;
+    logoUrl?: string | undefined;
+    isDefault?: boolean | undefined;
+}, {
+    name?: string | undefined;
+    sector?: string | undefined;
+    country?: string | undefined;
+    currency?: "USD" | "CDF" | "EUR" | "XAF" | "XOF" | "RWF" | "UGX" | "GNF" | "MAD" | undefined;
+    whatsappPhone?: string | undefined;
+    logoUrl?: string | undefined;
+    isDefault?: boolean | undefined;
+}>;
+export declare const BusinessSchema: z.ZodObject<{
+    name: z.ZodString;
+    sector: z.ZodOptional<z.ZodString>;
+    country: z.ZodDefault<z.ZodString>;
+    currency: z.ZodDefault<z.ZodEnum<["USD", "CDF", "EUR", "XAF", "XOF", "RWF", "UGX", "GNF", "MAD"]>>;
+    whatsappPhone: z.ZodString;
+    logoUrl: z.ZodOptional<z.ZodString>;
+    isDefault: z.ZodDefault<z.ZodBoolean>;
+} & {
+    id: z.ZodString;
+    createdAt: z.ZodString;
+    updatedAt: z.ZodString;
+}, "strip", z.ZodTypeAny, {
+    name: string;
+    id: string;
+    createdAt: string;
+    updatedAt: string;
+    country: string;
+    currency: "USD" | "CDF" | "EUR" | "XAF" | "XOF" | "RWF" | "UGX" | "GNF" | "MAD";
+    whatsappPhone: string;
+    isDefault: boolean;
+    sector?: string | undefined;
+    logoUrl?: string | undefined;
+}, {
+    name: string;
+    id: string;
+    createdAt: string;
+    updatedAt: string;
+    whatsappPhone: string;
+    sector?: string | undefined;
+    country?: string | undefined;
+    currency?: "USD" | "CDF" | "EUR" | "XAF" | "XOF" | "RWF" | "UGX" | "GNF" | "MAD" | undefined;
+    logoUrl?: string | undefined;
+    isDefault?: boolean | undefined;
 }>;

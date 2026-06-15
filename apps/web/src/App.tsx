@@ -1,5 +1,5 @@
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { DashboardSkeleton } from './components/ui/Skeleton';
 import { AppShell } from './components/layout/AppShell';
@@ -10,7 +10,12 @@ import { Expenses } from './pages/Expenses';
 import { Analytics } from './pages/Analytics';
 import { Goals } from './pages/Goals';
 import { Export } from './pages/Export';
-import { Login } from './pages/Login';
+import { Landing } from './pages/Landing';
+import { StorePage } from './pages/StorePage';
+import { PublicStore } from './pages/PublicStore';
+import { OnboardingTour } from './components/OnboardingTour';
+import { BusinessModal } from './components/BusinessModal';
+import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { WhatsAppLayout } from './pages/whatsapp/WhatsAppLayout';
 import { AdminDashboard } from './pages/AdminDashboard';
 import { Inbox } from './pages/whatsapp/Inbox';
@@ -24,12 +29,24 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 
 function AppInner() {
   const { session, loading: authLoading } = useAuth();
-  const { hydrate, loading, error, clearError } = useStore();
+  const { businesses, currentBusinessId, loadBusinesses, hydrate, loading, error, clearError } = useStore();
 
   const userId = session?.user?.id;
+
+  const [busLoaded, setBusLoaded] = useState(false);
+  const [showTour, setShowTour] = useState(() => {
+    const uid = session?.user?.id;
+    return uid ? !localStorage.getItem(`tour_done_${uid}`) : false;
+  });
+
   useEffect(() => {
-    if (userId) hydrate();
-  }, [userId, hydrate]);
+    if (!userId) return;
+    loadBusinesses().then(() => setBusLoaded(true));
+  }, [userId, loadBusinesses]);
+
+  useEffect(() => {
+    if (busLoaded && currentBusinessId) hydrate();
+  }, [busLoaded, currentBusinessId, hydrate]);
 
   // Chargement de l'état d'authentification
   if (authLoading) {
@@ -40,9 +57,40 @@ function AppInner() {
     );
   }
 
-  // Non authentifié → page de connexion
+  // Reset password via lien email
+  const hash = window.location.hash;
+  if (hash.includes('type=recovery')) {
+    return <ResetPasswordPage />;
+  }
+
+  // Boutique publique — accessible sans authentification
+  if (hash.startsWith('#/boutique/') && hash.split('/').length >= 3) {
+    const slug = hash.split('/')[2];
+    if (slug && slug !== 'undefined') return <PublicStore slug={slug} />;
+  }
+
+  // Non authentifié → landing page
   if (!session) {
-    return <Login />;
+    return <Landing />;
+  }
+
+  // Businesses not loaded yet → spinner
+  if (!busLoaded) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <span className="w-8 h-8 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  // Premier login : aucun business → création obligatoire avant d'accéder à l'app
+  if (businesses.length === 0) {
+    return (
+      <BusinessModal
+        isFirstBusiness
+        onClose={() => { /* ne peut pas fermer sans créer un business */ }}
+      />
+    );
   }
 
   // Écran de chargement initial des données
@@ -95,6 +143,10 @@ function AppInner() {
   }
 
   return (
+    <>
+      {showTour && userId && (
+        <OnboardingTour userId={userId} onClose={() => setShowTour(false)} />
+      )}
     <HashRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <BusinessAdvisor />
       <Routes>
@@ -106,6 +158,7 @@ function AppInner() {
           <Route path="/analytique" element={<Analytics />} />
           <Route path="/objectifs" element={<Goals />} />
           <Route path="/export" element={<Export />} />
+          <Route path="/boutique" element={<StorePage />} />
           <Route path="/admin" element={<AdminDashboard />} />
           <Route path="/whatsapp" element={<WhatsAppLayout />}>
             <Route index element={<Inbox />} />
@@ -118,6 +171,7 @@ function AppInner() {
         </Route>
       </Routes>
     </HashRouter>
+    </>
   );
 }
 

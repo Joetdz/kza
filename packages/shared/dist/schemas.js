@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.GoalSchema = exports.UpdateGoalSchema = exports.CreateGoalSchema = exports.ExpenseSchema = exports.UpdateExpenseSchema = exports.CreateExpenseSchema = exports.SaleSchema = exports.CreateSaleSchema = exports.SaleItemSchema = exports.MovementSchema = exports.CreateMovementSchema = exports.ProductSchema = exports.UpdateProductSchema = exports.CreateProductSchema = exports.DELIVERY_ZONES = exports.RDC_VILLES = exports.KINSHASA_COMMUNES = exports.SALE_STATUSES = exports.MOVEMENT_TYPES = exports.EXPENSE_CATEGORIES = exports.SALE_CHANNELS = void 0;
+exports.BusinessSchema = exports.UpdateBusinessSchema = exports.CreateBusinessSchema = exports.SUPPORTED_CURRENCIES = exports.GoalSchema = exports.UpdateGoalSchema = exports.CreateGoalSchema = exports.ExpenseSchema = exports.UpdateExpenseSchema = exports.CreateExpenseSchema = exports.SaleSchema = exports.CreateSaleSchema = exports.SaleItemSchema = exports.MovementSchema = exports.CreateMovementSchema = exports.ProductSchema = exports.UpdateProductSchema = exports.CreateProductSchema = exports.DELIVERY_ZONES = exports.RDC_VILLES = exports.KINSHASA_COMMUNES = exports.SALE_STATUSES = exports.MOVEMENT_TYPES = exports.EXPENSE_CATEGORIES = exports.SALE_CHANNELS = void 0;
 const zod_1 = require("zod");
 // ─── Constantes ──────────────────────────────────────────────────────────────
 exports.SALE_CHANNELS = ['WhatsApp', 'Meta Ads', 'TikTok', 'Instagram', 'Boutique', 'Autre'];
@@ -38,6 +38,7 @@ exports.CreateProductSchema = zod_1.z.object({
     sellingPrice: zod_1.z.number().min(0).default(0),
     imageUrl: zod_1.z.string().optional(),
     entryDate: zod_1.z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    trackStock: zod_1.z.boolean().default(true),
 });
 exports.UpdateProductSchema = exports.CreateProductSchema.partial();
 exports.ProductSchema = exports.CreateProductSchema.extend({
@@ -70,6 +71,8 @@ exports.CreateSaleSchema = zod_1.z.object({
     note: zod_1.z.string().optional(),
     status: zod_1.z.enum(exports.SALE_STATUSES).default('paid'),
     deliveryZone: zod_1.z.string().optional(),
+    customerName: zod_1.z.string().optional(),
+    customerPhone: zod_1.z.string().optional(),
 });
 exports.SaleSchema = exports.CreateSaleSchema.extend({
     id: zod_1.z.string().uuid(),
@@ -100,4 +103,21 @@ exports.UpdateGoalSchema = exports.CreateGoalSchema.partial();
 exports.GoalSchema = exports.CreateGoalSchema.extend({
     id: zod_1.z.string().uuid(),
     createdAt: zod_1.z.string(),
+});
+// ─── Business ─────────────────────────────────────────────────────────────────
+exports.SUPPORTED_CURRENCIES = ['USD', 'CDF', 'EUR', 'XAF', 'XOF', 'RWF', 'UGX', 'GNF', 'MAD'];
+exports.CreateBusinessSchema = zod_1.z.object({
+    name: zod_1.z.string().min(1),
+    sector: zod_1.z.string().optional(),
+    country: zod_1.z.string().length(2).default('CD'),
+    currency: zod_1.z.enum(exports.SUPPORTED_CURRENCIES).default('USD'),
+    whatsappPhone: zod_1.z.string().min(1),
+    logoUrl: zod_1.z.string().optional(),
+    isDefault: zod_1.z.boolean().default(false),
+});
+exports.UpdateBusinessSchema = exports.CreateBusinessSchema.partial();
+exports.BusinessSchema = exports.CreateBusinessSchema.extend({
+    id: zod_1.z.string().uuid(),
+    createdAt: zod_1.z.string(),
+    updatedAt: zod_1.z.string(),
 });

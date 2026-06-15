@@ -6,21 +6,17 @@ import { CreateMovementDto } from './dto/create-movement.dto';
 export class MovementsService {
   constructor(private prisma: PrismaService) {}
 
-  findAll(userId: string) {
-    return this.prisma.stockMovement.findMany({
-      where: { userId },
-      orderBy: { date: 'desc' },
-    });
+  findAll(userId: string, businessId?: string) {
+    const where = businessId ? { businessId } : { userId };
+    return this.prisma.stockMovement.findMany({ where, orderBy: { date: 'desc' } });
   }
 
-  findByProduct(productId: string, userId: string) {
-    return this.prisma.stockMovement.findMany({
-      where: { productId, userId },
-      orderBy: { date: 'desc' },
-    });
+  findByProduct(productId: string, userId: string, businessId?: string) {
+    const where = businessId ? { productId, businessId } : { productId, userId };
+    return this.prisma.stockMovement.findMany({ where, orderBy: { date: 'desc' } });
   }
 
-  async create(dto: CreateMovementDto, userId: string) {
+  async create(dto: CreateMovementDto, userId: string, businessId?: string) {
     const [movement] = await Promise.all([
       this.prisma.stockMovement.create({
         data: {
@@ -30,15 +26,12 @@ export class MovementsService {
           reason: dto.reason ?? '',
           date: new Date(dto.date),
           userId,
+          ...(businessId ? { businessId } : {}),
         },
       }),
       this.prisma.product.update({
         where: { id: dto.productId },
-        data: {
-          quantity: {
-            [dto.type === 'in' ? 'increment' : 'decrement']: dto.quantity,
-          },
-        },
+        data: { quantity: { [dto.type === 'in' ? 'increment' : 'decrement']: dto.quantity } },
       }),
     ]);
     return movement;

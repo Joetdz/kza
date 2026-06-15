@@ -44,4 +44,12 @@ export class CreateSaleDto implements ICreateSaleDto {
   @IsString()
   @IsOptional()
   deliveryZone?: string;
+
+  @IsString()
+  @IsOptional()
+  customerName?: string;
+
+  @IsString()
+  @IsOptional()
+  customerPhone?: string;
 }

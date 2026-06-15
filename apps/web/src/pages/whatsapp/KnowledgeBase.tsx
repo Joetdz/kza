@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Plus, Trash2, Edit2, X, Check, BookOpen, Search, Package, ChevronDown, ChevronUp } from 'lucide-react';
 import { waApi } from '../../api/whatsapp';
-import { productsApi, STATIC_BASE } from '../../api';
+import { productsApi, resolveImageUrl } from '../../api';
 
 const CATEGORIES = [
   { value: 'faq',     label: 'FAQ',       color: 'bg-blue-100 text-blue-700' },
@@ -226,7 +226,7 @@ export function KnowledgeBase() {
                 >
                   {product.imageUrl ? (
                     <img
-                      src={`${STATIC_BASE}${product.imageUrl}`}
+                      src={resolveImageUrl(product.imageUrl)!}
                       alt={product.name}
                       className="w-9 h-9 rounded-lg object-cover shrink-0"
                     />

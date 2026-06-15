@@ -8,6 +8,27 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
+// ─── Business (multi-tenant par user) ────────────────────────────────────────
+
+model Business {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId        String   @map("user_id")
+  name          String
+  sector        String?
+  country       String   @default("CD")
+  currency      String   @default("USD")
+  whatsappPhone String   @map("whatsapp_phone")
+  phone         String?  @map("phone")
+  city          String?  @map("city")
+  logoUrl       String?  @map("logo_url")
+  isDefault     Boolean  @default(false) @map("is_default")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@map("businesses")
+}
+
 model Product {
   id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name            String
@@ -20,48 +41,58 @@ model Product {
   sellingPrice    Float    @default(0)  @map("selling_price")
   imageUrl        String?  @map("image_url")
   entryDate       DateTime @map("entry_date") @db.Date
+  trackStock      Boolean  @default(true) @map("track_stock")
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt     @map("updated_at")
   userId          String?  @map("user_id")
+  businessId      String?  @map("business_id") @db.Uuid
 
-  movements StockMovement[]
-  saleItems SaleItem[]
-  expenses  Expense[]
+  movements   StockMovement[]
+  saleItems   SaleItem[]
+  expenses    Expense[]
+  storeItems  StoreProduct[]
 
   @@unique([userId, sku])
   @@index([userId])
+  @@index([businessId])
   @@map("products")
 }
 
 model StockMovement {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  productId String   @map("product_id") @db.Uuid
-  type      String
-  quantity  Float
-  reason    String   @default("")
-  date      DateTime @db.Date
-  createdAt DateTime @default(now()) @map("created_at")
-  userId    String?  @map("user_id")
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  productId  String   @map("product_id") @db.Uuid
+  type       String
+  quantity   Float
+  reason     String   @default("")
+  date       DateTime @db.Date
+  createdAt  DateTime @default(now()) @map("created_at")
+  userId     String?  @map("user_id")
+  businessId String?  @map("business_id") @db.Uuid
 
   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([businessId])
   @@map("stock_movements")
 }
 
 model Sale {
-  id           String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  channel      String
-  date         DateTime   @db.Date
-  note         String?
-  status       String     @default("paid")
-  deliveryZone String?    @map("delivery_zone")
-  createdAt    DateTime   @default(now()) @map("created_at")
-  userId       String?    @map("user_id")
+  id            String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  channel       String
+  date          DateTime   @db.Date
+  note          String?
+  status        String     @default("paid")
+  deliveryZone  String?    @map("delivery_zone")
+  customerName  String?    @map("customer_name")
+  customerPhone String?    @map("customer_phone")
+  createdAt     DateTime   @default(now()) @map("created_at")
+  userId        String?    @map("user_id")
+  businessId    String?    @map("business_id") @db.Uuid
 
   items SaleItem[]
 
   @@index([userId])
+  @@index([businessId])
   @@map("sales")
 }
 
@@ -88,41 +119,48 @@ model Expense {
   date        DateTime @db.Date
   createdAt   DateTime @default(now()) @map("created_at")
   userId      String?  @map("user_id")
+  businessId  String?  @map("business_id") @db.Uuid
 
   product Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
 
   @@index([userId])
+  @@index([businessId])
   @@map("expenses")
 }
 
 model SalesGoal {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  productId String   @map("product_id")
-  targetQty Int      @default(1) @map("target_qty")
-  createdAt DateTime @default(now()) @map("created_at")
-  userId    String?  @map("user_id")
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  productId  String   @map("product_id")
+  targetQty  Int      @default(1) @map("target_qty")
+  createdAt  DateTime @default(now()) @map("created_at")
+  userId     String?  @map("user_id")
+  businessId String?  @map("business_id") @db.Uuid
 
   @@index([userId])
+  @@index([businessId])
   @@map("sales_goals")
 }
 
 // ─── WhatsApp CRM ─────────────────────────────────────────────────────────────
 
 model WhatsAppSession {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId    String   @unique @map("user_id")
-  authState Json?    @map("auth_state")
-  connected Boolean  @default(false)
-  phone     String?
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String   @unique @map("user_id")
+  businessId String?  @map("business_id") @db.Uuid
+  authState  Json?    @map("auth_state")
+  connected  Boolean  @default(false)
+  phone      String?
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
 
+  @@index([businessId])
   @@map("wa_sessions")
 }
 
 model WhatsAppContact {
   id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId          String    @map("user_id")
+  businessId      String?   @map("business_id") @db.Uuid
   phone           String
   displayName     String?   @map("display_name")
   isRead          Boolean   @default(false) @map("is_read")
@@ -130,18 +168,18 @@ model WhatsAppContact {
   assignedAgent   String?   @map("assigned_agent")
   lastMessageAt   DateTime? @map("last_message_at")
   lastMessageText String?   @map("last_message_text")
-  leadStatus    String    @default("cold") @map("lead_status")
-  leadScore     Int       @default(0) @map("lead_score")
-  leadName      String?   @map("lead_name")
-  leadNeed      String?   @map("lead_need")
-  leadBudget    String?   @map("lead_budget")
-  leadCity      String?   @map("lead_city")
-  leadUrgency   String?   @map("lead_urgency")
-  leadProduct   String?   @map("lead_product")
-  aiEnabled     Boolean   @default(true) @map("ai_enabled")
-  source        String?
-  createdAt     DateTime  @default(now()) @map("created_at")
-  updatedAt     DateTime  @updatedAt @map("updated_at")
+  leadStatus      String    @default("cold") @map("lead_status")
+  leadScore       Int       @default(0) @map("lead_score")
+  leadName        String?   @map("lead_name")
+  leadNeed        String?   @map("lead_need")
+  leadBudget      String?   @map("lead_budget")
+  leadCity        String?   @map("lead_city")
+  leadUrgency     String?   @map("lead_urgency")
+  leadProduct     String?   @map("lead_product")
+  aiEnabled       Boolean   @default(true) @map("ai_enabled")
+  source          String?
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
 
   messages WhatsAppMessage[]
   notes    WhatsAppNote[]
@@ -149,12 +187,14 @@ model WhatsAppContact {
 
   @@unique([userId, phone])
   @@index([userId])
+  @@index([businessId])
   @@map("wa_contacts")
 }
 
 model WhatsAppMessage {
   id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId       String   @map("user_id")
+  businessId   String?  @map("business_id") @db.Uuid
   contactId    String   @map("contact_id") @db.Uuid
   waId         String?  @map("wa_id")
   direction    String
@@ -172,15 +212,17 @@ model WhatsAppMessage {
 
   @@unique([userId, waId])
   @@index([contactId])
+  @@index([businessId])
   @@map("wa_messages")
 }
 
 model WhatsAppNote {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  contactId String   @map("contact_id") @db.Uuid
-  userId    String   @map("user_id")
-  content   String
-  createdAt DateTime @default(now()) @map("created_at")
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  contactId  String   @map("contact_id") @db.Uuid
+  userId     String   @map("user_id")
+  businessId String?  @map("business_id") @db.Uuid
+  content    String
+  createdAt  DateTime @default(now()) @map("created_at")
 
   contact WhatsAppContact @relation(fields: [contactId], references: [id], onDelete: Cascade)
 
@@ -188,14 +230,16 @@ model WhatsAppNote {
 }
 
 model WhatsAppTag {
-  id       String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId   String   @map("user_id")
-  name     String
-  color    String   @default("#6366f1")
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String   @map("user_id")
+  businessId String?  @map("business_id") @db.Uuid
+  name       String
+  color      String   @default("#6366f1")
 
   contacts WhatsAppContactTag[]
 
   @@unique([userId, name])
+  @@index([businessId])
   @@map("wa_tags")
 }
 
@@ -213,6 +257,7 @@ model WhatsAppContactTag {
 model WhatsAppAIConfig {
   id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId              String   @unique @map("user_id")
+  businessId          String?  @map("business_id") @db.Uuid
   enabled             Boolean  @default(true)
   systemPrompt        String   @default("") @map("system_prompt")
   businessObjective   String   @default("") @map("business_objective")
@@ -230,12 +275,14 @@ model WhatsAppAIConfig {
   createdAt           DateTime @default(now()) @map("created_at")
   updatedAt           DateTime @updatedAt @map("updated_at")
 
+  @@index([userId])
   @@map("wa_ai_configs")
 }
 
 model WhatsAppKBEntry {
   id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId        String   @map("user_id")
+  businessId    String?  @map("business_id") @db.Uuid
   category      String
   title         String
   content       String
@@ -248,12 +295,14 @@ model WhatsAppKBEntry {
   updatedAt     DateTime @updatedAt @map("updated_at")
 
   @@index([userId])
+  @@index([businessId])
   @@map("wa_kb_entries")
 }
 
 model WhatsAppAutomation {
   id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId        String   @map("user_id")
+  businessId    String?  @map("business_id") @db.Uuid
   name          String
   enabled       Boolean  @default(true)
   trigger       String
@@ -264,7 +313,95 @@ model WhatsAppAutomation {
   updatedAt     DateTime @updatedAt @map("updated_at")
 
   @@index([userId])
+  @@index([businessId])
   @@map("wa_automations")
+}
+
+// ─── Catégories produits (gestion admin) ─────────────────────────────────────
+
+model ProductCategory {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name      String   @unique
+  slug      String   @unique
+  active    Boolean  @default(true)
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("product_categories")
+}
+
+// ─── Boutique en ligne ────────────────────────────────────────────────────────
+
+model OnlineStore {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId        String   @unique @map("user_id")
+  slug          String   @unique
+  name          String
+  description   String?
+  logoUrl       String?  @map("logo_url")
+  whatsappPhone String   @map("whatsapp_phone")
+  primaryColor  String   @default("#6366f1") @map("primary_color")
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  products StoreProduct[]
+  orders   StoreOrder[]
+
+  @@map("online_stores")
+}
+
+model StoreProduct {
+  id        String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  storeId   String @map("store_id") @db.Uuid
+  productId String @map("product_id") @db.Uuid
+
+  store   OnlineStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  product Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, productId])
+  @@map("store_products")
+}
+
+model StoreOrder {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  storeId       String   @map("store_id") @db.Uuid
+  customerName  String   @map("customer_name")
+  customerPhone String   @map("customer_phone")
+  deliveryZone  String   @map("delivery_zone")
+  items         Json
+  totalAmount   Float    @map("total_amount")
+  notes         String?
+  status        String   @default("pending")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  store OnlineStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId])
+  @@map("store_orders")
+}
+
+// ─── Business AI ──────────────────────────────────────────────────────────────
+
+model AiCallSession {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String    @map("user_id")
+  startedAt DateTime  @default(now()) @map("started_at")
+  endedAt   DateTime? @map("ended_at")
+
+  @@index([userId])
+  @@map("ai_call_sessions")
+}
+
+model AiMessage {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @map("user_id")
+  role      String
+  content   String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("ai_messages")
 }
 
 // ─── Profil utilisateur ────────────────────────────────────────────────────────
@@ -274,6 +411,7 @@ model UserProfile {
   userId         String   @unique @map("user_id")
   businessSector String?  @map("business_sector")
   companyName    String?  @map("company_name")
+  country        String?  @default("") @map("country")
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
@@ -285,6 +423,7 @@ model UserProfile {
 model WaCampaignContact {
   id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   clientId        String    @map("client_id")
+  businessId      String?   @map("business_id") @db.Uuid
   phoneNumber     String    @map("phone_number")
   displayName     String?   @map("display_name")
   waAccountId     String?   @map("wa_account_id")
@@ -305,6 +444,7 @@ model WaCampaignContact {
 
   @@unique([clientId, phoneNumber])
   @@index([clientId])
+  @@index([businessId])
   @@index([clientId, consentStatus])
   @@index([clientId, contactStatus])
   @@map("wa_campaign_contacts")

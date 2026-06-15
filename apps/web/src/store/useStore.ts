@@ -1,11 +1,30 @@
 import { create } from 'zustand';
 import { format, subDays } from 'date-fns';
 import type { Product, Sale, Expense, SalesGoal, StockMovement } from '../types';
-import { productsApi, movementsApi, salesApi, expensesApi, goalsApi } from '../api';
-import type { AppCurrency } from '../utils/formatters';
+import { productsApi, movementsApi, salesApi, expensesApi, goalsApi, businessApi } from '../api';
 import { toast } from '../hooks/useToast';
 
+export interface BusinessRecord {
+  id: string;
+  name: string;
+  sector?: string;
+  country: string;
+  currency: string;
+  whatsappPhone: string;
+  phone?: string;
+  city?: string;
+  logoUrl?: string;
+  isDefault: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 interface AppStore {
+  // Business
+  businesses: BusinessRecord[];
+  currentBusinessId: string | null;
+  showInUsd: boolean;
+
   // Data
   products: Product[];
   sales: Sale[];
@@ -17,9 +36,16 @@ interface AppStore {
   sidebarOpen: boolean;
   dateRange: { from: string; to: string };
   cpaThreshold: number;
-  currency: AppCurrency;
   loading: boolean;
   error: string | null;
+
+  // Business actions
+  loadBusinesses: () => Promise<void>;
+  setCurrentBusiness: (id: string) => Promise<void>;
+  toggleCurrencyDisplay: () => void;
+  addBusiness: (b: Omit<BusinessRecord, 'id' | 'createdAt' | 'updatedAt'>) => Promise<BusinessRecord>;
+  updateBusiness: (id: string, patch: Partial<BusinessRecord>) => Promise<void>;
+  deleteBusiness: (id: string) => Promise<void>;
 
   // Hydration (charge toutes les données depuis l'API)
   hydrate: () => Promise<void>;
@@ -51,7 +77,6 @@ interface AppStore {
   toggleSidebar: () => void;
   setDateRange: (from: string, to: string) => void;
   setCpaThreshold: (value: number) => void;
-  setCurrency: (currency: AppCurrency) => void;
   clearError: () => void;
 
   // Auth
@@ -59,8 +84,13 @@ interface AppStore {
 }
 
 const now = new Date();
+const BИЗID_KEY = 'kza_business_id';
 
-export const useStore = create<AppStore>()(set => ({
+export const useStore = create<AppStore>()((set, get) => ({
+  businesses: [],
+  currentBusinessId: localStorage.getItem(BИЗID_KEY) ?? null,
+  showInUsd: false,
+
   products: [],
   sales: [],
   expenses: [],
@@ -73,9 +103,65 @@ export const useStore = create<AppStore>()(set => ({
     to: format(now, 'yyyy-MM-dd'),
   },
   cpaThreshold: 200,
-  currency: 'USD',
   loading: false,
   error: null,
+
+  // ─── Business ──────────────────────────────────────────────
+  loadBusinesses: async () => {
+    try {
+      const businesses = await businessApi.getAll();
+      set({ businesses });
+      // Auto-select if none stored or stored one no longer valid
+      const stored = localStorage.getItem(BИЗID_KEY);
+      const valid = stored && businesses.some(b => b.id === stored);
+      if (!valid) {
+        const def = businesses.find(b => b.isDefault) ?? businesses[0];
+        if (def) {
+          localStorage.setItem(BИЗID_KEY, def.id);
+          set({ currentBusinessId: def.id });
+        } else {
+          set({ currentBusinessId: null });
+        }
+      } else {
+        set({ currentBusinessId: stored });
+      }
+    } catch { /* silencieux — pas de business = premier login */ }
+  },
+
+  setCurrentBusiness: async (id: string) => {
+    localStorage.setItem(BИЗID_KEY, id);
+    set({ currentBusinessId: id });
+  },
+
+  toggleCurrencyDisplay: () => set(s => ({ showInUsd: !s.showInUsd })),
+
+  addBusiness: async (dto) => {
+    const created = await businessApi.create(dto);
+    set(s => ({
+      businesses: [created, ...s.businesses],
+      currentBusinessId: s.currentBusinessId ?? created.id,
+    }));
+    localStorage.setItem(BИЗID_KEY, get().currentBusinessId ?? created.id);
+    return created;
+  },
+
+  updateBusiness: async (id, patch) => {
+    const updated = await businessApi.update(id, patch);
+    set(s => ({ businesses: s.businesses.map(b => b.id === id ? updated : b) }));
+  },
+
+  deleteBusiness: async (id) => {
+    await businessApi.remove(id);
+    set(s => {
+      const businesses = s.businesses.filter(b => b.id !== id);
+      let currentBusinessId = s.currentBusinessId;
+      if (currentBusinessId === id) {
+        currentBusinessId = businesses.find(b => b.isDefault)?.id ?? businesses[0]?.id ?? null;
+        if (currentBusinessId) localStorage.setItem(BИЗID_KEY, currentBusinessId);
+      }
+      return { businesses, currentBusinessId };
+    });
+  },
 
   // ─── Hydration ─────────────────────────────────────────────
   hydrate: async () => {
@@ -228,15 +314,12 @@ export const useStore = create<AppStore>()(set => ({
       toast.success(`Statut mis à jour → ${labels[newStatus] ?? newStatus}`);
     } catch { toast.error('Erreur lors du changement de statut'); throw new Error(); }
   },
-
   deleteSale: async (id) => {
     try {
       await salesApi.remove(id);
       set(s => {
         const sale = s.sales.find(sale => sale.id === id);
-        const update: Partial<typeof s> = {
-          sales: s.sales.filter(sale => sale.id !== id),
-        };
+        const update: Partial<typeof s> = { sales: s.sales.filter(sale => sale.id !== id) };
         if (sale?.status === 'paid') {
           update.products = s.products.map(p => {
             const item = sale.items.find(i => i.productId === p.id);
@@ -312,7 +395,6 @@ export const useStore = create<AppStore>()(set => ({
   toggleSidebar: () => set(s => ({ sidebarOpen: !s.sidebarOpen })),
   setDateRange: (from, to) => set({ dateRange: { from, to } }),
   setCpaThreshold: (value) => set({ cpaThreshold: value }),
-  setCurrency: (currency) => set({ currency }),
   clearError: () => set({ error: null }),
 
   reset: () => set({

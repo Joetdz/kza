@@ -1,4 +1,4 @@
-import { IsString, IsNumber, IsOptional, IsDateString, Min } from 'class-validator';
+import { IsString, IsNumber, IsOptional, IsBoolean, IsDateString, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class CreateProductDto {
@@ -44,4 +44,8 @@ export class CreateProductDto {
 
   @IsDateString()
   entryDate: string;
+
+  @IsBoolean()
+  @IsOptional()
+  trackStock?: boolean = true;
 }

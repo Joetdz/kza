@@ -1,10 +1,11 @@
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, Package, ShoppingCart, CreditCard,
-  BarChart2, Target, Download, X, LogOut, MessageCircle, Shield,
+  BarChart2, Target, Download, X, LogOut, MessageCircle, Shield, Store,
 } from 'lucide-react';
 import { useStore } from '../../store/useStore';
 import { useAuth } from '../../contexts/AuthContext';
+import { BusinessSelector } from '../BusinessSelector';
 
 const ADMIN_EMAILS = (import.meta.env.VITE_ADMIN_EMAILS ?? '')
   .split(',').map((e: string) => e.trim().toLowerCase()).filter(Boolean);
@@ -16,6 +17,7 @@ const nav = [
   { to: '/depenses',   icon: CreditCard,      label: 'Dépenses' },
   { to: '/analytique', icon: BarChart2,       label: 'Analytique' },
   { to: '/objectifs',  icon: Target,          label: 'Objectifs' },
+  { to: '/boutique',   icon: Store,           label: 'Ma Boutique' },
   { to: '/export',     icon: Download,        label: 'Export' },
   { to: '/whatsapp',   icon: MessageCircle,   label: 'WhatsApp CRM' },
 ];
@@ -48,8 +50,13 @@ export function Sidebar() {
           </button>
         </div>
 
+        {/* Business selector */}
+        <div className="pt-3">
+          <BusinessSelector />
+        </div>
+
         {/* Navigation */}
-        <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
+        <nav className="flex-1 overflow-y-auto py-2 px-3 space-y-1">
           {nav.map(({ to, icon: Icon, label }) => (
             <NavLink
               key={to}

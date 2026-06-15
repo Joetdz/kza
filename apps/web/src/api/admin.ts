@@ -101,9 +101,86 @@ export interface PagedResult<T> {
   limit: number;
 }
 
+export interface AdminOverview {
+  totalUsers: number;
+  totalBusinesses: number;
+  waConnected: number;
+  totalRevenue: number;
+  totalExpenses: number;
+  netProfit: number;
+  totalSalesCount: number;
+  salesBreakdown: { paid: number; pending: number; cancelled: number };
+  totalProducts: number;
+  revenueByDay: Array<{ day: string; revenue: number; salesCount: number }>;
+  topBusinesses: Array<{
+    id: string;
+    name: string;
+    currency: string;
+    logoUrl: string | null;
+    revenue: number;
+    saleCount: number;
+    expenseTotal: number;
+    productCount: number;
+    profit: number;
+  }>;
+}
+
+export interface AdminBusiness {
+  id: string;
+  name: string;
+  ownerEmail: string | null;
+  sector: string | null;
+  city: string | null;
+  country: string;
+  currency: string;
+  whatsappPhone: string;
+  phone: string | null;
+  logoUrl: string | null;
+  isDefault: boolean;
+  waConnected: boolean;
+  productCount: number;
+  saleCount: number;
+  createdAt: string;
+}
+
+export interface RevenueDetail {
+  byChannel: Array<{ channel: string; revenue: number; count: number }>;
+  topSales: Array<{ id: string; date: string; channel: string; customer: string | null; total: number; businessName: string | null }>;
+  byBusiness: Array<{ name: string; currency: string; revenue: number; saleCount: number }>;
+}
+
+export interface SalesDetail {
+  byChannel: Array<{ channel: string; status: string; count: number }>;
+  recentSales: Array<{ id: string; date: string; channel: string; status: string; customer: string | null; total: number; businessName: string | null }>;
+}
+
+export interface ExpensesDetail {
+  byCategory: Array<{ category: string; total: number; count: number }>;
+  byBusiness: Array<{ name: string; total: number; count: number }>;
+  recent: Array<{ id: string; category: string; amount: number; description: string; date: string; businessName: string | null }>;
+}
+
+export interface ProductsDetail {
+  topByRevenue: Array<{ id: string; name: string; revenue: number; qtySold: number; businessName: string | null; stock: number }>;
+  lowStockCount: number;
+  activeCount: number;
+}
+
+export type UserDetail = {
+  id: string; email: string; createdAt: string;
+  businessCount: number; businesses: string[]; waConnected: boolean;
+};
+
 export const adminApi = {
+  getOverview: () => req<AdminOverview>('/admin/overview'),
+  getRevenueDetail: () => req<RevenueDetail>('/admin/detail/revenue'),
+  getSalesDetail: () => req<SalesDetail>('/admin/detail/sales'),
+  getExpensesDetail: () => req<ExpensesDetail>('/admin/detail/expenses'),
+  getProductsDetail: () => req<ProductsDetail>('/admin/detail/products'),
+  getUsersDetail: () => req<UserDetail[]>('/admin/detail/users'),
   getStats: () => req<AdminStats>('/admin/stats'),
   getClients: () => req<AdminClient[]>('/admin/clients'),
+  getBusinesses: () => req<AdminBusiness[]>('/admin/businesses'),
   getAudienceGrowth: () => req<GrowthPoint[]>('/admin/audience-growth'),
   getLeadFunnel: () => req<FunnelStep[]>('/admin/lead-funnel'),
 

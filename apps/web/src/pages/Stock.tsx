@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { Plus, Edit2, Trash2, TrendingUp, TrendingDown, History, Search, ImagePlus, X } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { Modal } from '../components/ui/Modal';
@@ -9,7 +9,7 @@ import { NumberInput } from '../components/ui/NumberInput';
 import { CardsSkeleton } from '../components/ui/Skeleton';
 import { useCurrency } from '../hooks/useCurrency';
 import { formatDate } from '../utils/formatters';
-import { uploadApi, STATIC_BASE } from '../api';
+import { uploadApi, categoriesApi, resolveImageUrl } from '../api';
 import type { Product, StockMovement } from '../types';
 
 const generateSku = () => 'PRD-' + Math.random().toString(36).slice(2, 8).toUpperCase();
@@ -17,14 +17,19 @@ const generateSku = () => 'PRD-' + Math.random().toString(36).slice(2, 8).toUppe
 const emptyProduct = (): Omit<Product, 'id' | 'createdAt' | 'updatedAt'> => ({
   name: '', sku: generateSku(), category: '', quantity: 0, alertThreshold: 5,
   supplier: '', acquisitionCost: 0, sellingPrice: 0, imageUrl: undefined,
-  entryDate: new Date().toISOString().split('T')[0],
+  entryDate: new Date().toISOString().split('T')[0], trackStock: true,
 });
 
-const categories = ['Chaussures', 'Maroquinerie', 'Accessoires', 'Beauté', 'Vêtements', 'Électronique', 'Autre'];
 
 export function Stock() {
   const { products, movements, loading, addProduct, updateProduct, deleteProduct, addMovement } = useStore();
   const { fmt: MAD, currency } = useCurrency();
+
+  const [categories, setCategories] = useState<string[]>([]);
+
+  useEffect(() => {
+    categoriesApi.getAll().then(cats => setCategories(cats.map(c => c.name))).catch(() => {});
+  }, []);
 
   const [submitting, setSubmitting] = useState(false);
   const [submittingMov, setSubmittingMov] = useState(false);
@@ -44,6 +49,7 @@ export function Stock() {
   });
   const [histProduct, setHistProduct] = useState<Product | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const filtered = useMemo(() =>
@@ -59,7 +65,7 @@ export function Stock() {
   const openEdit = (p: Product) => {
     setEditing(p);
     // acquisitionCost stored as unit cost → show as total in form
-    setForm({ name: p.name, sku: p.sku, category: p.category, quantity: p.quantity, alertThreshold: p.alertThreshold, supplier: p.supplier, acquisitionCost: p.acquisitionCost * p.quantity, sellingPrice: p.sellingPrice ?? 0, imageUrl: p.imageUrl, entryDate: p.entryDate });
+    setForm({ name: p.name, sku: p.sku, category: p.category, quantity: p.quantity, alertThreshold: p.alertThreshold, supplier: p.supplier, acquisitionCost: p.acquisitionCost * p.quantity, sellingPrice: p.sellingPrice ?? 0, imageUrl: p.imageUrl, entryDate: p.entryDate, trackStock: p.trackStock ?? true });
     setModalOpen(true);
   };
 
@@ -67,19 +73,25 @@ export function Stock() {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploading(true);
+    setUploadError(null);
     try {
       const url = await uploadApi.uploadImage(file);
       setForm(f => ({ ...f, imageUrl: url }));
+    } catch (err: any) {
+      setUploadError(err?.message ?? 'Erreur upload');
     } finally {
       setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
   const handleSave = async () => {
     if (!form.name) return;
     setSubmitting(true);
-    // Convert total acquisition cost → unit cost before saving
-    const unitCost = form.quantity > 0 ? form.acquisitionCost / form.quantity : form.acquisitionCost;
+    // Services (trackStock=false): acquisitionCost is already a unit cost, no division needed
+    const unitCost = (form.trackStock && form.quantity > 0)
+      ? form.acquisitionCost / form.quantity
+      : form.acquisitionCost;
     const payload = { ...form, acquisitionCost: unitCost };
     try {
       if (editing) await updateProduct(editing.id, payload);
@@ -173,7 +185,7 @@ export function Stock() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
           {filtered.map(p => {
-            const isLow = p.quantity <= p.alertThreshold;
+            const isLow = (p.trackStock ?? true) && p.quantity <= p.alertThreshold;
             return (
               <div
                 key={p.id}
@@ -182,7 +194,7 @@ export function Stock() {
                 {/* Header : image + nom + badge */}
                 <div className="flex items-center gap-3 mb-3">
                   {p.imageUrl ? (
-                    <img src={`${STATIC_BASE}${p.imageUrl}`} alt={p.name} className="w-11 h-11 rounded-xl object-cover shrink-0 border border-gray-100" />
+                    <img src={resolveImageUrl(p.imageUrl)!} alt={p.name} className="w-11 h-11 rounded-xl object-cover shrink-0 border border-gray-100" />
                   ) : (
                     <div className="w-11 h-11 rounded-xl bg-gray-100 flex items-center justify-center shrink-0">
                       <ImagePlus size={16} className="text-gray-300" />
@@ -193,15 +205,24 @@ export function Stock() {
                     <div className="text-xs text-gray-400 truncate">{p.sku}{p.category ? ` · ${p.category}` : ''}</div>
                   </div>
                   {isLow && <Badge color="red" size="sm">Bas</Badge>}
+                  {!(p.trackStock ?? true) && <Badge color="gray" size="sm">Service</Badge>}
                 </div>
 
                 {/* Stats : 3 colonnes */}
                 <div className="grid grid-cols-3 gap-2 mb-3">
-                  <div className={`rounded-xl p-2.5 text-center ${isLow ? 'bg-red-50' : 'bg-gray-50'}`}>
-                    <div className="text-xs text-gray-500 mb-0.5">Stock</div>
-                    <div className={`text-xl font-black ${isLow ? 'text-red-600' : 'text-gray-900'}`}>{p.quantity}</div>
-                    <div className="text-[10px] text-gray-400">/{p.alertThreshold}</div>
-                  </div>
+                  {(p.trackStock ?? true) ? (
+                    <div className={`rounded-xl p-2.5 text-center ${isLow ? 'bg-red-50' : 'bg-gray-50'}`}>
+                      <div className="text-xs text-gray-500 mb-0.5">Stock</div>
+                      <div className={`text-xl font-black ${isLow ? 'text-red-600' : 'text-gray-900'}`}>{p.quantity}</div>
+                      <div className="text-[10px] text-gray-400">/{p.alertThreshold}</div>
+                    </div>
+                  ) : (
+                    <div className="rounded-xl p-2.5 text-center bg-gray-50">
+                      <div className="text-xs text-gray-500 mb-0.5">Type</div>
+                      <div className="text-sm font-bold text-gray-400">Service</div>
+                      <div className="text-[10px] text-gray-400">sans stock</div>
+                    </div>
+                  )}
                   <div className="bg-gray-50 rounded-xl p-2.5 text-center">
                     <div className="text-xs text-gray-500 mb-0.5">Achat</div>
                     <div className="text-xs font-bold text-gray-900 truncate">{MAD(p.acquisitionCost)}</div>
@@ -227,18 +248,22 @@ export function Stock() {
 
                 {/* Actions */}
                 <div className="grid grid-cols-2 gap-1.5">
-                  <button
-                    onClick={() => { setMovementProduct(p); setMovForm({ type: 'in', quantity: 1, reason: '', date: new Date().toISOString().split('T')[0], purchaseCost: 0, freightCost: 0 }); }}
-                    className="flex items-center justify-center gap-1.5 py-2 rounded-xl bg-emerald-50 text-emerald-700 text-xs font-medium hover:bg-emerald-100 transition-colors"
-                  >
-                    <TrendingUp size={13} /> Entrée
-                  </button>
-                  <button
-                    onClick={() => { setMovementProduct(p); setMovForm({ type: 'out', quantity: 1, reason: '', date: new Date().toISOString().split('T')[0], purchaseCost: 0, freightCost: 0 }); }}
-                    className="flex items-center justify-center gap-1.5 py-2 rounded-xl bg-amber-50 text-amber-700 text-xs font-medium hover:bg-amber-100 transition-colors"
-                  >
-                    <TrendingDown size={13} /> Sortie
-                  </button>
+                  {(p.trackStock ?? true) && (
+                    <>
+                      <button
+                        onClick={() => { setMovementProduct(p); setMovForm({ type: 'in', quantity: 1, reason: '', date: new Date().toISOString().split('T')[0], purchaseCost: 0, freightCost: 0 }); }}
+                        className="flex items-center justify-center gap-1.5 py-2 rounded-xl bg-emerald-50 text-emerald-700 text-xs font-medium hover:bg-emerald-100 transition-colors"
+                      >
+                        <TrendingUp size={13} /> Entrée
+                      </button>
+                      <button
+                        onClick={() => { setMovementProduct(p); setMovForm({ type: 'out', quantity: 1, reason: '', date: new Date().toISOString().split('T')[0], purchaseCost: 0, freightCost: 0 }); }}
+                        className="flex items-center justify-center gap-1.5 py-2 rounded-xl bg-amber-50 text-amber-700 text-xs font-medium hover:bg-amber-100 transition-colors"
+                      >
+                        <TrendingDown size={13} /> Sortie
+                      </button>
+                    </>
+                  )}
                   <button onClick={() => setHistProduct(p)}
                     className="flex items-center justify-center gap-1.5 py-2 rounded-xl bg-blue-50 text-blue-600 text-xs font-medium hover:bg-blue-100 transition-colors">
                     <History size={13} /> Historique
@@ -274,7 +299,7 @@ export function Stock() {
             <div className="flex items-center gap-4">
               {form.imageUrl ? (
                 <div className="relative">
-                  <img src={`${STATIC_BASE}${form.imageUrl}`} alt="Aperçu" className="w-20 h-20 rounded-xl object-cover border border-gray-200" />
+                  <img src={resolveImageUrl(form.imageUrl)!} alt="Aperçu" className="w-20 h-20 rounded-xl object-cover border border-gray-200" />
                   <button
                     onClick={() => setForm(f => ({ ...f, imageUrl: undefined }))}
                     className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600"
@@ -301,9 +326,25 @@ export function Stock() {
                   {uploading ? 'Envoi en cours…' : form.imageUrl ? 'Changer la photo' : 'Choisir une image'}
                 </button>
                 <p className="text-xs text-gray-400 mt-0.5">JPG, PNG — max 5 Mo</p>
+                {uploadError && <p className="text-xs text-red-500 mt-1">{uploadError}</p>}
               </div>
             </div>
             <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+          </div>
+
+          {/* Toggle suivi du stock */}
+          <div className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl border border-gray-100">
+            <div>
+              <p className="text-sm font-semibold text-gray-900">Suivi du stock</p>
+              <p className="text-xs text-gray-400">Désactiver pour les services ou prestations sans stock physique</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setForm(f => ({ ...f, trackStock: !f.trackStock }))}
+              className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${form.trackStock ? 'bg-indigo-600' : 'bg-gray-300'}`}
+            >
+              <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform ${form.trackStock ? 'translate-x-5' : 'translate-x-0'}`} />
+            </button>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -311,12 +352,14 @@ export function Stock() {
             {field('sku', 'Référence (SKU)', 'text', undefined, 'Code unique du produit — auto-généré si vide')}
             {field('category', 'Catégorie', 'text', categories, 'Famille de produit pour filtrer et regrouper')}
             {field('supplier', 'Fournisseur', 'text', undefined, 'Nom du fournisseur ou grossiste')}
-            {field('quantity', 'Quantité en stock', 'number', undefined, 'Nombre d\'unités actuellement disponibles')}
-            {field('alertThreshold', "Seuil d'alerte", 'number', undefined, 'Alerte stock bas déclenchée en dessous de ce seuil')}
-            {field('entryDate', "Date d'entrée", 'date', undefined, 'Date à laquelle ce stock est entré')}
+            {form.trackStock && field('quantity', 'Quantité en stock', 'number', undefined, 'Nombre d\'unités actuellement disponibles')}
+            {form.trackStock && field('alertThreshold', "Seuil d'alerte", 'number', undefined, 'Alerte stock bas déclenchée en dessous de ce seuil')}
+            {field('entryDate', "Date d'entrée", 'date', undefined, form.trackStock ? 'Date à laquelle ce stock est entré' : 'Date de création ou de début de la prestation')}
             <div>
-              {field('acquisitionCost', `Coût d'achat total (${currency})`, 'number', undefined, 'Montant total payé pour tout le lot (transport inclus)')}
-              {form.quantity > 0 && form.acquisitionCost > 0 && (
+              {form.trackStock
+                ? field('acquisitionCost', `Coût d'achat total (${currency})`, 'number', undefined, 'Montant total payé pour tout le lot (transport inclus)')
+                : field('acquisitionCost', `Coût de revient unitaire (${currency})`, 'number', undefined, 'Coût pour fournir une unité de ce service')}
+              {form.trackStock && form.quantity > 0 && form.acquisitionCost > 0 && (
                 <p className="text-[11px] text-indigo-500 mt-1 font-medium">
                   → {MAD(form.acquisitionCost / form.quantity)} / unité
                 </p>

@@ -9,21 +9,21 @@ export class GoalsController {
 
   @Get()
   findAll(@CurrentUser() user: AuthUser) {
-    return this.service.findAll(user.id);
+    return this.service.findAll(user.id, user.businessId || undefined);
   }
 
   @Post()
   create(@Body() dto: CreateGoalDto, @CurrentUser() user: AuthUser) {
-    return this.service.create(dto, user.id);
+    return this.service.create(dto, user.id, user.businessId || undefined);
   }
 
   @Patch(':id')
   update(@Param('id') id: string, @Body() dto: Partial<CreateGoalDto>, @CurrentUser() user: AuthUser) {
-    return this.service.update(id, dto, user.id);
+    return this.service.update(id, dto, user.id, user.businessId || undefined);
   }
 
   @Delete(':id')
   remove(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    return this.service.remove(id, user.id);
+    return this.service.remove(id, user.id, user.businessId || undefined);
   }
 }

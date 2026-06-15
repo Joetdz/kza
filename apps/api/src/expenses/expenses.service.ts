@@ -6,14 +6,12 @@ import { CreateExpenseDto } from './dto/create-expense.dto';
 export class ExpensesService {
   constructor(private prisma: PrismaService) {}
 
-  findAll(userId: string) {
-    return this.prisma.expense.findMany({
-      where: { userId },
-      orderBy: { date: 'desc' },
-    });
+  findAll(userId: string, businessId?: string) {
+    const where = businessId ? { businessId } : { userId };
+    return this.prisma.expense.findMany({ where, orderBy: { date: 'desc' } });
   }
 
-  create(dto: CreateExpenseDto, userId: string) {
+  create(dto: CreateExpenseDto, userId: string, businessId?: string) {
     return this.prisma.expense.create({
       data: {
         category: dto.category,
@@ -23,13 +21,15 @@ export class ExpensesService {
         description: dto.description ?? '',
         date: new Date(dto.date),
         userId,
+        ...(businessId ? { businessId } : {}),
       },
     });
   }
 
-  async update(id: string, dto: Partial<CreateExpenseDto>, userId: string) {
+  async update(id: string, dto: Partial<CreateExpenseDto>, userId: string, businessId?: string) {
     const expense = await this.prisma.expense.findUnique({ where: { id } });
-    if (!expense || expense.userId !== userId) throw new NotFoundException('Dépense introuvable');
+    if (!expense) throw new NotFoundException('Dépense introuvable');
+    if (businessId ? expense.businessId !== businessId : expense.userId !== userId) throw new NotFoundException('Dépense introuvable');
 
     return this.prisma.expense.update({
       where: { id },
@@ -44,9 +44,10 @@ export class ExpensesService {
     });
   }
 
-  async remove(id: string, userId: string) {
+  async remove(id: string, userId: string, businessId?: string) {
     const expense = await this.prisma.expense.findUnique({ where: { id } });
-    if (!expense || expense.userId !== userId) throw new NotFoundException('Dépense introuvable');
+    if (!expense) throw new NotFoundException('Dépense introuvable');
+    if (businessId ? expense.businessId !== businessId : expense.userId !== userId) throw new NotFoundException('Dépense introuvable');
     await this.prisma.expense.delete({ where: { id } });
     return { id };
   }

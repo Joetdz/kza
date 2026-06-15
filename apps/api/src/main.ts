@@ -28,8 +28,8 @@ async function bootstrap() {
   // CORS — autorise le frontend React
   app.enableCors({
     origin: process.env.FRONTEND_URL ??/^http:\/\/(localhost|127\.0\.0\.1|172\.16\.\d+\.\d+):\d+$/,
-    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Business-Id'],
   });
 
   // Validation globale des DTOs
