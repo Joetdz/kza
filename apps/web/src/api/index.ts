@@ -41,6 +41,7 @@ export const productsApi = {
     req<Product>(`/products/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   remove: (id: string) =>
     req<{ id: string }>(`/products/${id}`, { method: 'DELETE' }),
+  reconcile: () => req<{ products: Product[]; fixedCount: number }>('/products/reconcile', { method: 'POST' }),
 };
 
 // ─── Movements ───────────────────────────────────────────────
@@ -91,6 +92,62 @@ export const uploadApi = {
     const { data } = supabase.storage.from('products').getPublicUrl(filename);
     return data.publicUrl;
   },
+
+  uploadMedia: async (file: File): Promise<string> => {
+    const isVideo = file.type.startsWith('video/');
+    const prefix = isVideo ? 'videos' : 'images';
+    const ext = file.name.split('.').pop() ?? (isVideo ? 'mp4' : 'jpg');
+    const filename = `${prefix}/${crypto.randomUUID()}.${ext}`;
+    const { error } = await supabase.storage.from('products').upload(filename, file, {
+      cacheControl: '3600',
+      upsert: false,
+    });
+    if (error) throw new Error(error.message);
+    const { data } = supabase.storage.from('products').getPublicUrl(filename);
+    return data.publicUrl;
+  },
+
+  uploadAudio: async (blob: Blob): Promise<string> => {
+    const ext = blob.type.includes('ogg') ? 'ogg' : blob.type.includes('mp4') ? 'mp4' : 'webm';
+    const filename = `audio/${crypto.randomUUID()}.${ext}`;
+    const { error } = await supabase.storage.from('products').upload(filename, blob, {
+      cacheControl: '3600',
+      upsert: false,
+      contentType: blob.type || 'audio/webm',
+    });
+    if (error) throw new Error(error.message);
+    const { data } = supabase.storage.from('products').getPublicUrl(filename);
+    return data.publicUrl;
+  },
+};
+
+// ─── Store Media ─────────────────────────────────────────────────────────────
+
+export interface ProductMedia {
+  id: string;
+  productId: string;
+  url: string;
+  type: string;
+  caption: string | null;
+  audioUrl: string | null;
+  sortOrder: number;
+  createdAt: string;
+  product?: { id: string; name: string; imageUrl: string | null };
+}
+
+export type FeedItem = ProductMedia & {
+  product: { id: string; name: string; sellingPrice: number; imageUrl: string | null; category: string; quantity: number };
+};
+
+export const mediaApi = {
+  getAll: () => req<ProductMedia[]>('/store/my/media'),
+  create: (body: { productId: string; url: string; type: string; caption?: string; audioUrl?: string }) =>
+    req<ProductMedia>('/store/my/media', { method: 'POST', body: JSON.stringify(body) }),
+  update: (id: string, body: { audioUrl?: string | null; caption?: string }) =>
+    req<ProductMedia>(`/store/my/media/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  remove: (id: string) => req<{ id: string }>(`/store/my/media/${id}`, { method: 'DELETE' }),
+  getFeed: (slug: string): Promise<FeedItem[]> =>
+    fetch(`${BASE}/store/${slug}/feed`).then(r => r.json()),
 };
 
 export function resolveImageUrl(imageUrl: string | null | undefined): string | null {

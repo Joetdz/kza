@@ -1,14 +1,17 @@
-import { Controller, Get, Put, Post, Body, Param, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Put, Post, Patch, Delete, Body, Param, NotFoundException, BadRequestException, Res } from '@nestjs/common';
+import { Response } from 'express';
 import { PrismaService } from '../prisma/prisma.service';
 import { WhatsAppService } from '../whatsapp/whatsapp.service';
 import { CurrentUser, AuthUser } from '../auth/current-user.decorator';
 import { Public } from '../auth/public.decorator';
+import OpenAI from 'openai';
 
 interface StoreConfigDto {
   name: string;
   description?: string;
   whatsappPhone: string;
   primaryColor?: string;
+  currency?: string;
   active?: boolean;
 }
 
@@ -30,8 +33,20 @@ function buildSlug(name: string): string {
     .slice(0, 28) + '-' + Math.random().toString(36).slice(2, 6);
 }
 
+const JINGLE_STYLES: Record<string, string> = {
+  energique:    'dynamique, excitant, accrocheur — donne envie d\'agir maintenant',
+  elegant:      'raffiné, premium, sophistiqué — inspire confiance et prestige',
+  friendly:     'chaleureux, proche, convivial — comme un ami qui recommande',
+  urgent:       'promotionnel, urgence, offre limitée — crée le sentiment de rareté',
+  storytelling: 'narratif, émotionnel — raconte une petite histoire autour du produit',
+};
+
+const VALID_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'] as const;
+
 @Controller('store')
 export class StoreController {
+  private openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
   constructor(
     private prisma: PrismaService,
     private whatsapp: WhatsAppService,
@@ -43,7 +58,7 @@ export class StoreController {
   async getMyStore(@CurrentUser() user: AuthUser) {
     const store = await this.prisma.onlineStore.findUnique({
       where: { userId: user.id },
-      include: { products: { select: { productId: true } } },
+      include: { products: { select: { productId: true, storePrice: true } } },
     });
 
     if (!store) return null;
@@ -53,7 +68,13 @@ export class StoreController {
 
     return {
       ...store,
+      currency: store.currency ?? 'CDF',
       visibleProductIds: store.products.map(p => p.productId),
+      storePrices: Object.fromEntries(
+        store.products
+          .filter(p => p.storePrice != null)
+          .map(p => [p.productId, Number(p.storePrice)])
+      ),
       suggestedPhone: waSession?.phone ?? null,
     };
   }
@@ -75,6 +96,7 @@ export class StoreController {
           description: dto.description ?? null,
           whatsappPhone: dto.whatsappPhone.trim(),
           primaryColor: dto.primaryColor ?? existing.primaryColor,
+          currency: dto.currency ?? existing.currency,
           active: dto.active ?? existing.active,
         },
       });
@@ -89,6 +111,7 @@ export class StoreController {
         description: dto.description ?? null,
         whatsappPhone: dto.whatsappPhone.trim(),
         primaryColor: dto.primaryColor ?? '#6366f1',
+        currency: dto.currency ?? 'CDF',
         active: dto.active ?? true,
       },
     });
@@ -111,6 +134,23 @@ export class StoreController {
       });
     }
 
+    return { ok: true };
+  }
+
+  // ── SET store price per product (auth) ───────────────────────────────────────
+
+  @Patch('my/products/:productId')
+  async setProductStorePrice(
+    @CurrentUser() user: AuthUser,
+    @Param('productId') productId: string,
+    @Body() body: { storePrice: number | null },
+  ) {
+    const store = await this.prisma.onlineStore.findUnique({ where: { userId: user.id } });
+    if (!store) throw new NotFoundException('Boutique introuvable');
+    await this.prisma.storeProduct.updateMany({
+      where: { storeId: store.id, productId },
+      data: { storePrice: body.storePrice ?? null },
+    });
     return { ok: true };
   }
 
@@ -145,6 +185,137 @@ export class StoreController {
       data: { status: body.status },
     });
     return { ok: true };
+  }
+
+  // ── JINGLE : generate script with GPT (auth) ─────────────────────────────
+
+  @Post('my/jingle/script')
+  async generateJingleScript(
+    @CurrentUser() _user: AuthUser,
+    @Body() body: { productName: string; description?: string; price?: number; style?: string },
+  ) {
+    if (!body.productName?.trim()) throw new BadRequestException('Nom du produit requis');
+    const styleDesc = JINGLE_STYLES[body.style ?? 'energique'] ?? JINGLE_STYLES.energique;
+
+    const completion = await this.openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [{
+        role: 'user',
+        content: `Génère un script publicitaire vocal de 10 à 15 secondes (30 à 40 mots maximum) pour ce produit.
+
+Style: ${styleDesc}.
+Produit: ${body.productName.trim()}${body.price ? `\nPrix: ${body.price.toLocaleString('fr-FR')} FC` : ''}${body.description ? `\nDescription: ${body.description}` : ''}
+
+Règles:
+- Texte uniquement, aucun titre, aucune indication de mise en scène
+- Adapté au marché africain francophone (Congo, RDC)
+- Accrocheur, mémorable, donne envie d'acheter
+- Maximum 40 mots`,
+      }],
+      max_tokens: 120,
+      temperature: 0.9,
+    });
+
+    const script = completion.choices[0]?.message?.content?.trim() ?? '';
+    return { script };
+  }
+
+  // ── JINGLE : synthesize voice with OpenAI TTS (auth) ──────────────────────
+
+  @Post('my/jingle/voice')
+  async generateJingleVoice(
+    @CurrentUser() _user: AuthUser,
+    @Body() body: { script: string; voice?: string },
+    @Res() res: Response,
+  ) {
+    if (!body.script?.trim()) throw new BadRequestException('Script requis');
+    const voice = (VALID_VOICES as readonly string[]).includes(body.voice ?? '') ? body.voice! : 'nova';
+
+    const mp3 = await this.openai.audio.speech.create({
+      model: 'tts-1-hd',
+      voice: voice as typeof VALID_VOICES[number],
+      input: body.script.trim().slice(0, 300),
+      speed: 1.0,
+    });
+
+    const buffer = Buffer.from(await mp3.arrayBuffer());
+    res.setHeader('Content-Type', 'audio/mpeg');
+    res.setHeader('Content-Length', buffer.length);
+    res.end(buffer);
+  }
+
+  // ── GET my media (auth) ───────────────────────────────────────────────────
+
+  @Get('my/media')
+  async getMyMedia(@CurrentUser() user: AuthUser) {
+    const where = user.businessId ? { businessId: user.businessId } : { userId: user.id };
+    return this.prisma.productMedia.findMany({
+      where: { product: where },
+      include: { product: { select: { id: true, name: true, imageUrl: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  // ── ADD media to product (auth) ───────────────────────────────────────────
+
+  @Post('my/media')
+  async addMedia(
+    @CurrentUser() user: AuthUser,
+    @Body() body: { productId: string; url: string; type: string; caption?: string; audioUrl?: string },
+  ) {
+    const where = user.businessId ? { businessId: user.businessId } : { userId: user.id };
+    const product = await this.prisma.product.findFirst({ where: { id: body.productId, ...where } });
+    if (!product) throw new NotFoundException('Produit introuvable');
+    return this.prisma.productMedia.create({
+      data: {
+        productId: body.productId,
+        url: body.url,
+        type: body.type ?? 'image',
+        caption: body.caption ?? null,
+        audioUrl: body.audioUrl ?? null,
+      },
+    });
+  }
+
+  // ── PATCH media audio (auth) ───────────────────────────────────────────────
+
+  @Patch('my/media/:id')
+  async updateMedia(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() body: { audioUrl?: string | null; caption?: string },
+  ) {
+    const media = await this.prisma.productMedia.findUnique({
+      where: { id },
+      include: { product: { select: { userId: true, businessId: true } } },
+    });
+    if (!media) throw new NotFoundException('Média introuvable');
+    const p = media.product;
+    const owns = user.businessId ? p.businessId === user.businessId : p.userId === user.id;
+    if (!owns) throw new NotFoundException('Média introuvable');
+    return this.prisma.productMedia.update({
+      where: { id },
+      data: {
+        ...(body.audioUrl !== undefined && { audioUrl: body.audioUrl }),
+        ...(body.caption !== undefined && { caption: body.caption }),
+      },
+    });
+  }
+
+  // ── DELETE media (auth) ────────────────────────────────────────────────────
+
+  @Delete('my/media/:id')
+  async deleteMedia(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    const media = await this.prisma.productMedia.findUnique({
+      where: { id },
+      include: { product: { select: { userId: true, businessId: true } } },
+    });
+    if (!media) throw new NotFoundException('Média introuvable');
+    const p = media.product;
+    const owns = user.businessId ? p.businessId === user.businessId : p.userId === user.id;
+    if (!owns) throw new NotFoundException('Média introuvable');
+    await this.prisma.productMedia.delete({ where: { id } });
+    return { id };
   }
 
   // ── GET public store (no auth) ─────────────────────────────────────────────
@@ -182,11 +353,68 @@ export class StoreController {
       description: store.description,
       logoUrl: store.logoUrl,
       primaryColor: store.primaryColor,
+      currency: store.currency ?? 'CDF',
       products: store.products
-        .map(sp => sp.product)
-        .filter(p => !p.trackStock || p.quantity > 0)
-        .map(({ trackStock: _, ...pub }) => pub),
+        .filter(sp => !sp.product.trackStock || sp.product.quantity > 0)
+        .map(sp => {
+          const { trackStock: _, ...pub } = sp.product;
+          return {
+            ...pub,
+            sellingPrice: sp.storePrice ? Number(sp.storePrice) : pub.sellingPrice,
+          };
+        }),
     };
+  }
+
+  // ── GET public feed / TikTok (no auth) ────────────────────────────────────
+
+  @Public()
+  @Get(':slug/feed')
+  async getPublicFeed(@Param('slug') slug: string) {
+    const store = await this.prisma.onlineStore.findUnique({
+      where: { slug },
+      include: {
+        products: {
+          include: {
+            product: {
+              select: {
+                id: true,
+                name: true,
+                sellingPrice: true,
+                imageUrl: true,
+                category: true,
+                quantity: true,
+                trackStock: true,
+                media: { orderBy: { sortOrder: 'asc' } },
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!store || !store.active) throw new NotFoundException('Boutique introuvable');
+
+    return store.products.flatMap(sp => {
+      const p = sp.product;
+      if (p.trackStock && p.quantity <= 0) return [];
+      const displayPrice = sp.storePrice ? Number(sp.storePrice) : p.sellingPrice;
+      return p.media.map(m => ({
+        id: m.id,
+        url: m.url,
+        type: m.type,
+        caption: m.caption,
+        audioUrl: m.audioUrl,
+        sortOrder: m.sortOrder,
+        product: {
+          id: p.id,
+          name: p.name,
+          sellingPrice: displayPrice,
+          imageUrl: p.imageUrl,
+          category: p.category,
+          quantity: p.quantity,
+        },
+      }));
+    });
   }
 
   // ── POST public order (no auth) ────────────────────────────────────────────

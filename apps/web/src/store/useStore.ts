@@ -226,6 +226,8 @@ export const useStore = create<AppStore>()((set, get) => ({
         }),
       }));
       toast.success(m.type === 'in' ? 'Entrée de stock enregistrée' : 'Sortie de stock enregistrée');
+      // Sync authoritative quantities from DB in background
+      productsApi.getAll().then(products => set({ products })).catch(() => {});
     } catch { toast.error('Erreur lors du mouvement de stock'); throw new Error(); }
   },
 
@@ -257,10 +259,16 @@ export const useStore = create<AppStore>()((set, get) => ({
         return update;
       });
       toast.success('Vente enregistrée');
+      // Sync authoritative quantities from DB in background
+      if (created.status === 'paid') {
+        productsApi.getAll().then(products => set({ products })).catch(() => {});
+      }
     } catch { toast.error('Erreur lors de l\'enregistrement de la vente'); throw new Error(); }
   },
   updateSaleStatus: async (id, newStatus) => {
     try {
+      // Capture old status before update for sync decision
+      const oldStatus = get().sales.find(sale => sale.id === id)?.status;
       const updated = await salesApi.updateStatus(id, newStatus);
       set(s => {
         const oldSale = s.sales.find(sale => sale.id === id);
@@ -312,10 +320,16 @@ export const useStore = create<AppStore>()((set, get) => ({
       });
       const labels: Record<string, string> = { paid: 'Payé', pending: 'En attente', cancelled: 'Annulé' };
       toast.success(`Statut mis à jour → ${labels[newStatus] ?? newStatus}`);
+      // Sync authoritative quantities from DB in background when stock is affected
+      if ((oldStatus === 'paid') !== (newStatus === 'paid')) {
+        productsApi.getAll().then(products => set({ products })).catch(() => {});
+      }
     } catch { toast.error('Erreur lors du changement de statut'); throw new Error(); }
   },
   deleteSale: async (id) => {
     try {
+      // Capture paid status before removing from store
+      const wasPaid = get().sales.find(sale => sale.id === id)?.status === 'paid';
       await salesApi.remove(id);
       set(s => {
         const sale = s.sales.find(sale => sale.id === id);
@@ -342,6 +356,10 @@ export const useStore = create<AppStore>()((set, get) => ({
         return update;
       });
       toast.success('Vente supprimée');
+      // Sync authoritative quantities from DB in background if stock was affected
+      if (wasPaid) {
+        productsApi.getAll().then(products => set({ products })).catch(() => {});
+      }
     } catch { toast.error('Erreur lors de la suppression'); throw new Error(); }
   },
 

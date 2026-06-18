@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
-import { Plus, Edit2, Trash2, TrendingUp, TrendingDown, History, Search, ImagePlus, X } from 'lucide-react';
+import { Plus, Edit2, Trash2, TrendingUp, TrendingDown, History, Search, ImagePlus, X, RefreshCw } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { Modal } from '../components/ui/Modal';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
@@ -9,7 +9,8 @@ import { NumberInput } from '../components/ui/NumberInput';
 import { CardsSkeleton } from '../components/ui/Skeleton';
 import { useCurrency } from '../hooks/useCurrency';
 import { formatDate } from '../utils/formatters';
-import { uploadApi, categoriesApi, resolveImageUrl } from '../api';
+import { uploadApi, categoriesApi, resolveImageUrl, productsApi } from '../api';
+import { toast } from '../hooks/useToast';
 import type { Product, StockMovement } from '../types';
 
 const generateSku = () => 'PRD-' + Math.random().toString(36).slice(2, 8).toUpperCase();
@@ -33,6 +34,7 @@ export function Stock() {
 
   const [submitting, setSubmitting] = useState(false);
   const [submittingMov, setSubmittingMov] = useState(false);
+  const [reconciling, setReconciling] = useState(false);
   const [search, setSearch] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
@@ -60,6 +62,28 @@ export function Stock() {
     ),
     [products, search]
   );
+
+  const handleReconcile = async () => {
+    setReconciling(true);
+    try {
+      const result = await productsApi.reconcile();
+      useStore.setState(s => ({
+        products: s.products.map(p => {
+          const found = result.products.find(u => u.id === p.id);
+          return found ?? p;
+        }),
+      }));
+      toast.success(
+        result.fixedCount > 0
+          ? `Stock recalculé — ${result.fixedCount} produit(s) corrigé(s)`
+          : 'Stock déjà à jour — aucune correction nécessaire',
+      );
+    } catch {
+      toast.error('Erreur lors du recalcul du stock');
+    } finally {
+      setReconciling(false);
+    }
+  };
 
   const openAdd = () => { setEditing(null); setForm(emptyProduct()); setModalOpen(true); };
   const openEdit = (p: Product) => {
@@ -92,10 +116,17 @@ export function Stock() {
     const unitCost = (form.trackStock && form.quantity > 0)
       ? form.acquisitionCost / form.quantity
       : form.acquisitionCost;
-    const payload = { ...form, acquisitionCost: unitCost };
     try {
-      if (editing) await updateProduct(editing.id, payload);
-      else await addProduct(payload);
+      if (editing) {
+        // When editing, only send quantity if the user explicitly changed it — avoids
+        // overwriting DB quantity that was modified by movements/sales since modal opened
+        const { quantity, ...rest } = form;
+        const patch: Partial<typeof form> = { ...rest, acquisitionCost: unitCost };
+        if (quantity !== editing.quantity) patch.quantity = quantity;
+        await updateProduct(editing.id, patch);
+      } else {
+        await addProduct({ ...form, acquisitionCost: unitCost });
+      }
       setModalOpen(false);
     } finally {
       setSubmitting(false);
@@ -112,8 +143,13 @@ export function Stock() {
     try {
       const { purchaseCost, freightCost, ...movData } = movForm;
       await addMovement({ productId: movementProduct.id, ...movData });
+      // Update acquisition cost silently (no toast) after stock-in with purchase cost
       if (movForm.type === 'in' && unitAcquisitionCost > 0) {
-        await updateProduct(movementProduct.id, { acquisitionCost: unitAcquisitionCost });
+        productsApi.update(movementProduct.id, { acquisitionCost: unitAcquisitionCost })
+          .then(updated => useStore.setState(s => ({
+            products: s.products.map(p => p.id === updated.id ? updated : p),
+          })))
+          .catch(() => {});
       }
       setMovementProduct(null);
     } finally {
@@ -161,12 +197,23 @@ export function Stock() {
           <h1 className="text-xl sm:text-2xl font-bold text-gray-900 truncate">Gestion du Stock</h1>
           <p className="text-xs sm:text-sm text-gray-500">{products.length} produits enregistrés</p>
         </div>
-        <button
-          onClick={openAdd}
-          className="shrink-0 flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-3 sm:px-4 py-2.5 rounded-xl text-sm font-medium transition-colors"
-        >
-          <Plus size={16} /><span className="hidden sm:inline">Ajouter</span>
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={handleReconcile}
+            disabled={reconciling}
+            title="Recalculer le stock depuis l'historique"
+            className="flex items-center gap-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors disabled:opacity-50"
+          >
+            <RefreshCw size={15} className={reconciling ? 'animate-spin' : ''} />
+            <span className="hidden sm:inline">Recalculer</span>
+          </button>
+          <button
+            onClick={openAdd}
+            className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-3 sm:px-4 py-2.5 rounded-xl text-sm font-medium transition-colors"
+          >
+            <Plus size={16} /><span className="hidden sm:inline">Ajouter</span>
+          </button>
+        </div>
       </div>
 
       <div className="relative">

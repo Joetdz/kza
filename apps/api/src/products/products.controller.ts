@@ -17,6 +17,11 @@ export class ProductsController {
     return this.service.create(dto, user.id, user.businessId || undefined);
   }
 
+  @Post('reconcile')
+  reconcile(@CurrentUser() user: AuthUser) {
+    return this.service.reconcile(user.id, user.businessId || undefined);
+  }
+
   @Patch(':id')
   update(@Param('id') id: string, @Body() dto: Partial<CreateProductDto>, @CurrentUser() user: AuthUser) {
     return this.service.update(id, dto, user.id, user.businessId || undefined);

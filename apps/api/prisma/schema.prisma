@@ -51,6 +51,7 @@ model Product {
   saleItems   SaleItem[]
   expenses    Expense[]
   storeItems  StoreProduct[]
+  media       ProductMedia[]
 
   @@unique([userId, sku])
   @@index([userId])
@@ -341,6 +342,7 @@ model OnlineStore {
   logoUrl       String?  @map("logo_url")
   whatsappPhone String   @map("whatsapp_phone")
   primaryColor  String   @default("#6366f1") @map("primary_color")
+  currency      String   @default("CDF") @map("currency")
   active        Boolean  @default(true)
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
@@ -352,9 +354,10 @@ model OnlineStore {
 }
 
 model StoreProduct {
-  id        String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  storeId   String @map("store_id") @db.Uuid
-  productId String @map("product_id") @db.Uuid
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  storeId    String   @map("store_id") @db.Uuid
+  productId  String   @map("product_id") @db.Uuid
+  storePrice Decimal? @map("store_price") @db.Decimal(10, 2)
 
   store   OnlineStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
   product Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
@@ -379,6 +382,22 @@ model StoreOrder {
 
   @@index([storeId])
   @@map("store_orders")
+}
+
+model ProductMedia {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  productId String   @map("product_id") @db.Uuid
+  url       String
+  type      String   @default("image")
+  caption   String?
+  audioUrl  String?  @map("audio_url")
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@map("product_media")
 }
 
 // ─── Business AI ──────────────────────────────────────────────────────────────
