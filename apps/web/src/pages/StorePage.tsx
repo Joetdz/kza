@@ -4,7 +4,7 @@ import {
   Store, Copy, ExternalLink, Check, Package,
   ToggleLeft, ToggleRight, Loader2, ShoppingBag, Clock, CheckCircle,
   XCircle, Truck, Plus, X, Film, Mic, MicOff, Play, Square, Trash2,
-  Sparkles, RefreshCw, Music,
+  Sparkles, RefreshCw, Music, Scissors, Image as ImageIcon, ArrowDown, ArrowUp,
 } from 'lucide-react';
 import { mediaApi, uploadApi, type ProductMedia } from '../api';
 
@@ -511,6 +511,559 @@ function JingleStudio({ mediaId, product, onSaved, onCancel }: {
   );
 }
 
+// ── Shared canvas helpers ─────────────────────────────────────────────────────
+
+function getVideoMimeType(): string {
+  for (const t of ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm']) {
+    if (MediaRecorder.isTypeSupported(t)) return t;
+  }
+  return 'video/webm';
+}
+
+function drawCaptionOverlay(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  pos: 'top' | 'bottom',
+  w: number,
+  h: number,
+) {
+  if (!text.trim()) return;
+  const fontSize = Math.max(20, Math.floor(w / 22));
+  ctx.save();
+  ctx.font = `bold ${fontSize}px sans-serif`;
+  const metrics = ctx.measureText(text);
+  const padX = 20, padY = 12;
+  const boxW = Math.min(metrics.width + padX * 2, w - 20);
+  const boxH = fontSize + padY * 2;
+  const x = (w - boxW) / 2;
+  const y = pos === 'bottom' ? h - boxH - 20 : 20;
+  ctx.fillStyle = 'rgba(0,0,0,0.58)';
+  ctx.beginPath();
+  ctx.roundRect(x, y, boxW, boxH, 8);
+  ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, w / 2, y + boxH / 2, boxW - padX * 2);
+  ctx.restore();
+}
+
+// ── VideoEditor ───────────────────────────────────────────────────────────────
+
+function VideoEditor({
+  mediaId,
+  videoUrl,
+  product,
+  currency,
+  onSaved,
+  onCancel,
+}: {
+  mediaId: string;
+  videoUrl: string;
+  product: { name: string; sellingPrice: number };
+  currency: string;
+  onSaved: (newUrl: string) => void;
+  onCancel: () => void;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [duration, setDuration] = useState(0);
+  const [startTime, setStartTime] = useState(0);
+  const [endTime, setEndTime] = useState(0);
+  const [captionText, setCaptionText] = useState(product.name);
+  const [captionPos, setCaptionPos] = useState<'top' | 'bottom'>('bottom');
+  const [processing, setProcessing] = useState(false);
+  const [progress, setProgress] = useState(0);
+
+  const handleLoaded = () => {
+    const v = videoRef.current;
+    if (!v) return;
+    const d = Math.min(v.duration || 60, 120);
+    setDuration(d);
+    setEndTime(d);
+  };
+
+  const exportVideo = useCallback(async () => {
+    const video = videoRef.current;
+    if (!video || processing) return;
+    if (endTime <= startTime) return;
+    setProcessing(true);
+    setProgress(0);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth || 720;
+    canvas.height = video.videoHeight || 1280;
+    const ctx = canvas.getContext('2d')!;
+
+    const mimeType = getVideoMimeType();
+    const stream = canvas.captureStream(30);
+    const recorder = new MediaRecorder(stream, { mimeType });
+    const chunks: Blob[] = [];
+    recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+
+    recorder.onstop = async () => {
+      try {
+        const blob = new Blob(chunks, { type: mimeType });
+        const file = new File([blob], 'edited.webm', { type: mimeType });
+        const url = await uploadApi.uploadMedia(file);
+        onSaved(url);
+      } catch {
+        alert('Erreur lors de l\'export vidéo');
+        setProcessing(false);
+      }
+    };
+
+    video.currentTime = startTime;
+    await new Promise<void>(r => { video.onseeked = () => r(); });
+
+    recorder.start(100);
+    video.play();
+
+    const onFrame = () => {
+      if (!processing) return; // guard
+      const cur = video.currentTime;
+      if (cur >= endTime || video.ended) {
+        video.pause();
+        recorder.stop();
+        return;
+      }
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      drawCaptionOverlay(ctx, captionText, captionPos, canvas.width, canvas.height);
+      setProgress(Math.round(((cur - startTime) / (endTime - startTime)) * 100));
+      requestAnimationFrame(onFrame);
+    };
+    requestAnimationFrame(onFrame);
+  }, [videoRef, startTime, endTime, captionText, captionPos, processing, product.name, onSaved]);
+
+  const fmt = (s: number) => {
+    const m = Math.floor(s / 60);
+    const sec = Math.floor(s % 60);
+    return `${m}:${sec.toString().padStart(2, '0')}`;
+  };
+
+  return (
+    <div className="mt-2 bg-gradient-to-br from-orange-50 to-amber-50 border border-orange-100 rounded-xl p-3">
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-xs font-bold text-orange-700 flex items-center gap-1.5">
+          <Scissors size={13} />
+          Éditeur vidéo
+        </p>
+        <button onClick={onCancel} className="text-gray-400 hover:text-gray-600"><X size={14} /></button>
+      </div>
+
+      {/* Preview */}
+      <video
+        ref={videoRef}
+        src={videoUrl}
+        controls
+        onLoadedMetadata={handleLoaded}
+        className="w-full rounded-xl mb-3 bg-black"
+        style={{ maxHeight: 200 }}
+        crossOrigin="anonymous"
+      />
+
+      {/* Trim sliders */}
+      {duration > 0 && (
+        <div className="space-y-2 mb-3">
+          <div className="flex items-center justify-between text-[10px] text-gray-500">
+            <span>Début : <strong className="text-gray-800">{fmt(startTime)}</strong></span>
+            <span>Fin : <strong className="text-gray-800">{fmt(endTime)}</strong></span>
+            <span>Durée : <strong className="text-indigo-600">{fmt(endTime - startTime)}</strong></span>
+          </div>
+          <div>
+            <label className="text-[10px] text-gray-400 mb-0.5 block">Début</label>
+            <input type="range" min={0} max={duration} step={0.1} value={startTime}
+              onChange={e => setStartTime(Math.min(parseFloat(e.target.value), endTime - 0.5))}
+              className="w-full accent-orange-500" />
+          </div>
+          <div>
+            <label className="text-[10px] text-gray-400 mb-0.5 block">Fin</label>
+            <input type="range" min={0} max={duration} step={0.1} value={endTime}
+              onChange={e => setEndTime(Math.max(parseFloat(e.target.value), startTime + 0.5))}
+              className="w-full accent-orange-500" />
+          </div>
+        </div>
+      )}
+
+      {/* Caption */}
+      <div className="mb-3">
+        <div className="flex items-center justify-between mb-1">
+          <label className="text-[10px] font-medium text-gray-600">Texte incrusté</label>
+          <button
+            onClick={() => setCaptionPos(p => p === 'bottom' ? 'top' : 'bottom')}
+            className="flex items-center gap-1 text-[10px] text-indigo-600 hover:text-indigo-800">
+            {captionPos === 'bottom' ? <ArrowDown size={10} /> : <ArrowUp size={10} />}
+            {captionPos === 'bottom' ? 'En bas' : 'En haut'}
+          </button>
+        </div>
+        <input
+          value={captionText}
+          onChange={e => setCaptionText(e.target.value)}
+          placeholder="Texte à afficher sur la vidéo..."
+          className="w-full border border-gray-200 rounded-xl px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-orange-400"
+        />
+      </div>
+
+      {/* Progress */}
+      {processing && (
+        <div className="mb-3">
+          <div className="flex justify-between text-[10px] text-gray-500 mb-1">
+            <span>Export en cours…</span>
+            <span>{progress}%</span>
+          </div>
+          <div className="w-full h-1.5 bg-gray-200 rounded-full overflow-hidden">
+            <div className="h-full bg-orange-500 rounded-full transition-all" style={{ width: `${progress}%` }} />
+          </div>
+        </div>
+      )}
+
+      <button
+        onClick={exportVideo}
+        disabled={processing || duration === 0 || endTime <= startTime}
+        className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-700 disabled:opacity-60 text-white text-sm font-semibold transition-colors">
+        {processing ? <Loader2 size={15} className="animate-spin" /> : <Scissors size={15} />}
+        {processing ? `Export… ${progress}%` : 'Rogner & Exporter'}
+      </button>
+    </div>
+  );
+}
+
+// ── PhotoToVideoStudio ────────────────────────────────────────────────────────
+
+type PtvEffect = 'kenburns_in' | 'kenburns_out' | 'pan_right' | 'pan_left';
+
+const PTV_EFFECTS: { id: PtvEffect; label: string; emoji: string }[] = [
+  { id: 'kenburns_in',  label: 'Zoom avant',  emoji: '🔍' },
+  { id: 'kenburns_out', label: 'Zoom arrière', emoji: '🔭' },
+  { id: 'pan_right',    label: 'Glisser →',   emoji: '➡️' },
+  { id: 'pan_left',     label: 'Glisser ←',   emoji: '⬅️' },
+];
+
+const PTV_W = 720, PTV_H = 1280;
+const PTV_DURATION = 15_000; // 15 secondes
+
+function drawPtvFrame(
+  ctx: CanvasRenderingContext2D,
+  img: HTMLImageElement,
+  effect: PtvEffect,
+  t: number, // 0→1
+) {
+  const scale = Math.max(PTV_W / img.naturalWidth, PTV_H / img.naturalHeight);
+  const baseW = img.naturalWidth * scale;
+  const baseH = img.naturalHeight * scale;
+
+  let extraScale = 1, dx = 0;
+  switch (effect) {
+    case 'kenburns_in':  extraScale = 1 + 0.2 * t; break;
+    case 'kenburns_out': extraScale = 1.2 - 0.2 * t; break;
+    case 'pan_right':    dx = (baseW - PTV_W) * 0.35 * t; break;
+    case 'pan_left':     dx = -(baseW - PTV_W) * 0.35 * t; break;
+  }
+  const drawW = baseW * extraScale;
+  const drawH = baseH * extraScale;
+  ctx.drawImage(img, (PTV_W - drawW) / 2 - dx, (PTV_H - drawH) / 2, drawW, drawH);
+}
+
+function drawPtvText(
+  ctx: CanvasRenderingContext2D,
+  top: string,
+  bottom: string,
+) {
+  // gradient overlay at bottom
+  const grad = ctx.createLinearGradient(0, PTV_H * 0.55, 0, PTV_H);
+  grad.addColorStop(0, 'rgba(0,0,0,0)');
+  grad.addColorStop(1, 'rgba(0,0,0,0.75)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, PTV_W, PTV_H);
+
+  if (top) {
+    // top pill
+    const fs = 36;
+    ctx.font = `bold ${fs}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const tw = ctx.measureText(top).width;
+    const padX = 24, padY = 14;
+    const bw = Math.min(tw + padX * 2, PTV_W - 40);
+    const bh = fs + padY * 2;
+    const bx = (PTV_W - bw) / 2;
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.beginPath();
+    ctx.roundRect(bx, 40, bw, bh, 10);
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.fillText(top, PTV_W / 2, 40 + bh / 2, bw - padX * 2);
+  }
+
+  if (bottom) {
+    ctx.font = `bold 42px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.fillStyle = '#fff';
+    ctx.fillText(bottom, PTV_W / 2, PTV_H - 80, PTV_W - 60);
+  }
+}
+
+function PhotoToVideoStudio({
+  productId,
+  product,
+  currency,
+  onSaved,
+  onCancel,
+}: {
+  productId: string;
+  product: { name: string; sellingPrice: number; imageUrl: string | null };
+  currency: string;
+  onSaved: (url: string) => void;
+  onCancel: () => void;
+}) {
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imageEl, setImageEl] = useState<HTMLImageElement | null>(null);
+  const [useProductImg, setUseProductImg] = useState(!!(product.imageUrl));
+  const [effect, setEffect] = useState<PtvEffect>('kenburns_in');
+  const [captionTop, setCaptionTop] = useState(product.name);
+  const [captionBottom, setCaptionBottom] = useState(`${product.sellingPrice.toLocaleString('fr-FR')} ${currency}`);
+  const [bgFile, setBgFile] = useState<File | null>(null);
+  const [bgVolume, setBgVolume] = useState(0.3);
+  const [processing, setProcessing] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [savedBlob, setSavedBlob] = useState<Blob | null>(null);
+  const [saving, setSaving] = useState(false);
+  const imgInputRef = useRef<HTMLInputElement>(null);
+  const bgInputRef = useRef<HTMLInputElement>(null);
+
+  // Load image element when source changes
+  useEffect(() => {
+    const src = useProductImg && product.imageUrl ? product.imageUrl : (imageFile ? URL.createObjectURL(imageFile) : null);
+    if (!src) { setImageEl(null); return; }
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => setImageEl(img);
+    img.onerror = () => setImageEl(null);
+    img.src = src;
+    return () => { if (imageFile) URL.revokeObjectURL(src); };
+  }, [imageFile, useProductImg, product.imageUrl]);
+
+  const generate = async () => {
+    if (!imageEl || processing) return;
+    setProcessing(true);
+    setProgress(0);
+    setPreviewUrl(null);
+    setSavedBlob(null);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = PTV_W;
+    canvas.height = PTV_H;
+    const ctx = canvas.getContext('2d')!;
+
+    const mimeType = getVideoMimeType();
+    const videoStream = canvas.captureStream(30);
+    let combinedStream: MediaStream = videoStream;
+    let audioCtxRef: AudioContext | null = null;
+
+    if (bgFile) {
+      try {
+        const audioCtx = new AudioContext();
+        audioCtxRef = audioCtx;
+        const bgBuf = await audioCtx.decodeAudioData(await bgFile.arrayBuffer());
+        const src = audioCtx.createBufferSource();
+        src.buffer = bgBuf;
+        src.loop = true;
+        const gain = audioCtx.createGain();
+        gain.gain.value = bgVolume;
+        const dest = audioCtx.createMediaStreamDestination();
+        src.connect(gain).connect(dest);
+        src.start();
+        setTimeout(() => { src.stop(); audioCtx.close(); }, PTV_DURATION + 500);
+        combinedStream = new MediaStream([
+          videoStream.getVideoTracks()[0],
+          dest.stream.getAudioTracks()[0],
+        ]);
+      } catch { /* ignore audio errors, fall back to video only */ }
+    }
+
+    const recorder = new MediaRecorder(combinedStream, { mimeType });
+    const chunks: Blob[] = [];
+    recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+
+    recorder.onstop = () => {
+      const blob = new Blob(chunks, { type: mimeType });
+      setSavedBlob(blob);
+      setPreviewUrl(URL.createObjectURL(blob));
+      setProcessing(false);
+      audioCtxRef?.close().catch(() => {});
+    };
+
+    recorder.start(100);
+    const startTs = performance.now();
+
+    const animate = () => {
+      const elapsed = performance.now() - startTs;
+      const t = Math.min(elapsed / PTV_DURATION, 1);
+
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, PTV_W, PTV_H);
+      drawPtvFrame(ctx, imageEl!, effect, t);
+      drawPtvText(ctx, captionTop, captionBottom);
+      setProgress(Math.round(t * 100));
+
+      if (elapsed < PTV_DURATION) {
+        requestAnimationFrame(animate);
+      } else {
+        recorder.stop();
+      }
+    };
+    requestAnimationFrame(animate);
+  };
+
+  const save = async () => {
+    if (!savedBlob) return;
+    setSaving(true);
+    try {
+      const file = new File([savedBlob], 'pub15s.webm', { type: savedBlob.type });
+      const url = await uploadApi.uploadMedia(file);
+      await mediaApi.create({
+        productId,
+        url,
+        type: 'video',
+        caption: captionTop || undefined,
+      });
+      onSaved(url);
+    } catch {
+      alert('Erreur lors de la sauvegarde');
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="mt-3 bg-gradient-to-br from-pink-50 to-rose-50 border border-pink-100 rounded-xl p-3">
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-xs font-bold text-pink-700 flex items-center gap-1.5">
+          <Play size={13} />
+          Pub 15s
+        </p>
+        <button onClick={onCancel} className="text-gray-400 hover:text-gray-600"><X size={14} /></button>
+      </div>
+
+      {/* Image source */}
+      <div className="mb-3">
+        <p className="text-[10px] font-semibold text-gray-600 mb-1.5">Image source</p>
+        {product.imageUrl && (
+          <div className="flex gap-2 mb-2">
+            <button onClick={() => setUseProductImg(true)}
+              className={`flex-1 py-1.5 rounded-xl text-[10px] font-medium transition-colors border ${useProductImg ? 'bg-pink-600 text-white border-pink-600' : 'bg-white text-gray-500 border-gray-200 hover:border-pink-300'}`}>
+              Image du produit
+            </button>
+            <button onClick={() => setUseProductImg(false)}
+              className={`flex-1 py-1.5 rounded-xl text-[10px] font-medium transition-colors border ${!useProductImg ? 'bg-pink-600 text-white border-pink-600' : 'bg-white text-gray-500 border-gray-200 hover:border-pink-300'}`}>
+              Charger une photo
+            </button>
+          </div>
+        )}
+        {(!useProductImg || !product.imageUrl) && (
+          <label className="flex items-center justify-center gap-2 py-2.5 border-2 border-dashed border-pink-200 rounded-xl cursor-pointer hover:border-pink-400 transition-colors text-xs text-pink-500">
+            <ImageIcon size={14} />
+            {imageFile ? imageFile.name : 'Sélectionner une photo…'}
+            <input ref={imgInputRef} type="file" accept="image/*" className="hidden"
+              onChange={e => { setImageFile(e.target.files?.[0] ?? null); setUseProductImg(false); }} />
+          </label>
+        )}
+        {imageEl && (
+          <img src={imageEl.src} alt="" className="mt-2 w-full h-24 object-cover rounded-xl" />
+        )}
+      </div>
+
+      {/* Effect */}
+      <div className="mb-3">
+        <p className="text-[10px] font-semibold text-gray-600 mb-1.5">Effet</p>
+        <div className="grid grid-cols-2 gap-1.5">
+          {PTV_EFFECTS.map(ef => (
+            <button key={ef.id} onClick={() => setEffect(ef.id)}
+              className={`flex items-center gap-1.5 px-2.5 py-2 rounded-xl text-[10px] font-medium transition-all border ${effect === ef.id ? 'bg-pink-600 text-white border-pink-600' : 'bg-white text-gray-600 border-gray-200 hover:border-pink-300'}`}>
+              <span>{ef.emoji}</span>{ef.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Captions */}
+      <div className="mb-3 space-y-2">
+        <p className="text-[10px] font-semibold text-gray-600">Textes</p>
+        <input value={captionTop} onChange={e => setCaptionTop(e.target.value)}
+          placeholder="Titre (haut)"
+          className="w-full border border-gray-200 rounded-xl px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-pink-400" />
+        <input value={captionBottom} onChange={e => setCaptionBottom(e.target.value)}
+          placeholder="Prix / slogan (bas)"
+          className="w-full border border-gray-200 rounded-xl px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-pink-400" />
+      </div>
+
+      {/* Background audio */}
+      <div className="mb-3">
+        <div className="flex items-center justify-between mb-1.5">
+          <p className="text-[10px] font-semibold text-gray-600 flex items-center gap-1"><Music size={10} /> Musique de fond <span className="text-gray-400 font-normal">(optionnel)</span></p>
+          {bgFile && <button onClick={() => setBgFile(null)} className="text-[10px] text-red-400 hover:text-red-600">Retirer</button>}
+        </div>
+        {!bgFile ? (
+          <label className="flex items-center justify-center gap-2 py-2 border-2 border-dashed border-gray-200 rounded-xl cursor-pointer hover:border-pink-300 transition-colors text-[10px] text-gray-400">
+            <Music size={12} />Charger (MP3, WAV…)
+            <input ref={bgInputRef} type="file" accept="audio/*" className="hidden"
+              onChange={e => setBgFile(e.target.files?.[0] ?? null)} />
+          </label>
+        ) : (
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-gray-500 truncate flex-1">{bgFile.name}</span>
+            <input type="range" min={0} max={1} step={0.05} value={bgVolume}
+              onChange={e => setBgVolume(parseFloat(e.target.value))}
+              className="w-20 accent-pink-500" />
+            <span className="text-[10px] text-gray-400 shrink-0">{Math.round(bgVolume * 100)}%</span>
+          </div>
+        )}
+      </div>
+
+      {/* Progress */}
+      {processing && (
+        <div className="mb-3">
+          <div className="flex justify-between text-[10px] text-gray-500 mb-1">
+            <span>Génération en cours… (15s)</span>
+            <span>{progress}%</span>
+          </div>
+          <div className="w-full h-1.5 bg-gray-200 rounded-full overflow-hidden">
+            <div className="h-full bg-pink-500 rounded-full transition-all duration-300" style={{ width: `${progress}%` }} />
+          </div>
+        </div>
+      )}
+
+      {/* Preview */}
+      {previewUrl && !processing && (
+        <div className="mb-3">
+          <p className="text-[10px] font-semibold text-gray-600 mb-1.5">Aperçu</p>
+          <video src={previewUrl} controls loop className="w-full rounded-xl bg-black" style={{ maxHeight: 220 }} />
+        </div>
+      )}
+
+      {/* Actions */}
+      <div className="flex gap-2">
+        <button
+          onClick={generate}
+          disabled={!imageEl || processing}
+          className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-pink-600 hover:bg-pink-700 disabled:opacity-60 text-white text-xs font-semibold transition-colors">
+          {processing ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
+          {processing ? `${progress}%…` : (previewUrl ? 'Re-générer' : 'Générer')}
+        </button>
+        {previewUrl && !processing && (
+          <button
+            onClick={save}
+            disabled={saving}
+            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white text-xs font-semibold transition-colors">
+            {saving ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+            {saving ? 'Sauvegarde…' : 'Sauvegarder'}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── StorePage ─────────────────────────────────────────────────────────────────
 
 export function StorePage() {
@@ -531,6 +1084,8 @@ export function StorePage() {
   const [captionMap, setCaptionMap] = useState<Record<string, string>>({});
   const [recorderOpenId, setRecorderOpenId] = useState<string | null>(null);
   const [jingleOpenId, setJingleOpenId] = useState<string | null>(null);
+  const [editorOpenId, setEditorOpenId] = useState<string | null>(null);
+  const [pubOpenProductId, setPubOpenProductId] = useState<string | null>(null);
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   // Per-product store price override (productId → price string)
@@ -658,8 +1213,20 @@ export function StorePage() {
   const handleDeleteMedia = async (id: string) => {
     if (recorderOpenId === id) setRecorderOpenId(null);
     if (jingleOpenId === id) setJingleOpenId(null);
+    if (editorOpenId === id) setEditorOpenId(null);
     await mediaApi.remove(id).catch(() => {});
     setMedia(prev => prev.filter(m => m.id !== id));
+  };
+
+  const handleVideoEdited = (mediaId: string, newUrl: string) => {
+    // A new media entry was created by VideoEditor; just refresh the list
+    mediaApi.getAll().then(setMedia).catch(() => {});
+    setEditorOpenId(null);
+  };
+
+  const handlePubCreated = (productId: string, url: string) => {
+    mediaApi.getAll().then(setMedia).catch(() => {});
+    setPubOpenProductId(null);
   };
 
   const handleAudioSaved = (mediaId: string, audioUrl: string | null) => {
@@ -897,7 +1464,24 @@ export function StorePage() {
                         <p className="font-semibold text-gray-900 text-sm truncate">{p.name}</p>
                         <p className="text-xs text-gray-400">{productMedia.length} création{productMedia.length !== 1 ? 's' : ''}</p>
                       </div>
+                      <button
+                        onClick={() => setPubOpenProductId(pubOpenProductId === p.id ? null : p.id)}
+                        className={`flex items-center gap-1 px-2 py-1.5 rounded-xl text-[10px] font-semibold transition-colors ${pubOpenProductId === p.id ? 'bg-pink-600 text-white' : 'bg-pink-50 text-pink-600 hover:bg-pink-100'}`}>
+                        <Play size={9} />
+                        Pub 15s
+                      </button>
                     </div>
+
+                    {/* Pub 15s studio */}
+                    {pubOpenProductId === p.id && (
+                      <PhotoToVideoStudio
+                        productId={p.id}
+                        product={{ name: p.name, sellingPrice: p.sellingPrice, imageUrl: p.imageUrl ?? null }}
+                        currency={store?.currency ?? 'CDF'}
+                        onSaved={url => handlePubCreated(p.id, url)}
+                        onCancel={() => setPubOpenProductId(null)}
+                      />
+                    )}
 
                     {/* Media grid */}
                     <div className="grid grid-cols-3 gap-2 mb-3">
@@ -969,6 +1553,32 @@ export function StorePage() {
                               product={{ name: p.name, sellingPrice: p.sellingPrice }}
                               onSaved={audioUrl => handleJingleSaved(m.id, audioUrl)}
                               onCancel={() => setJingleOpenId(null)}
+                            />
+                          )}
+
+                          {/* Video editor button — videos only */}
+                          {m.type === 'video' && (
+                            <button
+                              onClick={() => {
+                                setRecorderOpenId(null);
+                                setJingleOpenId(null);
+                                setEditorOpenId(editorOpenId === m.id ? null : m.id);
+                              }}
+                              className={`mt-1 w-full flex items-center justify-center gap-1 py-1 rounded-lg text-[10px] font-medium transition-colors ${editorOpenId === m.id ? 'bg-orange-600 text-white' : 'bg-orange-50 text-orange-600 hover:bg-orange-100'}`}>
+                              <Scissors size={10} />
+                              Éditer
+                            </button>
+                          )}
+
+                          {/* Video editor panel */}
+                          {editorOpenId === m.id && m.type === 'video' && (
+                            <VideoEditor
+                              mediaId={m.id}
+                              videoUrl={m.url}
+                              product={{ name: p.name, sellingPrice: p.sellingPrice }}
+                              currency={store?.currency ?? 'CDF'}
+                              onSaved={url => handleVideoEdited(m.id, url)}
+                              onCancel={() => setEditorOpenId(null)}
                             />
                           )}
                         </div>
