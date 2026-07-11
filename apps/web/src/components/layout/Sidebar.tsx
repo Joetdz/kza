@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, Package, ShoppingCart, CreditCard,
-  BarChart2, Target, Download, X, LogOut, MessageCircle, Shield, Store,
+  BarChart2, Target, Download, X, LogOut, MessageCircle, Shield, Store, Truck,
 } from 'lucide-react';
 import { useStore } from '../../store/useStore';
 import { useAuth } from '../../contexts/AuthContext';
@@ -94,6 +94,21 @@ export function Sidebar() {
               >
                 <Shield size={18} />
                 Admin SaaS
+              </NavLink>
+              <NavLink
+                to="/logistique"
+                end
+                onClick={() => sidebarOpen && toggleSidebar()}
+                className={({ isActive }) =>
+                  `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all
+                  ${isActive
+                    ? 'bg-amber-600 text-white shadow-lg shadow-amber-900/30'
+                    : 'text-amber-400 hover:text-white hover:bg-gray-800'
+                  }`
+                }
+              >
+                <Truck size={18} />
+                Logistique
               </NavLink>
             </>
           )}

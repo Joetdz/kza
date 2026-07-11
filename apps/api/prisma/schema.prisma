@@ -47,11 +47,13 @@ model Product {
   userId          String?  @map("user_id")
   businessId      String?  @map("business_id") @db.Uuid
 
-  movements   StockMovement[]
-  saleItems   SaleItem[]
-  expenses    Expense[]
-  storeItems  StoreProduct[]
-  media       ProductMedia[]
+  movements      StockMovement[]
+  saleItems      SaleItem[]
+  expenses       Expense[]
+  storeItems     StoreProduct[]
+  media          ProductMedia[]
+  orderItems     ManualOrderItem[]
+  locationStocks LocationStock[]
 
   @@unique([userId, sku])
   @@index([userId])
@@ -482,4 +484,96 @@ model WaCampaignContactHistory {
   @@index([contactId])
   @@index([campaignId])
   @@map("wa_campaign_contact_history")
+}
+
+// ─── Logistique ────────────────────────────────────────────────────────────────
+
+model StockLocation {
+  id         String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String          @map("user_id")
+  businessId String          @map("business_id")
+  name       String
+  city       String
+  address    String?
+  type       String          @default("OWN")
+  partnerId  String?         @unique @map("partner_id") @db.Uuid
+  partner    DeliveryPartner? @relation(fields: [partnerId], references: [id])
+  orders     ManualOrder[]
+  stocks     LocationStock[]
+  createdAt  DateTime        @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([businessId])
+  @@map("stock_locations")
+}
+
+model DeliveryPartner {
+  id         String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String         @map("user_id")
+  businessId String         @map("business_id")
+  name       String
+  phone      String?
+  city       String?
+  type       String         @default("COMPANY")
+  token      String         @unique @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  location   StockLocation?
+  orders     ManualOrder[]
+  createdAt  DateTime       @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([businessId])
+  @@map("delivery_partners")
+}
+
+model ManualOrder {
+  id                 String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId             String          @map("user_id")
+  businessId         String          @map("business_id")
+  orderNumber        Int             @default(0) @map("order_number")
+  customerName       String          @map("customer_name")
+  customerPhone      String?         @map("customer_phone")
+  city               String
+  address            String
+  deliveryFee        Decimal         @map("delivery_fee") @db.Decimal(10, 2)
+  totalAmount        Decimal         @map("total_amount") @db.Decimal(10, 2)
+  status             String          @default("pending")
+  partnerId          String?         @map("partner_id") @db.Uuid
+  partner            DeliveryPartner? @relation(fields: [partnerId], references: [id])
+  locationId         String?         @map("location_id") @db.Uuid
+  location           StockLocation?  @relation(fields: [locationId], references: [id])
+  notes              String?
+  deliveryPersonName String?         @map("delivery_person_name")
+  scheduledAt        DateTime?       @map("scheduled_at")
+  items              ManualOrderItem[]
+  createdAt          DateTime        @default(now()) @map("created_at")
+  updatedAt          DateTime        @default(now()) @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@index([businessId])
+  @@map("manual_orders")
+}
+
+model ManualOrderItem {
+  id        String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orderId   String      @map("order_id") @db.Uuid
+  order     ManualOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId String      @map("product_id") @db.Uuid
+  product   Product     @relation(fields: [productId], references: [id])
+  quantity  Float
+  unitPrice Decimal     @map("unit_price") @db.Decimal(10, 2)
+
+  @@map("manual_order_items")
+}
+
+model LocationStock {
+  id         String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  locationId String        @map("location_id") @db.Uuid
+  location   StockLocation @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  productId  String        @map("product_id") @db.Uuid
+  product    Product       @relation(fields: [productId], references: [id])
+  quantity   Float         @default(0)
+  updatedAt  DateTime      @updatedAt @map("updated_at")
+
+  @@unique([locationId, productId])
+  @@map("location_stocks")
 }

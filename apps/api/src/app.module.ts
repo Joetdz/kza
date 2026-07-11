@@ -16,6 +16,7 @@ import { BusinessAiModule } from './business-ai/business-ai.module';
 import { StoreModule } from './store/store.module';
 import { CategoriesModule } from './categories/categories.module';
 import { BusinessModule } from './business/business.module';
+import { LogisticsModule } from './logistics/logistics.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { BusinessModule } from './business/business.module';
     StoreModule,
     CategoriesModule,
     BusinessModule,
+    LogisticsModule,
   ],
   providers: [
     {

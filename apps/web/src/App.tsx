@@ -18,6 +18,8 @@ import { BusinessModal } from './components/BusinessModal';
 import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { WhatsAppLayout } from './pages/whatsapp/WhatsAppLayout';
 import { AdminDashboard } from './pages/AdminDashboard';
+import { Logistics } from './pages/Logistics';
+import { PartnerPortal } from './pages/PartnerPortal';
 import { Inbox } from './pages/whatsapp/Inbox';
 import { AIConfig } from './pages/whatsapp/AIConfig';
 import { Automations } from './pages/whatsapp/Automations';
@@ -64,9 +66,17 @@ function AppInner() {
   }
 
   // Boutique publique — accessible sans authentification
-  if (hash.startsWith('#/boutique/') && hash.split('/').length >= 3) {
-    const slug = hash.split('/')[2];
-    if (slug && slug !== 'undefined') return <PublicStore slug={slug} />;
+  // Supports /#/boutique/:slug and /#/boutique/:slug/reel/:reelId
+  if (hash.startsWith('#/partenaire/')) {
+    const token = hash.split('/')[2];
+    if (token) return <PartnerPortal token={token} />;
+  }
+
+  if (hash.startsWith('#/boutique/')) {
+    const parts = hash.split('/');
+    const slug = parts[2];
+    const reelId = parts[3] === 'reel' && parts[4] ? parts[4] : undefined;
+    if (slug && slug !== 'undefined') return <PublicStore slug={slug} initialReelId={reelId} />;
   }
 
   // Non authentifié → landing page
@@ -160,6 +170,7 @@ function AppInner() {
           <Route path="/export" element={<Export />} />
           <Route path="/boutique" element={<StorePage />} />
           <Route path="/admin" element={<AdminDashboard />} />
+          <Route path="/logistique" element={<Logistics />} />
           <Route path="/whatsapp" element={<WhatsAppLayout />}>
             <Route index element={<Inbox />} />
             <Route path="ia" element={<AIConfig />} />

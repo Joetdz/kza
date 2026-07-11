@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
-import { Plus, Edit2, Trash2, TrendingUp, TrendingDown, History, Search, ImagePlus, X, RefreshCw } from 'lucide-react';
+import { Plus, Edit2, Trash2, TrendingUp, TrendingDown, History, Search, ImagePlus, X, RefreshCw, MapPin } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { Modal } from '../components/ui/Modal';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
@@ -12,6 +12,7 @@ import { formatDate } from '../utils/formatters';
 import { uploadApi, categoriesApi, resolveImageUrl, productsApi } from '../api';
 import { toast } from '../hooks/useToast';
 import type { Product, StockMovement } from '../types';
+import { logisticsApi, type StockLocation, type LocationStock } from '../api/logistics';
 
 const generateSku = () => 'PRD-' + Math.random().toString(36).slice(2, 8).toUpperCase();
 
@@ -50,6 +51,11 @@ export function Stock() {
     freightCost: 0,
   });
   const [histProduct, setHistProduct] = useState<Product | null>(null);
+  const [allocProduct, setAllocProduct] = useState<Product | null>(null);
+  const [allocLocations, setAllocLocations] = useState<StockLocation[]>([]);
+  const [allocMap, setAllocMap] = useState<Record<string, string>>({});
+  const [allocLoading, setAllocLoading] = useState(false);
+  const [allocSubmitting, setAllocSubmitting] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -91,6 +97,36 @@ export function Stock() {
     // acquisitionCost stored as unit cost → show as total in form
     setForm({ name: p.name, sku: p.sku, category: p.category, quantity: p.quantity, alertThreshold: p.alertThreshold, supplier: p.supplier, acquisitionCost: p.acquisitionCost * p.quantity, sellingPrice: p.sellingPrice ?? 0, imageUrl: p.imageUrl, entryDate: p.entryDate, trackStock: p.trackStock ?? true });
     setModalOpen(true);
+  };
+
+  const openAlloc = async (p: Product) => {
+    setAllocProduct(p);
+    setAllocLoading(true);
+    try {
+      const [locs, existing] = await Promise.all([
+        logisticsApi.getLocations(),
+        logisticsApi.getProductAllocations(p.id),
+      ]);
+      setAllocLocations(locs);
+      const map: Record<string, string> = {};
+      for (const e of existing) map[e.locationId] = String(e.quantity);
+      setAllocMap(map);
+    } catch { /* ignore */ }
+    finally { setAllocLoading(false); }
+  };
+
+  const handleSaveAlloc = async () => {
+    if (!allocProduct) return;
+    setAllocSubmitting(true);
+    try {
+      const entries = Object.entries(allocMap).filter(([, q]) => q !== '' && Number(q) >= 0);
+      await Promise.all(entries.map(([locationId, quantity]) =>
+        logisticsApi.setLocationStock(locationId, { productId: allocProduct.id, quantity: Number(quantity) })
+      ));
+      toast.success('Affectations enregistrées');
+      setAllocProduct(null);
+    } catch { toast.error('Erreur lors de la sauvegarde'); }
+    finally { setAllocSubmitting(false); }
   };
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -315,6 +351,12 @@ export function Stock() {
                     className="flex items-center justify-center gap-1.5 py-2 rounded-xl bg-blue-50 text-blue-600 text-xs font-medium hover:bg-blue-100 transition-colors">
                     <History size={13} /> Historique
                   </button>
+                  {(p.trackStock ?? true) && (
+                    <button onClick={() => openAlloc(p)}
+                      className="flex items-center justify-center gap-1.5 py-2 rounded-xl bg-purple-50 text-purple-600 text-xs font-medium hover:bg-purple-100 transition-colors">
+                      <MapPin size={13} /> Affecter
+                    </button>
+                  )}
                   <div className="flex gap-1.5">
                     <button onClick={() => openEdit(p)}
                       className="flex-1 flex items-center justify-center py-2 rounded-xl bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors">
@@ -522,6 +564,40 @@ export function Stock() {
         onConfirm={() => { if (deleteId) deleteProduct(deleteId); setDeleteId(null); }}
         onCancel={() => setDeleteId(null)}
       />
+
+      {/* Allocation modal */}
+      <Modal open={!!allocProduct} onClose={() => setAllocProduct(null)} title={`Affecter — ${allocProduct?.name}`} size="md">
+        {allocLoading ? (
+          <p className="text-sm text-gray-400 text-center py-4">Chargement des emplacements...</p>
+        ) : allocLocations.length === 0 ? (
+          <p className="text-sm text-gray-400 text-center py-4">Aucun emplacement. Créez-en un dans la page Logistique.</p>
+        ) : (
+          <div className="space-y-2">
+            {allocLocations.map(loc => (
+              <div key={loc.id} className="flex items-center gap-3 p-2 rounded-xl hover:bg-gray-50">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-gray-800 truncate">{loc.name}</p>
+                  <p className="text-xs text-gray-400">{loc.city}</p>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="number" min="0"
+                    value={allocMap[loc.id] ?? ''}
+                    onChange={e => setAllocMap(m => ({ ...m, [loc.id]: e.target.value }))}
+                    placeholder="0"
+                    className="w-20 border border-gray-200 rounded-xl px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-indigo-400 text-right"
+                  />
+                  <span className="text-xs text-gray-400">unités</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="flex gap-2 mt-4">
+          <Button variant="secondary" onClick={() => setAllocProduct(null)} className="flex-1">Annuler</Button>
+          <Button onClick={handleSaveAlloc} loading={allocSubmitting} className="flex-1">Enregistrer</Button>
+        </div>
+      </Modal>
     </div>
   );
 }

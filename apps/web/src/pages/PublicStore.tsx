@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { ShoppingCart, Plus, Minus, Trash2, Loader2, ArrowLeft, Package, CheckCircle, Play, LayoutGrid, ShoppingBag, Volume2, VolumeX } from 'lucide-react';
+import { ShoppingCart, Plus, Minus, Trash2, Loader2, ArrowLeft, Package, CheckCircle, Play, Pause, Film, LayoutGrid, ShoppingBag, Volume2, VolumeX, Share2 } from 'lucide-react';
 
 const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api';
 const IMG_BASE = BASE.replace('/api', '');
@@ -169,7 +169,7 @@ interface StoreData {
   products: Product[];
 }
 
-interface Props { slug: string }
+interface Props { slug: string; initialReelId?: string }
 
 // ── FeedCard — one TikTok slide ────────────────────────────────────────────────
 
@@ -177,19 +177,24 @@ function FeedCard({
   item,
   color,
   currency,
+  slug,
   isActive,
   onOrder,
 }: {
   item: FeedItem;
   color: string;
   currency: string;
+  slug: string;
   isActive: boolean;
   onOrder: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
-  const [videoMuted, setVideoMuted] = useState(true);
+  const [videoMuted, setVideoMuted] = useState(false);
   const [audioMuted, setAudioMuted] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(true);
+  const [showPlayIcon, setShowPlayIcon] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   // Manage video play/pause when slide becomes active
   useEffect(() => {
@@ -197,7 +202,13 @@ function FeedCard({
     if (!v) return;
     if (isActive) {
       v.currentTime = 0;
-      v.play().catch(() => {});
+      v.muted = false;
+      v.play().catch(() => {
+        v.muted = true;
+        setVideoMuted(true);
+        v.play().catch(() => {});
+      });
+      setIsPlaying(true);
     } else {
       v.pause();
     }
@@ -230,8 +241,31 @@ function FeedCard({
 
   const isMuted = hasVideo ? videoMuted : audioMuted;
 
+  const handleShare = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const url = `${window.location.origin}/#/boutique/${slug}/reel/${item.id}`;
+    if (navigator.share) {
+      navigator.share({ title: item.product.name, url }).catch(() => {});
+    } else {
+      navigator.clipboard.writeText(url).then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      });
+    }
+  };
+
+  const togglePlay = () => {
+    const v = videoRef.current;
+    if (!v) return;
+    if (v.paused) { v.play(); setIsPlaying(true); }
+    else          { v.pause(); setIsPlaying(false); }
+    setShowPlayIcon(true);
+    setTimeout(() => setShowPlayIcon(false), 700);
+  };
+
   return (
-    <div className="relative h-screen w-full snap-start overflow-hidden bg-black flex-shrink-0">
+    <div className="relative h-screen w-full snap-start overflow-hidden bg-black flex-shrink-0"
+      onClick={togglePlay}>
       {/* Hidden audio track — auto-plays when slide is active */}
       {hasAudio && (
         <audio
@@ -251,17 +285,28 @@ function FeedCard({
           loop
           muted={videoMuted}
           playsInline
-          className="w-full h-full object-cover"
+          className="absolute inset-0 w-full h-full object-cover"
         />
       ) : (
         <img src={item.url} alt={item.caption ?? item.product.name} className="absolute inset-0 w-full h-full object-cover" />
       )}
 
+      {/* Play/Pause flash overlay */}
+      {showPlayIcon && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+          <div className="bg-black/40 rounded-full p-5">
+            {isPlaying
+              ? <Pause size={44} className="text-white drop-shadow-lg" />
+              : <Play  size={44} className="text-white drop-shadow-lg" />}
+          </div>
+        </div>
+      )}
+
       {/* Sound toggle (top right) */}
       {showSoundBtn && (
         <button
-          onClick={toggleMute}
-          className="absolute top-4 right-4 z-10 w-9 h-9 bg-black/40 rounded-full flex items-center justify-center backdrop-blur-sm">
+          onClick={e => { e.stopPropagation(); toggleMute(); }}
+          className="absolute top-4 right-4 z-20 w-9 h-9 bg-black/40 rounded-full flex items-center justify-center backdrop-blur-sm">
           {isMuted ? <VolumeX size={16} color="white" /> : <Volume2 size={16} color="white" />}
         </button>
       )}
@@ -280,28 +325,34 @@ function FeedCard({
         </div>
       )}
 
-      {/* Gradient overlay */}
-      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent pointer-events-none" />
-
-      {/* Bottom info */}
-      <div className="absolute bottom-0 left-0 right-0 px-5 pb-8 pt-16 pointer-events-none">
-        <p className="text-white font-black text-xl leading-tight mb-1 drop-shadow-lg">{item.product.name}</p>
+      {/* Bottom bar — gradient + product info + CTA */}
+      <div className="absolute bottom-0 left-0 right-0 px-4 pb-8 pt-14 bg-gradient-to-t from-black/80 via-black/40 to-transparent z-10">
+        <p className="text-white font-black text-lg leading-tight mb-0.5 drop-shadow-lg line-clamp-1">
+          {item.product.name}
+        </p>
         {item.caption && (
-          <p className="text-white/80 text-sm mb-2 leading-snug">{item.caption}</p>
+          <p className="text-white/75 text-sm mb-1 leading-snug line-clamp-2">{item.caption}</p>
         )}
-        {item.product.category && (
-          <p className="text-white/60 text-xs mb-3">{item.product.category}</p>
-        )}
-        <div className="flex items-center justify-between pointer-events-auto">
-          <p className="text-white font-black text-2xl drop-shadow-lg">
-            {item.product.sellingPrice.toLocaleString('fr-FR')} {currency}
-          </p>
+        <p className="text-white font-bold text-xl drop-shadow mb-3">
+          {item.product.sellingPrice.toLocaleString('fr-FR')} {currency}
+        </p>
+        <div className="flex gap-2">
           <button
-            onClick={onOrder}
-            className="flex items-center gap-2 px-5 py-3 rounded-2xl font-bold text-white shadow-2xl transition-transform active:scale-95"
+            onClick={e => { e.stopPropagation(); onOrder(); }}
+            className="flex-1 py-3.5 rounded-2xl font-bold text-white text-sm flex items-center justify-center gap-2 shadow-xl active:scale-95 transition-transform"
             style={{ background: `linear-gradient(135deg, ${color}, ${color}cc)` }}>
             <ShoppingBag size={18} />
             Commander
+          </button>
+          <button
+            onClick={handleShare}
+            className="w-12 py-3.5 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center active:scale-95 transition-transform relative">
+            <Share2 size={18} className="text-white" />
+            {copied && (
+              <span className="absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap bg-black/80 text-white text-[10px] px-2 py-1 rounded-lg">
+                Lien copié
+              </span>
+            )}
           </button>
         </div>
       </div>
@@ -311,7 +362,7 @@ function FeedCard({
 
 // ── Main component ─────────────────────────────────────────────────────────────
 
-export function PublicStore({ slug }: Props) {
+export function PublicStore({ slug, initialReelId }: Props) {
   const [store, setStore] = useState<StoreData | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
@@ -363,6 +414,18 @@ export function PublicStore({ slug }: Props) {
     container.addEventListener('scroll', onScroll, { passive: true });
     return () => container.removeEventListener('scroll', onScroll);
   }, [view]);
+
+  // Deep-link: when initialReelId is set, open feed and scroll to the reel
+  useEffect(() => {
+    if (!initialReelId || feed.length === 0) return;
+    const idx = feed.findIndex(f => f.id === initialReelId);
+    if (idx < 0) return;
+    setView('feed');
+    setActiveIndex(idx);
+    setTimeout(() => {
+      feedRef.current?.scrollTo({ top: idx * window.innerHeight, behavior: 'instant' });
+    }, 100);
+  }, [initialReelId, feed]);
 
   const addToCart = (product: Product) => {
     setCart(prev => {
@@ -511,6 +574,7 @@ export function PublicStore({ slug }: Props) {
               item={item}
               color={color}
               currency={store?.currency ?? 'CDF'}
+              slug={slug}
               isActive={i === activeIndex}
               onOrder={() => { addToCart(item.product); setShowCart(true); }}
             />
@@ -554,8 +618,8 @@ export function PublicStore({ slug }: Props) {
             <button
               onClick={() => setView('feed')}
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium border border-gray-200 hover:border-gray-300 text-gray-600 transition-colors">
-              <Play size={14} />
-              Feed
+              <Film size={16} />
+              Voir les Reels
             </button>
 
             {/* Cart */}
@@ -602,12 +666,20 @@ export function PublicStore({ slug }: Props) {
                       </button>
                     </div>
                   ) : (
-                    <button onClick={() => addToCart(p)}
-                      className="w-full py-2 rounded-xl text-xs font-semibold text-white transition-all flex items-center justify-center gap-1"
-                      style={{ background: color }}>
-                      <Plus size={13} />
-                      Ajouter
-                    </button>
+                    <div className="flex flex-col gap-1.5">
+                      <button onClick={() => { addToCart(p); setShowCart(true); }}
+                        className="w-full py-2 rounded-xl text-xs font-bold text-white flex items-center justify-center gap-1"
+                        style={{ background: color }}>
+                        <ShoppingBag size={12} />
+                        Commander
+                      </button>
+                      <button onClick={() => addToCart(p)}
+                        className="w-full py-2 rounded-xl text-xs font-semibold border flex items-center justify-center gap-1"
+                        style={{ borderColor: color, color }}>
+                        <Plus size={12} />
+                        Ajouter au panier
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>
