@@ -17,15 +17,6 @@ import * as qrcode from 'qrcode';
 import * as path from 'path';
 import * as fs from 'fs';
 import pino from 'pino';
-import { SocksProxyAgent } from 'socks-proxy-agent';
-import { HttpsProxyAgent } from 'https-proxy-agent';
-
-function buildProxyAgent(): any {
-  const url = process.env.WHATSAPP_PROXY_URL;
-  if (!url) return undefined;
-  if (url.startsWith('socks')) return new SocksProxyAgent(url);
-  return new HttpsProxyAgent(url);
-}
 
 // Baileys JID (@s.whatsapp.net) → legacy @c.us format stored in DB
 function jidToDb(jid: string): string {
@@ -226,7 +217,6 @@ export class WhatsAppService implements OnModuleDestroy {
 
     const pairingPhone = this.pairingPhones.get(userId);
 
-    const proxyAgent = buildProxyAgent();
     const sock = makeWASocket({
       version,
       auth: state,
@@ -236,7 +226,6 @@ export class WhatsAppService implements OnModuleDestroy {
       syncFullHistory: false,
       markOnlineOnConnect: false,
       generateHighQualityLinkPreview: false,
-      ...(proxyAgent ? { agent: proxyAgent, fetchAgent: proxyAgent } : {}),
     });
 
     this.sockets.set(userId, sock);
