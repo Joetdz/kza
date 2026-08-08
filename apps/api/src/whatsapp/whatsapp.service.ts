@@ -193,7 +193,20 @@ export class WhatsAppService implements OnModuleDestroy {
     fs.mkdirSync(authDir, { recursive: true });
 
     const { state, saveCreds } = await useMultiFileAuthState(authDir);
-    const { version } = await fetchLatestBaileysVersion();
+
+    // fetchLatestBaileysVersion hits GitHub — may hang on VPS; fall back to pinned version after 5s
+    const FALLBACK_VERSION: [number, number, number] = [2, 3000, 1015901307];
+    let version: [number, number, number];
+    try {
+      const timeout = new Promise<{ version: [number, number, number] }>(resolve =>
+        setTimeout(() => resolve({ version: FALLBACK_VERSION }), 5000),
+      );
+      const result = await Promise.race([fetchLatestBaileysVersion(), timeout]);
+      version = result.version;
+    } catch {
+      version = FALLBACK_VERSION;
+    }
+
     const pairingPhone = this.pairingPhones.get(userId);
 
     const sock = makeWASocket({
