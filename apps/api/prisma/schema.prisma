@@ -508,21 +508,36 @@ model StockLocation {
 }
 
 model DeliveryPartner {
-  id         String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId     String         @map("user_id")
-  businessId String         @map("business_id")
+  id         String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String          @map("user_id")
+  businessId String          @map("business_id")
   name       String
   phone      String?
   city       String?
-  type       String         @default("COMPANY")
-  token      String         @unique @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  location   StockLocation?
+  type       String          @default("COMPANY")
+  token      String          @unique @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  pin              String?
+  whatsappGroupId  String?  @map("whatsapp_group_id")
+  location         StockLocation?
   orders     ManualOrder[]
-  createdAt  DateTime       @default(now()) @map("created_at")
+  agents     DeliveryAgent[]
+  createdAt  DateTime        @default(now()) @map("created_at")
 
   @@index([userId])
   @@index([businessId])
   @@map("delivery_partners")
+}
+
+model DeliveryAgent {
+  id        String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  partnerId String          @map("partner_id") @db.Uuid
+  partner   DeliveryPartner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  name      String
+  phone     String?
+  orders    ManualOrder[]
+  createdAt DateTime        @default(now()) @map("created_at")
+
+  @@map("delivery_agents")
 }
 
 model ManualOrder {
@@ -544,6 +559,9 @@ model ManualOrder {
   notes              String?
   deliveryPersonName String?         @map("delivery_person_name")
   scheduledAt        DateTime?       @map("scheduled_at")
+  dispatchedAt       DateTime?       @map("dispatched_at")
+  agentId            String?         @map("agent_id") @db.Uuid
+  agent              DeliveryAgent?  @relation(fields: [agentId], references: [id])
   items              ManualOrderItem[]
   createdAt          DateTime        @default(now()) @map("created_at")
   updatedAt          DateTime        @default(now()) @updatedAt @map("updated_at")

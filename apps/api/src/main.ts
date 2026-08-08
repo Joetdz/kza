@@ -4,12 +4,8 @@ import { ValidationPipe } from '@nestjs/common';
 import { join } from 'path';
 import { AppModule } from './app.module';
 
-// Prevent whatsapp-web.js internal unhandled rejections from crashing the server
 process.on('unhandledRejection', (reason: any) => {
-  const msg = reason?.message ?? String(reason);
-  // Only suppress known wwebjs page-evaluate errors
-  if (msg === 't' || msg?.includes('Navigating frame was detached') || msg?.includes('Session closed')) return;
-  console.error('Unhandled rejection:', reason);
+  console.error('Unhandled rejection:', reason?.message ?? reason);
 });
 
 async function bootstrap() {

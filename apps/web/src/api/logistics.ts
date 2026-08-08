@@ -41,6 +41,14 @@ export interface StockLocation {
   createdAt: string;
 }
 
+export interface DeliveryAgent {
+  id: string;
+  partnerId: string;
+  name: string;
+  phone: string | null;
+  createdAt: string;
+}
+
 export interface DeliveryPartner {
   id: string;
   name: string;
@@ -48,8 +56,17 @@ export interface DeliveryPartner {
   city: string | null;
   type: string;
   token: string;
+  hasPin?: boolean;
+  whatsappGroupId: string | null;
   location: StockLocation | null;
+  agents?: DeliveryAgent[];
   createdAt: string;
+}
+
+export interface WaGroup {
+  id: string;      // e.g. "120363XXXXXX@g.us"
+  name: string;
+  participants: number;
 }
 
 export interface ManualOrderItem {
@@ -71,6 +88,8 @@ export interface ManualOrder {
   totalAmount: number;
   status: string;
   notes: string | null;
+  agentId: string | null;
+  agent: DeliveryAgent | null;
   deliveryPersonName: string | null;
   scheduledAt: string | null;
   partnerId: string | null;
@@ -114,8 +133,9 @@ export const logisticsApi = {
   getPartners: () => req<DeliveryPartner[]>('/my/logistics/partners'),
   createPartner: (body: { name: string; phone?: string; city?: string; type?: string }) =>
     req<DeliveryPartner>('/my/logistics/partners', { method: 'POST', body: JSON.stringify(body) }),
-  updatePartner: (id: string, body: Partial<{ name: string; phone: string; city: string; type: string }>) =>
+  updatePartner: (id: string, body: Partial<{ name: string; phone: string; city: string; type: string; whatsappGroupId: string | null }>) =>
     req<unknown>(`/my/logistics/partners/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  getWaGroups: () => req<WaGroup[]>('/whatsapp/groups'),
   deletePartner: (id: string) =>
     req<unknown>(`/my/logistics/partners/${id}`, { method: 'DELETE' }),
   getPartnerReport: (partnerId: string, period: 'daily' | 'weekly' | 'monthly') =>
@@ -144,13 +164,37 @@ export const logisticsApi = {
 
   // Partner portal (public — no auth token)
   partnerPortal: {
-    getOrders: (token: string): Promise<DeliveryPartner & { orders: ManualOrder[] }> =>
+    getOrders: (token: string): Promise<DeliveryPartner & { orders: ManualOrder[]; hasPin: boolean }> =>
       fetch(`${BASE}/partner-portal/${token}`).then(r => r.json()),
+    auth: (token: string, pin: string): Promise<{ ok: boolean; setup?: boolean; error?: string }> =>
+      fetch(`${BASE}/partner-portal/${token}/auth`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin }),
+      }).then(r => r.json()),
     updateOrderStatus: (token: string, orderId: string, body: { status: string; deliveryPersonName?: string }): Promise<ManualOrder> =>
       fetch(`${BASE}/partner-portal/${token}/orders/${orderId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       }).then(r => r.json()),
+    getAgents: (token: string): Promise<DeliveryAgent[]> =>
+      fetch(`${BASE}/partner-portal/${token}/agents`).then(r => r.json()),
+    addAgent: (token: string, body: { name: string; phone?: string }): Promise<DeliveryAgent> =>
+      fetch(`${BASE}/partner-portal/${token}/agents`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }).then(r => r.json()),
+    removeAgent: (token: string, agentId: string): Promise<unknown> =>
+      fetch(`${BASE}/partner-portal/${token}/agents/${agentId}`, { method: 'DELETE' }).then(r => r.json()),
+    assignAgent: (token: string, orderId: string, agentId: string | null): Promise<ManualOrder> =>
+      fetch(`${BASE}/partner-portal/${token}/orders/${orderId}/assign-agent`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agentId }),
+      }).then(r => r.json()),
   },
+  resetPartnerPin: (id: string) =>
+    req<unknown>(`/my/logistics/partners/${id}/reset-pin`, { method: 'PATCH' }),
 };

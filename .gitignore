@@ -18,6 +18,7 @@ apps/api/*.tsbuildinfo
 # WhatsApp auth sessions (contient des clés privées)
 apps/api/.wa-auth/
 apps/api/.wwebjs_auth/
+apps/api/.baileys_auth/
 
 # Prisma generated
 apps/api/node_modules/.prisma/

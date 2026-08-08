@@ -10,7 +10,7 @@ const ADMIN_EMAILS = (import.meta.env.VITE_ADMIN_EMAILS ?? '')
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   pending:    { label: 'En attente',  color: 'bg-gray-100 text-gray-600' },
-  dispatched: { label: 'Dispatché',   color: 'bg-blue-100 text-blue-700' },
+  dispatched: { label: 'Assigné',      color: 'bg-blue-100 text-blue-700' },
   delivered:  { label: 'Livré',        color: 'bg-green-100 text-green-700' },
   returned:   { label: 'Retourné',    color: 'bg-orange-100 text-orange-700' },
   cancelled:  { label: 'Annulé',      color: 'bg-red-100 text-red-600' },
@@ -45,11 +45,16 @@ export function Logistics() {
   const [deliverModal, setDeliverModal] = useState<{ orderId: string } | null>(null);
   const [deliveryPersonName, setDeliveryPersonName] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [sendingWA, setSendingWA] = useState<string | null>(null);
 
   // Partner phone inline edit
   const [editPhoneId, setEditPhoneId] = useState<string | null>(null);
   const [editPhoneVal, setEditPhoneVal] = useState('');
+
+  // Partner WA group selection
+  const [groupPickerId, setGroupPickerId] = useState<string | null>(null);
+  const [waGroups, setWaGroups] = useState<{ id: string; name: string; participants: number }[]>([]);
+  const [waGroupsLoading, setWaGroupsLoading] = useState(false);
+  const [selectedGroupId, setSelectedGroupId] = useState<string>('');
 
   // Location form
   const [locForm, setLocForm] = useState({ name: '', city: '', address: '' });
@@ -169,6 +174,20 @@ export function Logistics() {
     setEditPhoneId(null);
   }
 
+  async function openGroupPicker(partner: DeliveryPartner) {
+    setGroupPickerId(partner.id);
+    setSelectedGroupId(partner.whatsappGroupId ?? '');
+    setWaGroupsLoading(true);
+    try { setWaGroups(await logisticsApi.getWaGroups()); } catch { /* ignore */ }
+    finally { setWaGroupsLoading(false); }
+  }
+
+  async function savePartnerGroup(id: string) {
+    await logisticsApi.updatePartner(id, { whatsappGroupId: selectedGroupId || null });
+    setPartners(prev => prev.map(p => p.id === id ? { ...p, whatsappGroupId: selectedGroupId || null } : p));
+    setGroupPickerId(null);
+  }
+
   function copyPartnerLink(partner: DeliveryPartner) {
     const url = `${window.location.origin}/#/partenaire/${partner.token}`;
     navigator.clipboard.writeText(url).then(() => {
@@ -241,12 +260,6 @@ export function Logistics() {
       setDeliverModal(null);
       setDeliveryPersonName('');
     } finally { setSubmitting(false); }
-  }
-
-  async function handleSendWA(orderId: string) {
-    setSendingWA(orderId);
-    try { await logisticsApi.notifyPartner(orderId); } catch { /* ignore */ }
-    finally { setTimeout(() => setSendingWA(null), 2500); }
   }
 
   async function handleDeleteOrder(id: string) {
@@ -393,7 +406,48 @@ export function Logistics() {
                         </div>
                       )}
 
-                      {p.city && <p className="text-xs text-gray-400">{p.city}</p>}
+                      {/* WA Group picker */}
+                      {groupPickerId === p.id ? (
+                        <div className="mt-2 space-y-1.5">
+                          <label className="block text-[10px] font-semibold text-gray-400">Groupe WhatsApp</label>
+                          {waGroupsLoading ? (
+                            <p className="text-xs text-gray-400">Chargement des groupes...</p>
+                          ) : (
+                            <select value={selectedGroupId}
+                              onChange={e => setSelectedGroupId(e.target.value)}
+                              className="w-full border border-indigo-300 rounded-lg px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-indigo-400 bg-white">
+                              <option value="">— Aucun groupe (envoyer au numéro)</option>
+                              {waGroups.map(g => (
+                                <option key={g.id} value={g.id}>{g.name} ({g.participants} membres)</option>
+                              ))}
+                            </select>
+                          )}
+                          <div className="flex gap-1.5">
+                            <button onClick={() => savePartnerGroup(p.id)}
+                              className="flex-1 py-1 bg-green-500 text-white rounded-lg text-xs font-semibold hover:bg-green-600">
+                              Enregistrer
+                            </button>
+                            <button onClick={() => setGroupPickerId(null)}
+                              className="py-1 px-2 bg-gray-100 text-gray-600 rounded-lg text-xs hover:bg-gray-200">
+                              Annuler
+                            </button>
+                          </div>
+                        </div>
+                      ) : p.whatsappGroupId ? (
+                        <div className="flex items-center gap-1 mt-1">
+                          <p className="text-xs text-green-600">📢 Groupe WA configuré</p>
+                          <button onClick={() => openGroupPicker(p)} className="p-0.5 text-gray-300 hover:text-indigo-500">
+                            <Edit2 size={10} />
+                          </button>
+                        </div>
+                      ) : (
+                        <button onClick={() => openGroupPicker(p)}
+                          className="mt-1 text-xs text-gray-400 hover:text-indigo-500 flex items-center gap-1">
+                          <MessageCircle size={10} /> Configurer groupe WA
+                        </button>
+                      )}
+
+                      {p.city && <p className="text-xs text-gray-400 mt-1">{p.city}</p>}
                       {p.location && (
                         <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
                           <MapPin size={10} /> {p.location.name}
@@ -483,8 +537,9 @@ export function Logistics() {
                         </div>
 
                         <div className="flex items-center gap-3 mt-2 text-xs flex-wrap">
-                          <span className="font-bold text-gray-900">${Number(o.totalAmount).toLocaleString('fr-FR')}</span>
-                          <span className="text-gray-500">{Number(o.deliveryFee).toLocaleString('fr-FR')} FC livraison</span>
+                          <span className="font-bold text-gray-900" title="Montant produits">${Number(o.totalAmount).toLocaleString('fr-FR')}</span>
+                          <span className="text-gray-400">+</span>
+                          <span className="text-amber-600 font-semibold" title="Frais de livraison — appartient au partenaire">{Number(o.deliveryFee).toLocaleString('fr-FR')} FC <span className="font-normal text-amber-500">(livraison)</span></span>
                           {o.partner && <span className="text-gray-500">via {o.partner.name}</span>}
                           {o.location && <span className="text-gray-500">📦 {o.location.name}</span>}
                           {o.deliveryPersonName && <span className="text-green-600">👤 {o.deliveryPersonName}</span>}
@@ -493,25 +548,23 @@ export function Logistics() {
 
                       {/* Actions */}
                       <div className="flex flex-col gap-1.5 shrink-0">
-                        {o.partner?.phone && (
-                          <button onClick={() => handleSendWA(o.id)}
-                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all
-                              ${sendingWA === o.id ? 'bg-green-100 text-green-700' : 'bg-green-50 text-green-700 hover:bg-green-100'}`}>
-                            <MessageCircle size={13} />
-                            {sendingWA === o.id ? 'Envoyé !' : 'Envoyer WA'}
-                          </button>
-                        )}
                         {o.status === 'pending' && (
                           <button onClick={() => handleStatusChange(o.id, 'dispatched')}
                             className="flex items-center gap-1 px-2.5 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-xs font-semibold hover:bg-blue-100">
-                            <ChevronRight size={12} /> Dispatcher
+                            <ChevronRight size={12} /> Assigner au partenaire
                           </button>
                         )}
                         {o.status === 'dispatched' && (
-                          <button onClick={() => { setDeliverModal({ orderId: o.id }); setDeliveryPersonName(''); }}
-                            className="flex items-center gap-1 px-2.5 py-1.5 bg-green-50 text-green-700 rounded-lg text-xs font-semibold hover:bg-green-100">
-                            <ChevronRight size={12} /> Livré
-                          </button>
+                          <>
+                            <button onClick={() => { setDeliverModal({ orderId: o.id }); setDeliveryPersonName(''); }}
+                              className="flex items-center gap-1 px-2.5 py-1.5 bg-green-50 text-green-700 rounded-lg text-xs font-semibold hover:bg-green-100">
+                              <ChevronRight size={12} /> Livré
+                            </button>
+                            <button onClick={() => handleStatusChange(o.id, 'pending')}
+                              className="px-2.5 py-1.5 bg-gray-100 text-gray-600 rounded-lg text-xs font-semibold hover:bg-gray-200">
+                              Désassigner
+                            </button>
+                          </>
                         )}
                         {(o.status === 'pending' || o.status === 'dispatched') && (
                           <>

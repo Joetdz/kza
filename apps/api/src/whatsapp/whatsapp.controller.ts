@@ -80,6 +80,11 @@ export class WhatsAppController {
     return this.wa.getStatus(user.id);
   }
 
+  @Get('groups')
+  getGroups(@CurrentUser() user: AuthUser) {
+    return this.wa.getGroups(user.id);
+  }
+
   @Post('connect')
   async connect(@CurrentUser() user: AuthUser) {
     await this.wa.connect(user.id);
