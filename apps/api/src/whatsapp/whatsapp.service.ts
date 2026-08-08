@@ -17,6 +17,15 @@ import * as qrcode from 'qrcode';
 import * as path from 'path';
 import * as fs from 'fs';
 import pino from 'pino';
+import { SocksProxyAgent } from 'socks-proxy-agent';
+import { HttpsProxyAgent } from 'https-proxy-agent';
+
+function buildProxyAgent(): any {
+  const url = process.env.WHATSAPP_PROXY_URL;
+  if (!url) return undefined;
+  if (url.startsWith('socks')) return new SocksProxyAgent(url);
+  return new HttpsProxyAgent(url);
+}
 
 // Baileys JID (@s.whatsapp.net) → legacy @c.us format stored in DB
 function jidToDb(jid: string): string {
@@ -68,6 +77,7 @@ export class WhatsAppService implements OnModuleDestroy {
   private loggedOut = new Set<string>();
   private reconnectDelay = new Map<string, number>();
   private pairingPhones = new Map<string, string>();
+  private pairingTimeouts = new Map<string, NodeJS.Timeout>();
 
   // Per-contact sequential queue: key = `userId:phone`
   private messageQueues = new Map<string, Promise<void>>();
@@ -139,11 +149,13 @@ export class WhatsAppService implements OnModuleDestroy {
 
   private scheduleReconnect(userId: string) {
     if (this.loggedOut.has(userId)) return;
+    // Don't auto-reconnect if a pairing is in progress — let the timeout handle it
+    if (this.pairingPhones.has(userId)) return;
     const delay = Math.min(this.reconnectDelay.get(userId) ?? 5000, 60_000);
     this.reconnectDelay.set(userId, delay * 2);
     this.logger.log(`Reconnecting ${userId} in ${delay}ms`);
     setTimeout(() => {
-      if (!this.loggedOut.has(userId) && !this.sockets.has(userId)) {
+      if (!this.loggedOut.has(userId) && !this.sockets.has(userId) && !this.pairingPhones.has(userId)) {
         this.connect(userId);
       }
     }, delay);
@@ -178,6 +190,11 @@ export class WhatsAppService implements OnModuleDestroy {
     if (t) { clearInterval(t); this.keepAliveTimers.delete(userId); }
   }
 
+  private clearPairingTimeout(userId: string) {
+    const t = this.pairingTimeouts.get(userId);
+    if (t) { clearTimeout(t); this.pairingTimeouts.delete(userId); }
+  }
+
   // ── Connect ───────────────────────────────────────────────────────────────────
 
   async connect(userId: string): Promise<void> {
@@ -209,6 +226,7 @@ export class WhatsAppService implements OnModuleDestroy {
 
     const pairingPhone = this.pairingPhones.get(userId);
 
+    const proxyAgent = buildProxyAgent();
     const sock = makeWASocket({
       version,
       auth: state,
@@ -218,6 +236,7 @@ export class WhatsAppService implements OnModuleDestroy {
       syncFullHistory: false,
       markOnlineOnConnect: false,
       generateHighQualityLinkPreview: false,
+      ...(proxyAgent ? { agent: proxyAgent, fetchAgent: proxyAgent } : {}),
     });
 
     this.sockets.set(userId, sock);
@@ -229,6 +248,7 @@ export class WhatsAppService implements OnModuleDestroy {
 
       if (qr) {
         if (pairingPhone) {
+          this.clearPairingTimeout(userId);
           try {
             const code = await sock.requestPairingCode(pairingPhone.replace(/\D/g, ''));
             this.pairingPhones.delete(userId);
@@ -297,10 +317,18 @@ export class WhatsAppService implements OnModuleDestroy {
         this.emit('disconnected', userId, { reason: String(statusCode) });
 
         if (isLogout) {
-          this.loggedOut.add(userId);
           const dir = this.authPath(userId);
           if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
           this.logger.log(`WhatsApp logged out for ${userId}`);
+
+          if (this.pairingPhones.has(userId)) {
+            // Logout happened during a pairing attempt (stale session wiped by WA)
+            // Auth files are now clean — retry the connection to get a fresh QR
+            this.logger.log(`Retrying connection for ${userId} after logout during pairing`);
+            setTimeout(() => this.connect(userId), 1000);
+          } else {
+            this.loggedOut.add(userId);
+          }
         } else if (!this.loggedOut.has(userId)) {
           this.scheduleReconnect(userId);
         }
@@ -386,6 +414,9 @@ export class WhatsAppService implements OnModuleDestroy {
   async connectWithPairingCode(userId: string, phone: string): Promise<void> {
     const normalized = phone.replace(/[^0-9]/g, '');
     this.pairingPhones.set(userId, normalized);
+    this.clearPairingTimeout(userId);
+    this.loggedOut.delete(userId); // allow fresh connection even after a previous logout
+
     if (this.sockets.has(userId)) {
       const sock = this.sockets.get(userId)!;
       this.sockets.delete(userId);
@@ -393,6 +424,26 @@ export class WhatsAppService implements OnModuleDestroy {
       (sock.ev as any).removeAllListeners();
       sock.end(new Error('reset'));
     }
+
+    // Always wipe stale auth so WhatsApp generates a fresh QR/pairing code
+    const authDir = this.authPath(userId);
+    if (fs.existsSync(authDir)) {
+      fs.rmSync(authDir, { recursive: true, force: true });
+      this.logger.log(`Cleared stale auth for ${userId} — fresh pairing`);
+    }
+
+    // Emit error if no code arrives within 35s
+    const timeout = setTimeout(() => {
+      if (this.pairingPhones.has(userId)) {
+        this.pairingPhones.delete(userId);
+        this.logger.warn(`Pairing timeout for ${userId}`);
+        this.emit('pairing_error', userId, {
+          message: 'Délai dépassé. Réessayez.',
+        });
+      }
+    }, 35_000);
+    this.pairingTimeouts.set(userId, timeout);
+
     await this.connect(userId);
   }
 
