@@ -19,6 +19,7 @@ import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { WhatsAppLayout } from './pages/whatsapp/WhatsAppLayout';
 import { AdminDashboard } from './pages/AdminDashboard';
 import { Logistics } from './pages/Logistics';
+import { Clients } from './pages/Clients';
 import { PartnerPortal } from './pages/PartnerPortal';
 import { Inbox } from './pages/whatsapp/Inbox';
 import { AIConfig } from './pages/whatsapp/AIConfig';
@@ -171,6 +172,7 @@ function AppInner() {
           <Route path="/boutique" element={<StorePage />} />
           <Route path="/admin" element={<AdminDashboard />} />
           <Route path="/logistique" element={<Logistics />} />
+          <Route path="/clients" element={<Clients />} />
           <Route path="/whatsapp" element={<WhatsAppLayout />}>
             <Route index element={<Inbox />} />
             <Route path="ia" element={<AIConfig />} />

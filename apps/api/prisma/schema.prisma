@@ -521,11 +521,30 @@ model DeliveryPartner {
   location         StockLocation?
   orders     ManualOrder[]
   agents     DeliveryAgent[]
+  payments   PartnerPayment[]
   createdAt  DateTime        @default(now()) @map("created_at")
 
   @@index([userId])
   @@index([businessId])
   @@map("delivery_partners")
+}
+
+model PartnerPayment {
+  id          String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  partnerId   String          @map("partner_id") @db.Uuid
+  partner     DeliveryPartner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  amount      Decimal         @db.Decimal(10, 2)
+  currency    String          @default("FC")
+  proofUrl    String?         @map("proof_url")
+  status      String          @default("pending")
+  notes       String?
+  confirmedAt DateTime?       @map("confirmed_at")
+  confirmedBy String?         @map("confirmed_by")
+  createdAt   DateTime        @default(now()) @map("created_at")
+  updatedAt   DateTime        @updatedAt @map("updated_at")
+
+  @@index([partnerId])
+  @@map("partner_payments")
 }
 
 model DeliveryAgent {
@@ -562,6 +581,8 @@ model ManualOrder {
   dispatchedAt       DateTime?       @map("dispatched_at")
   agentId            String?         @map("agent_id") @db.Uuid
   agent              DeliveryAgent?  @relation(fields: [agentId], references: [id])
+  collectedUsd       Decimal?        @map("collected_usd") @db.Decimal(10, 2)
+  collectedCdf       Decimal?        @map("collected_cdf") @db.Decimal(10, 2)
   items              ManualOrderItem[]
   createdAt          DateTime        @default(now()) @map("created_at")
   updatedAt          DateTime        @default(now()) @updatedAt @map("updated_at")

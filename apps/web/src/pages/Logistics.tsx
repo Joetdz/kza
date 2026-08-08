@@ -1,12 +1,36 @@
 import { useState, useEffect } from 'react';
-import { Plus, Trash2, MapPin, Truck, ShoppingBag, ChevronRight, X, Package, AlertCircle, MessageCircle, BarChart2, Link, Printer, Edit2, Check, Calendar } from 'lucide-react';
+import { Plus, Trash2, MapPin, Truck, ShoppingBag, ChevronRight, X, Package, AlertCircle, MessageCircle, BarChart2, Link, Printer, Edit2, Check, Calendar, DollarSign, FileText } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useStore } from '../store/useStore';
-import { logisticsApi, type StockLocation, type DeliveryPartner, type ManualOrder, type PartnerReport } from '../api/logistics';
+import { logisticsApi, type StockLocation, type DeliveryPartner, type ManualOrder, type PartnerReport, type PartnerPayment } from '../api/logistics';
 import { CitySelect } from '../components/CitySelect';
 
 const ADMIN_EMAILS = (import.meta.env.VITE_ADMIN_EMAILS ?? '')
   .split(',').map((e: string) => e.trim().toLowerCase()).filter(Boolean);
+
+const CITY_COMMUNES: Record<string, string[]> = {
+  'Kinshasa': [
+    'Bandalungwa','Barumbu','Bumbu','Gombe','Kalamu','Kasa-Vubu','Kimbanseke',
+    'Kinshasa','Kintambo','Kisenso','Lemba','Limete','Lingwala','Makala',
+    'Maluku','Masina','Matete','Mont-Ngafula','Ndjili','Ngaba','Ngaliema',
+    'Ngiri-Ngiri','Nsele','Selembao',
+  ],
+  'Lubumbashi': ['Annexe','Industriel','Kampemba','Kamalondo','Katuba','Kenya','Lubumbashi','Rwashi'],
+  'Mbuji-Mayi': ['Dibindi','Kanshi','Miabi','Muya'],
+  'Kananga':    ['Kananga','Lukonga','Ndesha'],
+  'Kisangani':  ['Kabondo','Kisangani','Lubunga','Makiso','Mangobo','Tshopo'],
+  'Goma':       ['Goma','Karisimbi'],
+  'Bukavu':     ['Ibanda','Kadutu','Bagira'],
+  'Kolwezi':    ['Dilala','Manika','Musonoie'],
+  'Likasi':     ['Kikula','Likasi','Panda','Shituru'],
+  'Butembo':    ['Butembo','Vulamba'],
+  'Beni':       ['Beni','Ruwenzori'],
+  'Matadi':     ['Matadi','Mvog-ada'],
+  'Mbandaka':   ['Mbandaka','Wangata'],
+  'Kikwit':     ['Kikwit','Lukemi','Nzinda'],
+  'Uvira':      ['Uvira','Kalundu'],
+  'Bunia':      ['Bunia','Shari'],
+};
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   pending:    { label: 'En attente',  color: 'bg-gray-100 text-gray-600' },
@@ -30,10 +54,11 @@ export function Logistics() {
   const { products } = useStore();
   const isAdmin = !!user?.email && ADMIN_EMAILS.includes(user.email.toLowerCase());
 
-  const [tab, setTab] = useState<'locations' | 'partners' | 'orders'>('locations');
+  const [tab, setTab] = useState<'locations' | 'partners' | 'orders' | 'payments'>('locations');
   const [locations, setLocations] = useState<StockLocation[]>([]);
   const [partners, setPartners] = useState<DeliveryPartner[]>([]);
   const [orders, setOrders] = useState<ManualOrder[]>([]);
+  const [payments, setPayments] = useState<PartnerPayment[]>([]);
   const [loading, setLoading] = useState(false);
 
   // Modals
@@ -44,6 +69,8 @@ export function Logistics() {
   const [reportModal, setReportModal] = useState<DeliveryPartner | null>(null);
   const [deliverModal, setDeliverModal] = useState<{ orderId: string } | null>(null);
   const [deliveryPersonName, setDeliveryPersonName] = useState('');
+  const [collectedUsd, setCollectedUsd] = useState('');
+  const [collectedCdf, setCollectedCdf] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   // Partner phone inline edit
@@ -64,16 +91,30 @@ export function Logistics() {
 
   // Order form
   const [orderForm, setOrderForm] = useState({
-    customerName: '', customerPhone: '', city: '', address: '',
-    deliveryFee: '', notes: '', partnerId: '', locationId: '', scheduledAt: '',
+    customerName: '', customerPhone: '', city: '', commune: '', addressDetail: '',
+    deliveryFee: '', scheduledAt: '',
   });
   const [orderItems, setOrderItems] = useState<{ productId: string; quantity: string; unitPrice: string }[]>([
     { productId: '', quantity: '1', unitPrice: '' },
   ]);
 
+  // Dispatch modal (partner selection at assignment time)
+  const [dispatchModal, setDispatchModal] = useState<{ orderId: string } | null>(null);
+  const [dispatchPartnerId, setDispatchPartnerId] = useState('');
+
+  // Reschedule modal
+  const [rescheduleModal, setRescheduleModal] = useState<{ orderId: string } | null>(null);
+  const [rescheduleDate, setRescheduleDate] = useState('');
+
   // Stock allocation
   const [stockAllocations, setStockAllocations] = useState<Record<string, string>>({});
   const [stockLoading, setStockLoading] = useState(false);
+
+  // Daily report
+  const [dailyReportModal, setDailyReportModal] = useState<DeliveryPartner | null>(null);
+  const [dailyReportDate, setDailyReportDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [dailyReportData, setDailyReportData] = useState<import('../api/logistics').DailyReport | null>(null);
+  const [dailyReportLoading, setDailyReportLoading] = useState(false);
 
   // Report
   const [reportPeriod, setReportPeriod] = useState<'daily' | 'weekly' | 'monthly'>('monthly');
@@ -87,14 +128,16 @@ export function Logistics() {
   async function refresh() {
     setLoading(true);
     try {
-      const [locs, parts, ords] = await Promise.all([
+      const [locs, parts, ords, pays] = await Promise.all([
         logisticsApi.getLocations(),
         logisticsApi.getPartners(),
         logisticsApi.getOrders(),
+        logisticsApi.getPayments(),
       ]);
       setLocations(locs);
       setPartners(parts);
       setOrders(ords);
+      setPayments(pays);
     } catch { /* ignore */ }
     finally { setLoading(false); }
   }
@@ -220,14 +263,16 @@ export function Logistics() {
 
   async function handleCreateOrder() {
     const validItems = orderItems.filter(i => i.productId && Number(i.quantity) > 0);
-    if (!orderForm.customerName || !orderForm.city || !orderForm.address || validItems.length === 0) return;
+    if (!orderForm.customerName || !orderForm.city || !orderForm.addressDetail || validItems.length === 0) return;
     setSubmitting(true);
     try {
+      const address = [orderForm.commune, orderForm.addressDetail].filter(Boolean).join(', ');
       const o = await logisticsApi.createOrder({
-        ...orderForm,
+        customerName: orderForm.customerName,
+        customerPhone: orderForm.customerPhone || undefined,
+        city: orderForm.city,
+        address,
         deliveryFee: Number(orderForm.deliveryFee) || 0,
-        partnerId: orderForm.partnerId || undefined,
-        locationId: orderForm.locationId || undefined,
         scheduledAt: orderForm.scheduledAt || undefined,
         items: validItems.map(i => ({
           productId: i.productId,
@@ -243,7 +288,7 @@ export function Logistics() {
   }
 
   function resetOrderForm() {
-    setOrderForm({ customerName: '', customerPhone: '', city: '', address: '', deliveryFee: '', notes: '', partnerId: '', locationId: '', scheduledAt: '' });
+    setOrderForm({ customerName: '', customerPhone: '', city: '', commune: '', addressDetail: '', deliveryFee: '', scheduledAt: '' });
     setOrderItems([{ productId: '', quantity: '1', unitPrice: '' }]);
   }
 
@@ -252,20 +297,93 @@ export function Logistics() {
     setOrders(prev => prev.map(o => o.id === id ? { ...o, status, deliveryPersonName: personName ?? o.deliveryPersonName } : o));
   }
 
+  async function confirmDispatch() {
+    if (!dispatchModal || !dispatchPartnerId) return;
+    setSubmitting(true);
+    try {
+      await logisticsApi.updateStatus(dispatchModal.orderId, 'dispatched', undefined, dispatchPartnerId);
+      const partner = partners.find(p => p.id === dispatchPartnerId) ?? null;
+      setOrders(prev => prev.map(o => o.id === dispatchModal.orderId
+        ? { ...o, status: 'dispatched', partnerId: dispatchPartnerId, partner }
+        : o));
+      setDispatchModal(null);
+      setDispatchPartnerId('');
+    } catch { /* ignore */ }
+    finally { setSubmitting(false); }
+  }
+
+  async function confirmReschedule() {
+    if (!rescheduleModal) return;
+    setSubmitting(true);
+    try {
+      await logisticsApi.reschedule(rescheduleModal.orderId, rescheduleDate || null);
+      setOrders(prev => prev.map(o => o.id === rescheduleModal.orderId
+        ? { ...o, scheduledAt: rescheduleDate || null }
+        : o));
+      setRescheduleModal(null);
+      setRescheduleDate('');
+    } catch { /* ignore */ }
+    finally { setSubmitting(false); }
+  }
+
   async function confirmDelivered() {
     if (!deliverModal) return;
     setSubmitting(true);
     try {
-      await handleStatusChange(deliverModal.orderId, 'delivered', deliveryPersonName || undefined);
+      await logisticsApi.updateStatus(
+        deliverModal.orderId, 'delivered',
+        deliveryPersonName || undefined, undefined,
+        collectedUsd ? Number(collectedUsd) : undefined,
+        collectedCdf ? Number(collectedCdf) : undefined,
+      );
+      setOrders(prev => prev.map(o => o.id === deliverModal.orderId
+        ? { ...o, status: 'delivered', deliveryPersonName: deliveryPersonName || o.deliveryPersonName }
+        : o));
       setDeliverModal(null);
       setDeliveryPersonName('');
+      setCollectedUsd('');
+      setCollectedCdf('');
     } finally { setSubmitting(false); }
+  }
+
+  async function openDailyReport(partner: DeliveryPartner) {
+    setDailyReportModal(partner);
+    setDailyReportData(null);
+    setDailyReportLoading(true);
+    try { setDailyReportData(await logisticsApi.getDailyReport(partner.id, dailyReportDate)); }
+    catch { /* ignore */ }
+    finally { setDailyReportLoading(false); }
+  }
+
+  async function changeDailyReportDate(date: string) {
+    setDailyReportDate(date);
+    if (!dailyReportModal) return;
+    setDailyReportLoading(true);
+    try { setDailyReportData(await logisticsApi.getDailyReport(dailyReportModal.id, date)); }
+    catch { /* ignore */ }
+    finally { setDailyReportLoading(false); }
   }
 
   async function handleDeleteOrder(id: string) {
     if (!confirm('Supprimer cette commande ?')) return;
     await logisticsApi.deleteOrder(id);
     setOrders(prev => prev.filter(o => o.id !== id));
+  }
+
+  // ── Payments ─────────────────────────────────────────────────────
+
+  async function handleConfirmPayment(id: string) {
+    try {
+      const updated = await logisticsApi.confirmPayment(id);
+      setPayments(prev => prev.map(p => p.id === id ? updated : p));
+    } catch { /* ignore */ }
+  }
+
+  async function handleRejectPayment(id: string) {
+    try {
+      const updated = await logisticsApi.rejectPayment(id);
+      setPayments(prev => prev.map(p => p.id === id ? updated : p));
+    } catch { /* ignore */ }
   }
 
   if (!isAdmin) {
@@ -279,10 +397,13 @@ export function Logistics() {
     );
   }
 
+  const pendingPaymentsCount = payments.filter(p => p.status === 'pending').length;
+
   const tabs = [
     { id: 'locations', label: 'Emplacements', icon: MapPin },
     { id: 'partners',  label: 'Partenaires',  icon: Truck },
     { id: 'orders',    label: 'Commandes',    icon: ShoppingBag },
+    { id: 'payments',  label: 'Versements',   icon: DollarSign, badge: pendingPaymentsCount },
   ] as const;
 
   return (
@@ -290,12 +411,17 @@ export function Logistics() {
       <div className="max-w-5xl mx-auto px-4 py-8">
         <h1 className="text-2xl font-black text-gray-900 mb-6">Logistique</h1>
 
-        <div className="flex gap-1 bg-gray-100 p-1 rounded-2xl mb-6 w-fit">
-          {tabs.map(({ id, label, icon: Icon }) => (
+        <div className="flex gap-1 bg-gray-100 p-1 rounded-2xl mb-6 w-fit flex-wrap">
+          {tabs.map(({ id, label, icon: Icon, ...rest }) => (
             <button key={id} onClick={() => setTab(id)}
               className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all
                 ${tab === id ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
               <Icon size={15} />{label}
+              {'badge' in rest && (rest as any).badge > 0 && (
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-500 text-white">
+                  {(rest as any).badge}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -455,8 +581,12 @@ export function Logistics() {
                       )}
                     </div>
                     <div className="flex flex-col gap-1 shrink-0 ml-2">
+                      <button onClick={() => openDailyReport(p)}
+                        className="p-1.5 text-indigo-400 hover:text-indigo-600 transition-colors" title="Rapport journalier">
+                        <FileText size={15} />
+                      </button>
                       <button onClick={() => openReport(p)}
-                        className="p-1.5 text-amber-400 hover:text-amber-600 transition-colors" title="Rapport">
+                        className="p-1.5 text-amber-400 hover:text-amber-600 transition-colors" title="Rapport période">
                         <BarChart2 size={15} />
                       </button>
                       <button onClick={() => copyPartnerLink(p)}
@@ -549,9 +679,9 @@ export function Logistics() {
                       {/* Actions */}
                       <div className="flex flex-col gap-1.5 shrink-0">
                         {o.status === 'pending' && (
-                          <button onClick={() => handleStatusChange(o.id, 'dispatched')}
+                          <button onClick={() => { setDispatchModal({ orderId: o.id }); setDispatchPartnerId(o.partner?.id ?? ''); }}
                             className="flex items-center gap-1 px-2.5 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-xs font-semibold hover:bg-blue-100">
-                            <ChevronRight size={12} /> Assigner au partenaire
+                            <ChevronRight size={12} /> Assigner
                           </button>
                         )}
                         {o.status === 'dispatched' && (
@@ -559,6 +689,10 @@ export function Logistics() {
                             <button onClick={() => { setDeliverModal({ orderId: o.id }); setDeliveryPersonName(''); }}
                               className="flex items-center gap-1 px-2.5 py-1.5 bg-green-50 text-green-700 rounded-lg text-xs font-semibold hover:bg-green-100">
                               <ChevronRight size={12} /> Livré
+                            </button>
+                            <button onClick={() => { setRescheduleModal({ orderId: o.id }); setRescheduleDate(o.scheduledAt ? o.scheduledAt.slice(0,16) : ''); }}
+                              className="flex items-center gap-1 px-2.5 py-1.5 bg-indigo-50 text-indigo-700 rounded-lg text-xs font-semibold hover:bg-indigo-100">
+                              <Calendar size={12} /> Reporter
                             </button>
                             <button onClick={() => handleStatusChange(o.id, 'pending')}
                               className="px-2.5 py-1.5 bg-gray-100 text-gray-600 rounded-lg text-xs font-semibold hover:bg-gray-200">
@@ -590,6 +724,70 @@ export function Logistics() {
                 <p className="text-center py-8 text-gray-400 text-sm">Aucune commande manuelle.</p>
               )}
             </div>
+          </div>
+        )}
+        {/* ── VERSEMENTS ── */}
+        {!loading && tab === 'payments' && (
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-sm text-gray-500">
+                {pendingPaymentsCount} en attente · {payments.length} au total
+              </p>
+            </div>
+            {payments.length === 0 ? (
+              <p className="text-center py-8 text-gray-400 text-sm">Aucun versement déclaré.</p>
+            ) : (
+              <div className="space-y-3">
+                {payments.map(pay => {
+                  const badgeClass = pay.status === 'confirmed'
+                    ? 'bg-green-100 text-green-700'
+                    : pay.status === 'rejected'
+                    ? 'bg-red-100 text-red-600'
+                    : 'bg-amber-100 text-amber-700';
+                  const badgeLabel = pay.status === 'confirmed' ? 'Confirmé' : pay.status === 'rejected' ? 'Rejeté' : 'En attente';
+
+                  return (
+                    <div key={pay.id} className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap mb-1">
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${badgeClass}`}>{badgeLabel}</span>
+                            <span className="font-black text-gray-900 text-sm">
+                              {Number(pay.amount).toLocaleString('fr-FR')} {pay.currency}
+                            </span>
+                          </div>
+                          {pay.partner && (
+                            <p className="text-sm text-gray-600 font-medium">{pay.partner.name}{pay.partner.city ? ` · ${pay.partner.city}` : ''}</p>
+                          )}
+                          <p className="text-xs text-gray-400 mt-0.5">
+                            {new Date(pay.createdAt).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })}
+                          </p>
+                          {pay.notes && <p className="text-xs text-gray-500 mt-1">{pay.notes}</p>}
+                          {pay.proofUrl && (
+                            <a href={pay.proofUrl} target="_blank" rel="noopener noreferrer"
+                              className="text-xs text-indigo-600 hover:underline mt-1 inline-block">
+                              Voir la preuve
+                            </a>
+                          )}
+                        </div>
+                        {pay.status === 'pending' && (
+                          <div className="flex flex-col gap-1.5 shrink-0">
+                            <button onClick={() => handleConfirmPayment(pay.id)}
+                              className="flex items-center gap-1 px-3 py-1.5 bg-green-50 text-green-700 rounded-lg text-xs font-semibold hover:bg-green-100">
+                              <Check size={12} /> Confirmer
+                            </button>
+                            <button onClick={() => handleRejectPayment(pay.id)}
+                              className="px-3 py-1.5 bg-red-50 text-red-600 rounded-lg text-xs font-semibold hover:bg-red-100">
+                              Rejeter
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -679,9 +877,9 @@ export function Logistics() {
               <Field label="Téléphone" value={orderForm.customerPhone} onChange={v => setOrderForm(f => ({ ...f, customerPhone: v }))} placeholder="+243..." />
             </div>
 
-            {/* Ville + Livraison */}
+            {/* Ville + Commune + Frais */}
             <div className="grid grid-cols-2 gap-3">
-              <CitySelect value={orderForm.city} onChange={v => setOrderForm(f => ({ ...f, city: v }))} required />
+              <CitySelect value={orderForm.city} onChange={v => setOrderForm(f => ({ ...f, city: v, commune: '' }))} required />
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1">Frais de livraison</label>
                 <div className="relative">
@@ -693,41 +891,28 @@ export function Logistics() {
               </div>
             </div>
 
-            <Field label="Adresse précise *" value={orderForm.address} onChange={v => setOrderForm(f => ({ ...f, address: v }))} placeholder="Quartier, avenue, référence..." />
+            {/* Commune */}
+            {CITY_COMMUNES[orderForm.city]?.length > 0 && (
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Commune</label>
+                <select value={orderForm.commune} onChange={e => setOrderForm(f => ({ ...f, commune: e.target.value }))}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-400 bg-white">
+                  <option value="">— Choisir</option>
+                  {CITY_COMMUNES[orderForm.city].map((c: string) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+            )}
+
+            <Field label="Adresse précise *" value={orderForm.addressDetail} onChange={v => setOrderForm(f => ({ ...f, addressDetail: v }))} placeholder="Avenue, quartier, référence..." />
 
             {/* Date de livraison prévue */}
             <div>
               <label className="block text-xs font-semibold text-gray-600 mb-1 flex items-center gap-1">
                 <Calendar size={11} /> Date et heure de livraison prévue
               </label>
-              <input
-                type="datetime-local"
-                value={orderForm.scheduledAt}
+              <input type="datetime-local" value={orderForm.scheduledAt}
                 onChange={e => setOrderForm(f => ({ ...f, scheduledAt: e.target.value }))}
-                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-400 bg-white"
-              />
-            </div>
-
-            <Field label="Notes" value={orderForm.notes} onChange={v => setOrderForm(f => ({ ...f, notes: v }))} placeholder="Instructions spéciales..." />
-
-            {/* Stock + Livreur */}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Stock source</label>
-                <select value={orderForm.locationId} onChange={e => setOrderForm(f => ({ ...f, locationId: e.target.value }))}
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-400 bg-white">
-                  <option value="">— Choisir</option>
-                  {locations.map(l => <option key={l.id} value={l.id}>{l.name} ({l.city})</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Livreur</label>
-                <select value={orderForm.partnerId} onChange={e => setOrderForm(f => ({ ...f, partnerId: e.target.value }))}
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-400 bg-white">
-                  <option value="">— Choisir</option>
-                  {partners.map(p => <option key={p.id} value={p.id}>{p.name}{p.phone ? ` (${p.phone})` : ''}</option>)}
-                </select>
-              </div>
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-400 bg-white" />
             </div>
           </div>
           <ModalFooter onClose={() => { setShowOrderModal(false); resetOrderForm(); }} onConfirm={handleCreateOrder} loading={submitting} label="Créer la commande" />
@@ -760,12 +945,219 @@ export function Logistics() {
         </Modal>
       )}
 
+      {/* ── MODAL DISPATCH (choix partenaire) ── */}
+      {dispatchModal && (
+        <Modal title="Assigner au partenaire" onClose={() => { setDispatchModal(null); setDispatchPartnerId(''); }}>
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1">Partenaire de livraison</label>
+            <select value={dispatchPartnerId} onChange={e => setDispatchPartnerId(e.target.value)}
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-400 bg-white">
+              <option value="">— Choisir un partenaire</option>
+              {partners.map(p => (
+                <option key={p.id} value={p.id}>{p.name}{p.city ? ` · ${p.city}` : ''}</option>
+              ))}
+            </select>
+          </div>
+          <ModalFooter
+            onClose={() => { setDispatchModal(null); setDispatchPartnerId(''); }}
+            onConfirm={confirmDispatch}
+            loading={submitting}
+            label="Assigner & envoyer WA"
+          />
+        </Modal>
+      )}
+
+      {/* ── MODAL REPORTER ── */}
+      {rescheduleModal && (
+        <Modal title="Reporter la livraison" onClose={() => { setRescheduleModal(null); setRescheduleDate(''); }}>
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1 flex items-center gap-1">
+              <Calendar size={11} /> Nouvelle date et heure de livraison
+            </label>
+            <input type="datetime-local" value={rescheduleDate}
+              onChange={e => setRescheduleDate(e.target.value)}
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-400 bg-white" />
+          </div>
+          <ModalFooter
+            onClose={() => { setRescheduleModal(null); setRescheduleDate(''); }}
+            onConfirm={confirmReschedule}
+            loading={submitting}
+            label="Confirmer le report"
+          />
+        </Modal>
+      )}
+
       {/* ── MODAL LIVRAISON CONFIRMÉE ── */}
       {deliverModal && (
-        <Modal title="Confirmer la livraison" onClose={() => setDeliverModal(null)}>
-          <p className="text-sm text-gray-600">Nom du livreur qui a effectué la livraison (optionnel).</p>
-          <Field label="Nom du livreur" value={deliveryPersonName} onChange={setDeliveryPersonName} placeholder="ex: Jean-Paul" />
-          <ModalFooter onClose={() => setDeliverModal(null)} onConfirm={confirmDelivered} loading={submitting} label="Confirmer livré" />
+        <Modal title="Confirmer la livraison" onClose={() => { setDeliverModal(null); setCollectedUsd(''); setCollectedCdf(''); }}>
+          <p className="text-sm text-gray-600">Montants encaissés par le livreur à la livraison.</p>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1">Montant encaissé ($)</label>
+              <div className="relative">
+                <input type="text" inputMode="decimal" value={collectedUsd}
+                  onChange={e => setCollectedUsd(e.target.value)} placeholder="0"
+                  className="w-full border border-gray-200 rounded-xl pl-3 pr-7 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-400" />
+                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-gray-400 font-bold">$</span>
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1">Montant encaissé (FC)</label>
+              <div className="relative">
+                <input type="text" inputMode="decimal" value={collectedCdf}
+                  onChange={e => setCollectedCdf(e.target.value)} placeholder="0"
+                  className="w-full border border-gray-200 rounded-xl pl-3 pr-8 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-400" />
+                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-gray-400 font-bold">FC</span>
+              </div>
+            </div>
+          </div>
+          <Field label="Nom du livreur (optionnel)" value={deliveryPersonName} onChange={setDeliveryPersonName} placeholder="ex: Jean-Paul" />
+          <ModalFooter onClose={() => { setDeliverModal(null); setCollectedUsd(''); setCollectedCdf(''); }} onConfirm={confirmDelivered} loading={submitting} label="Confirmer livré" />
+        </Modal>
+      )}
+
+      {/* ── MODAL RAPPORT JOURNALIER ── */}
+      {dailyReportModal && (
+        <Modal title={`Rapport journalier — ${dailyReportModal.name}`} onClose={() => { setDailyReportModal(null); setDailyReportData(null); }} wide>
+          <div className="flex items-center gap-3 mb-4 flex-wrap">
+            <input type="date" value={dailyReportDate}
+              onChange={e => changeDailyReportDate(e.target.value)}
+              className="border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-400" />
+            <button onClick={() => window.print()} className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-600 hover:bg-gray-200 rounded-xl text-xs font-semibold">
+              <Printer size={13} /> Imprimer
+            </button>
+          </div>
+
+          {dailyReportLoading && <p className="text-sm text-gray-400 text-center py-6">Chargement...</p>}
+
+          {!dailyReportLoading && dailyReportData && (() => {
+            const r = dailyReportData;
+            const dateLabel = new Date(r.date + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+            const STATUS_LABELS_REPORT: Record<string, string> = {
+              delivered: 'Livré', returned: 'Retourné', cancelled: 'Annulé',
+              fake: 'Fausse cmd', pending: 'En attente', dispatched: 'En cours', postponed: 'Reporté',
+            };
+            return (
+              <div className="space-y-5 text-sm">
+                <h2 className="font-black text-gray-900 text-center text-base capitalize">{dateLabel}</h2>
+
+                {/* Orders table */}
+                {r.orders.length > 0 ? (
+                  <div>
+                    <h3 className="font-bold text-gray-700 mb-2 text-xs uppercase tracking-wide">Commandes</h3>
+                    <div className="overflow-x-auto rounded-xl border border-gray-100">
+                      <table className="w-full text-xs">
+                        <thead className="bg-gray-50 text-gray-500">
+                          <tr>
+                            {['N°','Zone','Agent','Montant $','Montant FC','Observation','Frais course','Statut'].map(h => (
+                              <th key={h} className="px-2 py-2 text-left font-semibold whitespace-nowrap">{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {r.orders.map(o => (
+                            <tr key={o.id} className="border-t border-gray-100 hover:bg-gray-50">
+                              <td className="px-2 py-2 font-bold text-indigo-600">{o.num}</td>
+                              <td className="px-2 py-2 text-gray-700">{o.city}</td>
+                              <td className="px-2 py-2 text-gray-600">{o.agentName ?? '—'}</td>
+                              <td className="px-2 py-2 font-semibold">{o.collectedUsd > 0 ? `$${o.collectedUsd.toLocaleString('fr-FR')}` : o.totalAmount > 0 ? `$${o.totalAmount.toLocaleString('fr-FR')}` : '—'}</td>
+                              <td className="px-2 py-2 font-semibold">{o.collectedCdf > 0 ? o.collectedCdf.toLocaleString('fr-FR') : '—'}</td>
+                              <td className="px-2 py-2 text-gray-500 max-w-[140px] truncate">{o.notes ?? o.items.map(i => `${i.quantity} ${i.name}`).join(', ')}</td>
+                              <td className="px-2 py-2">{o.deliveryFee > 0 ? o.deliveryFee.toLocaleString('fr-FR') : '—'}</td>
+                              <td className="px-2 py-2"><span className={`font-semibold ${o.status === 'delivered' ? 'text-green-600' : o.status === 'cancelled' ? 'text-red-500' : o.status === 'returned' ? 'text-orange-500' : 'text-gray-500'}`}>{STATUS_LABELS_REPORT[o.status] ?? o.status}</span></td>
+                            </tr>
+                          ))}
+                          {/* Totals row */}
+                          <tr className="border-t-2 border-gray-300 bg-yellow-50 font-black">
+                            <td colSpan={3} className="px-2 py-2 text-gray-800">TOTAL</td>
+                            <td className="px-2 py-2">${r.summary.totalCollectedUsd.toLocaleString('fr-FR')}</td>
+                            <td className="px-2 py-2">{r.summary.totalCollectedCdf.toLocaleString('fr-FR')}</td>
+                            <td className="px-2 py-2">—</td>
+                            <td className="px-2 py-2">{r.summary.totalDeliveryFees.toLocaleString('fr-FR')}</td>
+                            <td className="px-2 py-2"></td>
+                          </tr>
+                          <tr className="bg-yellow-100 font-bold">
+                            <td colSpan={3} className="px-2 py-1.5 text-gray-700">Solde</td>
+                            <td className="px-2 py-1.5">${r.summary.soldeUsd.toLocaleString('fr-FR')}</td>
+                            <td className="px-2 py-1.5">{r.summary.soldeCdf.toLocaleString('fr-FR')}</td>
+                            <td colSpan={3}></td>
+                          </tr>
+                          <tr className="bg-red-100 font-black text-red-800">
+                            <td colSpan={3} className="px-2 py-1.5">Solde Cumulé</td>
+                            <td className="px-2 py-1.5">${r.cumulativeSolde.soldeUsd.toLocaleString('fr-FR')}</td>
+                            <td className="px-2 py-1.5">{r.cumulativeSolde.soldeCdf.toLocaleString('fr-FR')}</td>
+                            <td colSpan={3}></td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-center text-gray-400 py-6">Aucune commande pour cette journée.</p>
+                )}
+
+                {/* Summary stats */}
+                <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                  {[
+                    { label: 'Total', val: r.summary.total, color: 'bg-gray-100 text-gray-700' },
+                    { label: 'Livrées', val: r.summary.delivered, color: 'bg-green-100 text-green-700' },
+                    { label: 'Échouées', val: r.summary.failed, color: 'bg-orange-100 text-orange-700' },
+                    { label: 'Annulées', val: r.summary.cancelled, color: 'bg-red-100 text-red-600' },
+                    { label: 'En attente', val: r.summary.pending, color: 'bg-blue-100 text-blue-700' },
+                    { label: 'Taux réussite', val: `${r.summary.successRate}%`, color: 'bg-indigo-100 text-indigo-700' },
+                  ].map(({ label, val, color }) => (
+                    <div key={label} className={`rounded-xl p-3 text-center ${color}`}>
+                      <p className="text-lg font-black">{val}</p>
+                      <p className="text-[10px] font-semibold mt-0.5">{label}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Stock report */}
+                {r.stock.length > 0 && (
+                  <div>
+                    <h3 className="font-bold text-gray-700 mb-2 text-xs uppercase tracking-wide">Rapport Stock</h3>
+                    <div className="overflow-x-auto rounded-xl border border-gray-100">
+                      <table className="w-full text-xs">
+                        <thead className="bg-gray-50 text-gray-500">
+                          <tr>
+                            {['Produit','Stock début','Livré','Entrées','Stock actuel'].map(h => (
+                              <th key={h} className="px-3 py-2 text-left font-semibold">{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {r.stock.map(s => (
+                            <tr key={s.productName} className="border-t border-gray-100">
+                              <td className="px-3 py-2 font-medium text-gray-700">{s.productName}</td>
+                              <td className="px-3 py-2 text-center">{s.stockStart}</td>
+                              <td className="px-3 py-2 text-center text-red-600 font-semibold">{s.delivered}</td>
+                              <td className="px-3 py-2 text-center text-green-600">{s.entries}</td>
+                              <td className="px-3 py-2 text-center font-black text-gray-900">{s.stockCurrent}</td>
+                            </tr>
+                          ))}
+                          <tr className="border-t-2 border-gray-300 bg-yellow-50 font-bold">
+                            <td className="px-3 py-2">Total</td>
+                            <td className="px-3 py-2 text-center">{r.stock.reduce((s, x) => s + x.stockStart, 0)}</td>
+                            <td className="px-3 py-2 text-center text-red-600">{r.stock.reduce((s, x) => s + x.delivered, 0)}</td>
+                            <td className="px-3 py-2 text-center text-green-600">{r.stock.reduce((s, x) => s + x.entries, 0)}</td>
+                            <td className="px-3 py-2 text-center font-black">{r.stock.reduce((s, x) => s + x.stockCurrent, 0)}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+          <div className="pt-2">
+            <button onClick={() => { setDailyReportModal(null); setDailyReportData(null); }}
+              className="w-full py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50">
+              Fermer
+            </button>
+          </div>
         </Modal>
       )}
 

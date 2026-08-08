@@ -276,11 +276,23 @@ export class LogisticsController {
     return order;
   }
 
+  @Patch('my/logistics/orders/:id/reschedule')
+  async rescheduleOrder(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() body: { scheduledAt: string | null },
+  ) {
+    return this.prisma.manualOrder.updateMany({
+      where: { id, ...this.where(user) },
+      data: { scheduledAt: body.scheduledAt ? new Date(body.scheduledAt) : null },
+    });
+  }
+
   @Patch('my/logistics/orders/:id/status')
   async updateOrderStatus(
     @CurrentUser() user: AuthUser,
     @Param('id') id: string,
-    @Body() body: { status: string; deliveryPersonName?: string },
+    @Body() body: { status: string; deliveryPersonName?: string; partnerId?: string; collectedUsd?: number; collectedCdf?: number },
   ) {
     const order = await this.prisma.manualOrder.findFirst({
       where: { id, ...this.where(user) },
@@ -290,15 +302,18 @@ export class LogisticsController {
 
     // Count today's dispatches for this partner using dispatchedAt (reliable, set once at dispatch)
     let deliveryNum: number | null = null;
-    const isNewDispatch = body.status === 'dispatched' && order.status !== 'dispatched' && order.partnerId;
+    // Effective partnerId: from body (new assignment) or existing on order
+    const effectivePartnerId = body.partnerId ?? order.partnerId;
+    const isNewDispatch = body.status === 'dispatched' && order.status !== 'dispatched' && effectivePartnerId;
     const isUnassign = body.status === 'pending' && order.status === 'dispatched';
+
     if (isNewDispatch) {
       const todayStart = new Date();
       todayStart.setHours(0, 0, 0, 0);
       const todayCount = await this.prisma.manualOrder.count({
         where: {
-          id: { not: id },           // exclure la commande courante (cas réassignation)
-          partnerId: order.partnerId!,
+          id: { not: id },
+          partnerId: effectivePartnerId!,
           dispatchedAt: { gte: todayStart },
         },
       });
@@ -309,18 +324,24 @@ export class LogisticsController {
       where: { id },
       data: {
         status: body.status,
+        ...(body.partnerId ? { partnerId: body.partnerId } : {}),
         ...(isNewDispatch ? { dispatchedAt: new Date() } : {}),
-        ...(isUnassign ? { dispatchedAt: null } : {}),  // reset si désassigné
+        ...(isUnassign ? { dispatchedAt: null, partnerId: null } : {}),
         ...(body.deliveryPersonName ? { deliveryPersonName: body.deliveryPersonName } : {}),
+        ...(body.status === 'delivered' && body.collectedUsd != null ? { collectedUsd: body.collectedUsd } : {}),
+        ...(body.status === 'delivered' && body.collectedCdf != null ? { collectedCdf: body.collectedCdf } : {}),
       },
     });
 
     // Auto-send WA when dispatched to a partner
-    if (body.status === 'dispatched' && order.status !== 'dispatched' && order.partnerId && deliveryNum !== null) {
-      const partner = order.partner as any;
-      const destination = partner?.whatsappGroupId ?? partner?.phone ?? null;
+    if (isNewDispatch && deliveryNum !== null) {
+      // If partnerId changed, reload partner from DB
+      const partner = body.partnerId
+        ? await this.prisma.deliveryPartner.findUnique({ where: { id: body.partnerId } })
+        : (order.partner as any);
+      const destination = (partner as any)?.whatsappGroupId ?? (partner as any)?.phone ?? null;
 
-      this.logger.log(`[dispatch] order=${id} partner=${order.partnerId} destination=${destination ?? 'NONE'} deliveryNum=${deliveryNum}`);
+      this.logger.log(`[dispatch] order=${id} partner=${effectivePartnerId} destination=${destination ?? 'NONE'} deliveryNum=${deliveryNum}`);
 
       if (!destination) {
         this.logger.warn(`[dispatch] partner has no whatsappGroupId and no phone — skipping WA`);
@@ -458,5 +479,165 @@ export class LogisticsController {
   @Delete('my/logistics/orders/:id')
   deleteOrder(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.prisma.manualOrder.deleteMany({ where: { id, ...this.where(user) } });
+  }
+
+  // ── Versements (admin) ────────────────────────────────────────────
+
+  @Get('my/logistics/payments')
+  async getPayments(@CurrentUser() user: AuthUser, @Query('status') status?: string) {
+    return this.prisma.partnerPayment.findMany({
+      where: {
+        partner: { userId: user.id },
+        ...(status ? { status } : {}),
+      },
+      include: { partner: { select: { id: true, name: true, city: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  @Patch('my/logistics/payments/:id/confirm')
+  async confirmPayment(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() body: { notes?: string },
+  ) {
+    const payment = await this.prisma.partnerPayment.findFirst({
+      where: { id, partner: { userId: user.id } },
+    });
+    if (!payment) return null;
+    return this.prisma.partnerPayment.update({
+      where: { id },
+      data: { status: 'confirmed', confirmedAt: new Date(), notes: body.notes ?? payment.notes },
+    });
+  }
+
+  @Patch('my/logistics/payments/:id/reject')
+  async rejectPayment(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() body: { notes?: string },
+  ) {
+    const payment = await this.prisma.partnerPayment.findFirst({
+      where: { id, partner: { userId: user.id } },
+    });
+    if (!payment) return null;
+    return this.prisma.partnerPayment.update({
+      where: { id },
+      data: { status: 'rejected', notes: body.notes ?? payment.notes },
+    });
+  }
+
+  // ── Rapport journalier ────────────────────────────────────────────
+
+  @Get('my/logistics/partners/:id/daily-report')
+  async getDailyReport(
+    @CurrentUser() user: AuthUser,
+    @Param('id') partnerId: string,
+    @Query('date') dateStr: string,
+  ) {
+    const date = dateStr ? new Date(dateStr) : new Date();
+    const start = new Date(date); start.setHours(0, 0, 0, 0);
+    const end   = new Date(date); end.setHours(23, 59, 59, 999);
+
+    const partner = await this.prisma.deliveryPartner.findFirst({
+      where: { id: partnerId, userId: user.id },
+      include: { location: { include: { stocks: { include: { product: true } } } } },
+    });
+    if (!partner) return null;
+
+    // Orders dispatched (or created) on this day for this partner
+    const orders = await this.prisma.manualOrder.findMany({
+      where: {
+        partnerId,
+        ...this.where(user),
+        OR: [
+          { dispatchedAt: { gte: start, lte: end } },
+          { dispatchedAt: null, createdAt: { gte: start, lte: end } },
+        ],
+      },
+      include: { items: { include: { product: true } }, agent: true },
+      orderBy: { dispatchedAt: 'asc' },
+    });
+
+    const delivered = orders.filter(o => o.status === 'delivered');
+    const failed    = orders.filter(o => ['returned', 'fake'].includes(o.status));
+    const cancelled = orders.filter(o => o.status === 'cancelled');
+    const pending   = orders.filter(o => !['delivered','returned','fake','cancelled'].includes(o.status));
+
+    const totalCollectedUsd  = delivered.reduce((s, o) => s + Number((o as any).collectedUsd ?? o.totalAmount), 0);
+    const totalCollectedCdf  = delivered.reduce((s, o) => s + Number((o as any).collectedCdf ?? 0), 0);
+    const totalDeliveryFees  = delivered.reduce((s, o) => s + Number(o.deliveryFee), 0);
+
+    // Cumulative solde (all delivered orders up to end of this day for this partner)
+    const allDelivered = await this.prisma.manualOrder.findMany({
+      where: {
+        partnerId,
+        ...this.where(user),
+        status: 'delivered',
+        OR: [
+          { dispatchedAt: { lte: end } },
+          { dispatchedAt: null, createdAt: { lte: end } },
+        ],
+      },
+      select: { totalAmount: true, deliveryFee: true, collectedUsd: true, collectedCdf: true },
+    });
+    const cumulUsd = allDelivered.reduce((s, o) => s + Number((o as any).collectedUsd ?? o.totalAmount), 0);
+    const cumulCdf = allDelivered.reduce((s, o) => s + Number((o as any).collectedCdf ?? 0) - Number(o.deliveryFee), 0);
+
+    // Stock report
+    const locationStocks = (partner as any).location?.stocks ?? [];
+    const deliveredItemsMap: Record<string, number> = {};
+    for (const o of delivered) {
+      for (const item of (o as any).items) {
+        deliveredItemsMap[item.productId] = (deliveredItemsMap[item.productId] ?? 0) + item.quantity;
+      }
+    }
+    const stock = locationStocks.map((s: any) => {
+      const deliveredQty = deliveredItemsMap[s.productId] ?? 0;
+      return {
+        productName: s.product.name,
+        stockStart:  s.quantity + deliveredQty,
+        delivered:   deliveredQty,
+        entries:     0,
+        stockCurrent: s.quantity,
+      };
+    });
+
+    return {
+      date: dateStr,
+      partner: { id: partner.id, name: partner.name, city: partner.city },
+      orders: orders.map((o, idx) => ({
+        num: idx + 1,
+        id: o.id,
+        orderNumber: o.orderNumber,
+        city: o.city,
+        address: o.address,
+        customerName: o.customerName,
+        customerPhone: (o as any).customerPhone,
+        agentName: (o as any).agent?.name ?? o.deliveryPersonName ?? null,
+        collectedUsd: Number((o as any).collectedUsd ?? 0),
+        collectedCdf: Number((o as any).collectedCdf ?? 0),
+        totalAmount: Number(o.totalAmount),
+        deliveryFee: Number(o.deliveryFee),
+        notes: o.notes,
+        items: (o as any).items.map((i: any) => ({ name: i.product.name, quantity: i.quantity })),
+        status: o.status,
+      })),
+      summary: {
+        total: orders.length,
+        delivered: delivered.length,
+        failed: failed.length,
+        cancelled: cancelled.length,
+        pending: pending.length,
+        successRate: orders.length > 0 ? Math.round((delivered.length / orders.length) * 100) : 0,
+        totalCollectedUsd,
+        totalCollectedCdf,
+        totalDeliveryFees,
+        soldeUsd: totalCollectedUsd,
+        soldeCdf: totalCollectedCdf - totalDeliveryFees,
+      },
+      cumulativeSolde: { soldeUsd: cumulUsd, soldeCdf: cumulCdf },
+      stock,
+    };
   }
 }

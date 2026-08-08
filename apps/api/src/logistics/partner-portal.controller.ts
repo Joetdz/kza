@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, Inject, forwardRef } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query, Inject, forwardRef } from '@nestjs/common';
 import { join } from 'path';
 import { PrismaService } from '../prisma/prisma.service';
 import { Public } from '../auth/public.decorator';
@@ -50,7 +50,38 @@ export class PartnerPortalController {
     });
     if (!partner) return null;
     const { pin: _pin, ...safe } = partner as any;
-    return { ...safe, hasPin: !!partner.pin };
+
+    // Fetch business name from the first order so the portal can use it in client messages
+    let businessName: string | null = null;
+    const firstOrderWithBiz = (partner as any).orders?.find((o: any) => o.businessId);
+    if (firstOrderWithBiz?.businessId) {
+      const biz = await this.prisma.business.findUnique({
+        where: { id: firstOrderWithBiz.businessId },
+        select: { name: true },
+      });
+      businessName = biz?.name ?? null;
+    }
+
+    return { ...safe, hasPin: !!partner.pin, businessName };
+  }
+
+  // ── Orders — reschedule ───────────────────────────────────────────
+
+  @Public()
+  @Patch(':token/orders/:orderId/reschedule')
+  async rescheduleOrder(
+    @Param('token') token: string,
+    @Param('orderId') orderId: string,
+    @Body() body: { scheduledAt: string | null },
+  ) {
+    const partner = await this.prisma.deliveryPartner.findUnique({ where: { token } });
+    if (!partner) return null;
+    const order = await this.prisma.manualOrder.findFirst({ where: { id: orderId, partnerId: partner.id } });
+    if (!order) return null;
+    return this.prisma.manualOrder.update({
+      where: { id: orderId },
+      data: { scheduledAt: body.scheduledAt ? new Date(body.scheduledAt) : null },
+    });
   }
 
   // ── Orders — status ───────────────────────────────────────────────
@@ -60,7 +91,7 @@ export class PartnerPortalController {
   async updateOrderStatus(
     @Param('token') token: string,
     @Param('orderId') orderId: string,
-    @Body() body: { status: string; deliveryPersonName?: string },
+    @Body() body: { status: string; deliveryPersonName?: string; collectedUsd?: number; collectedCdf?: number },
   ) {
     const partner = await this.prisma.deliveryPartner.findUnique({
       where: { token },
@@ -79,6 +110,8 @@ export class PartnerPortalController {
       data: {
         status: body.status,
         ...(body.deliveryPersonName ? { deliveryPersonName: body.deliveryPersonName } : {}),
+        ...(body.status === 'delivered' && body.collectedUsd != null ? { collectedUsd: body.collectedUsd } : {}),
+        ...(body.status === 'delivered' && body.collectedCdf != null ? { collectedCdf: body.collectedCdf } : {}),
       },
     });
 
@@ -212,5 +245,227 @@ export class PartnerPortalController {
     const partner = await this.prisma.deliveryPartner.findUnique({ where: { token } });
     if (!partner) return null;
     return this.prisma.deliveryAgent.deleteMany({ where: { id: agentId, partnerId: partner.id } });
+  }
+
+  // ── Finances ──────────────────────────────────────────────────────
+
+  @Public()
+  @Get(':token/finances')
+  async getFinances(@Param('token') token: string) {
+    const partner = await this.prisma.deliveryPartner.findUnique({ where: { token } });
+    if (!partner) return null;
+
+    // Total collected from delivered orders (product money partner owes us)
+    const deliveredOrders = await this.prisma.manualOrder.findMany({
+      where: { partnerId: partner.id, status: 'delivered' },
+      select: { id: true, orderNumber: true, customerName: true, totalAmount: true, createdAt: true },
+    });
+    const totalOwed = deliveredOrders.reduce((s, o) => s + Number(o.totalAmount), 0);
+
+    // Confirmed payments made by partner
+    const payments = await this.prisma.partnerPayment.findMany({
+      where: { partnerId: partner.id },
+      orderBy: { createdAt: 'desc' },
+    });
+    const totalPaid = payments
+      .filter(p => p.status === 'confirmed')
+      .reduce((s, p) => s + Number(p.amount), 0);
+
+    return {
+      totalOwed,
+      totalPaid,
+      balance: totalOwed - totalPaid,
+      deliveredOrders,
+      payments,
+    };
+  }
+
+  // ── Daily report ──────────────────────────────────────────────────
+
+  @Public()
+  @Get(':token/daily-report')
+  async getDailyReport(@Param('token') token: string, @Query('date') dateStr: string) {
+    const partner = await this.prisma.deliveryPartner.findUnique({
+      where: { token },
+      include: { location: { include: { stocks: { include: { product: true } } } } },
+    });
+    if (!partner) return null;
+
+    const date = dateStr ? new Date(dateStr) : new Date();
+    const start = new Date(date); start.setHours(0, 0, 0, 0);
+    const end   = new Date(date); end.setHours(23, 59, 59, 999);
+
+    const orders = await this.prisma.manualOrder.findMany({
+      where: {
+        partnerId: partner.id,
+        OR: [
+          { dispatchedAt: { gte: start, lte: end } },
+          { dispatchedAt: null, createdAt: { gte: start, lte: end } },
+        ],
+      },
+      include: { items: { include: { product: true } }, agent: true },
+      orderBy: { dispatchedAt: 'asc' },
+    });
+
+    const delivered = orders.filter(o => o.status === 'delivered');
+    const failed    = orders.filter(o => ['returned', 'fake'].includes(o.status));
+    const cancelled = orders.filter(o => o.status === 'cancelled');
+    const pending   = orders.filter(o => !['delivered','returned','fake','cancelled'].includes(o.status));
+
+    const totalCollectedUsd = delivered.reduce((s, o) => s + Number((o as any).collectedUsd ?? o.totalAmount), 0);
+    const totalCollectedCdf = delivered.reduce((s, o) => s + Number((o as any).collectedCdf ?? 0), 0);
+    const totalDeliveryFees = delivered.reduce((s, o) => s + Number(o.deliveryFee), 0);
+
+    const allDelivered = await this.prisma.manualOrder.findMany({
+      where: {
+        partnerId: partner.id,
+        status: 'delivered',
+        OR: [
+          { dispatchedAt: { lte: end } },
+          { dispatchedAt: null, createdAt: { lte: end } },
+        ],
+      },
+      select: { totalAmount: true, deliveryFee: true, collectedUsd: true, collectedCdf: true },
+    });
+    const cumulUsd = allDelivered.reduce((s, o) => s + Number((o as any).collectedUsd ?? o.totalAmount), 0);
+    const cumulCdf = allDelivered.reduce((s, o) => s + Number((o as any).collectedCdf ?? 0) - Number(o.deliveryFee), 0);
+
+    const locationStocks = (partner as any).location?.stocks ?? [];
+    const deliveredItemsMap: Record<string, number> = {};
+    for (const o of delivered) {
+      for (const item of (o as any).items) {
+        deliveredItemsMap[item.productId] = (deliveredItemsMap[item.productId] ?? 0) + item.quantity;
+      }
+    }
+    const stock = locationStocks.map((s: any) => ({
+      productName:  s.product.name,
+      stockStart:   s.quantity + (deliveredItemsMap[s.productId] ?? 0),
+      delivered:    deliveredItemsMap[s.productId] ?? 0,
+      entries:      0,
+      stockCurrent: s.quantity,
+    }));
+
+    return {
+      date: dateStr,
+      partner: { id: partner.id, name: partner.name, city: partner.city },
+      orders: orders.map((o, idx) => ({
+        num: idx + 1,
+        id: o.id,
+        orderNumber: o.orderNumber,
+        city: o.city,
+        address: o.address,
+        customerName: o.customerName,
+        customerPhone: (o as any).customerPhone,
+        agentName: (o as any).agent?.name ?? o.deliveryPersonName ?? null,
+        collectedUsd: Number((o as any).collectedUsd ?? 0),
+        collectedCdf: Number((o as any).collectedCdf ?? 0),
+        totalAmount:  Number(o.totalAmount),
+        deliveryFee:  Number(o.deliveryFee),
+        notes:        o.notes,
+        items:        (o as any).items.map((i: any) => ({ name: i.product.name, quantity: i.quantity })),
+        status:       o.status,
+      })),
+      summary: {
+        total: orders.length,
+        delivered: delivered.length,
+        failed: failed.length,
+        cancelled: cancelled.length,
+        pending: pending.length,
+        successRate: orders.length > 0 ? Math.round((delivered.length / orders.length) * 100) : 0,
+        totalCollectedUsd,
+        totalCollectedCdf,
+        totalDeliveryFees,
+        soldeUsd: totalCollectedUsd,
+        soldeCdf: totalCollectedCdf - totalDeliveryFees,
+      },
+      cumulativeSolde: { soldeUsd: cumulUsd, soldeCdf: cumulCdf },
+      stock,
+    };
+  }
+
+  // ── Reports history ───────────────────────────────────────────────
+
+  @Public()
+  @Get(':token/reports-history')
+  async getReportsHistory(
+    @Param('token') token: string,
+    @Query('from') fromStr?: string,
+    @Query('to') toStr?: string,
+  ) {
+    const partner = await this.prisma.deliveryPartner.findUnique({ where: { token } });
+    if (!partner) return null;
+
+    const from = new Date(fromStr ?? new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10));
+    from.setHours(0, 0, 0, 0);
+    const to = new Date(toStr ?? new Date().toISOString().slice(0, 10));
+    to.setHours(23, 59, 59, 999);
+
+    const orders = await this.prisma.manualOrder.findMany({
+      where: {
+        partnerId: partner.id,
+        OR: [
+          { dispatchedAt: { gte: from, lte: to } },
+          { dispatchedAt: null, createdAt: { gte: from, lte: to } },
+        ],
+      },
+      select: {
+        status: true, totalAmount: true, deliveryFee: true,
+        collectedUsd: true, collectedCdf: true,
+        dispatchedAt: true, createdAt: true,
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    // Group by calendar day
+    const dayMap = new Map<string, typeof orders>();
+    for (const o of orders) {
+      const d = ((o.dispatchedAt ?? o.createdAt) as Date).toISOString().slice(0, 10);
+      if (!dayMap.has(d)) dayMap.set(d, []);
+      dayMap.get(d)!.push(o);
+    }
+
+    return Array.from(dayMap.entries())
+      .sort((a, b) => b[0].localeCompare(a[0]))
+      .map(([date, dayOrders]) => {
+        const delivered = dayOrders.filter(o => o.status === 'delivered');
+        const failed    = dayOrders.filter(o => ['returned', 'fake'].includes(o.status));
+        const totalUsd  = delivered.reduce((s, o) => s + Number((o as any).collectedUsd ?? o.totalAmount), 0);
+        const totalCdf  = delivered.reduce((s, o) => s + Number((o as any).collectedCdf ?? 0), 0);
+        const totalFees = delivered.reduce((s, o) => s + Number(o.deliveryFee), 0);
+        return {
+          date,
+          total:     dayOrders.length,
+          delivered: delivered.length,
+          failed:    failed.length,
+          cancelled: dayOrders.filter(o => o.status === 'cancelled').length,
+          totalCollectedUsd: totalUsd,
+          totalCollectedCdf: totalCdf,
+          totalDeliveryFees: totalFees,
+          soldeUsd: totalUsd,
+          soldeCdf: totalCdf - totalFees,
+        };
+      });
+  }
+
+  // ── Finances ──────────────────────────────────────────────────────
+
+  @Public()
+  @Post(':token/payments')
+  async createPayment(
+    @Param('token') token: string,
+    @Body() body: { amount: number; currency?: string; proofUrl?: string; notes?: string },
+  ) {
+    const partner = await this.prisma.deliveryPartner.findUnique({ where: { token } });
+    if (!partner) return null;
+    return this.prisma.partnerPayment.create({
+      data: {
+        partnerId: partner.id,
+        amount: body.amount,
+        currency: body.currency ?? 'FC',
+        proofUrl: body.proofUrl ?? null,
+        notes: body.notes ?? null,
+        status: 'pending',
+      },
+    });
   }
 }

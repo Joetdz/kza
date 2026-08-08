@@ -100,6 +100,79 @@ export interface ManualOrder {
   createdAt: string;
 }
 
+export interface DailyReportOrder {
+  num: number;
+  id: string;
+  orderNumber: number;
+  city: string;
+  address: string;
+  customerName: string;
+  customerPhone: string | null;
+  agentName: string | null;
+  collectedUsd: number;
+  collectedCdf: number;
+  totalAmount: number;
+  deliveryFee: number;
+  notes: string | null;
+  items: { name: string; quantity: number }[];
+  status: string;
+}
+
+export interface DailyReportSummary {
+  date: string;
+  total: number;
+  delivered: number;
+  failed: number;
+  cancelled: number;
+  totalCollectedUsd: number;
+  totalCollectedCdf: number;
+  totalDeliveryFees: number;
+  soldeUsd: number;
+  soldeCdf: number;
+}
+
+export interface DailyReport {
+  date: string;
+  partner: { id: string; name: string; city: string | null };
+  orders: DailyReportOrder[];
+  summary: {
+    total: number;
+    delivered: number;
+    failed: number;
+    cancelled: number;
+    pending: number;
+    successRate: number;
+    totalCollectedUsd: number;
+    totalCollectedCdf: number;
+    totalDeliveryFees: number;
+    soldeUsd: number;
+    soldeCdf: number;
+  };
+  cumulativeSolde: { soldeUsd: number; soldeCdf: number };
+  stock: { productName: string; stockStart: number; delivered: number; entries: number; stockCurrent: number }[];
+}
+
+export interface PartnerPayment {
+  id: string;
+  partnerId: string;
+  partner?: { id: string; name: string; city: string | null };
+  amount: number;
+  currency: string;
+  proofUrl: string | null;
+  status: 'pending' | 'confirmed' | 'rejected';
+  notes: string | null;
+  confirmedAt: string | null;
+  createdAt: string;
+}
+
+export interface PartnerFinances {
+  totalOwed: number;
+  totalPaid: number;
+  balance: number;
+  deliveredOrders: { id: string; orderNumber: number; customerName: string; totalAmount: number; createdAt: string }[];
+  payments: PartnerPayment[];
+}
+
 export interface PartnerReport {
   partner: DeliveryPartner;
   locationStock: LocationStock[];
@@ -140,6 +213,8 @@ export const logisticsApi = {
     req<unknown>(`/my/logistics/partners/${id}`, { method: 'DELETE' }),
   getPartnerReport: (partnerId: string, period: 'daily' | 'weekly' | 'monthly') =>
     req<PartnerReport>(`/my/logistics/partners/${partnerId}/report?period=${period}`),
+  getDailyReport: (partnerId: string, date: string) =>
+    req<DailyReport>(`/my/logistics/partners/${partnerId}/daily-report?date=${date}`),
 
   // Orders
   getOrders: () => req<ManualOrder[]>('/my/logistics/orders'),
@@ -155,8 +230,10 @@ export const logisticsApi = {
     scheduledAt?: string;
     items: { productId: string; quantity: number; unitPrice: number }[];
   }) => req<ManualOrder>('/my/logistics/orders', { method: 'POST', body: JSON.stringify(body) }),
-  updateStatus: (id: string, status: string, deliveryPersonName?: string) =>
-    req<unknown>(`/my/logistics/orders/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status, deliveryPersonName }) }),
+  updateStatus: (id: string, status: string, deliveryPersonName?: string, partnerId?: string, collectedUsd?: number, collectedCdf?: number) =>
+    req<unknown>(`/my/logistics/orders/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status, deliveryPersonName, partnerId, collectedUsd, collectedCdf }) }),
+  reschedule: (id: string, scheduledAt: string | null) =>
+    req<unknown>(`/my/logistics/orders/${id}/reschedule`, { method: 'PATCH', body: JSON.stringify({ scheduledAt }) }),
   notifyPartner: (orderId: string) =>
     req<{ sent: boolean; reason?: string }>(`/my/logistics/orders/${orderId}/notify-partner`, { method: 'POST' }),
   deleteOrder: (id: string) =>
@@ -172,11 +249,17 @@ export const logisticsApi = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pin }),
       }).then(r => r.json()),
-    updateOrderStatus: (token: string, orderId: string, body: { status: string; deliveryPersonName?: string }): Promise<ManualOrder> =>
+    updateOrderStatus: (token: string, orderId: string, body: { status: string; deliveryPersonName?: string; collectedUsd?: number; collectedCdf?: number }): Promise<ManualOrder> =>
       fetch(`${BASE}/partner-portal/${token}/orders/${orderId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
+      }).then(r => r.json()),
+    reschedule: (token: string, orderId: string, scheduledAt: string | null): Promise<ManualOrder> =>
+      fetch(`${BASE}/partner-portal/${token}/orders/${orderId}/reschedule`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scheduledAt }),
       }).then(r => r.json()),
     getAgents: (token: string): Promise<DeliveryAgent[]> =>
       fetch(`${BASE}/partner-portal/${token}/agents`).then(r => r.json()),
@@ -194,7 +277,40 @@ export const logisticsApi = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ agentId }),
       }).then(r => r.json()),
+    getDailyReport: (token: string, date: string): Promise<DailyReport> =>
+      fetch(`${BASE}/partner-portal/${token}/daily-report?date=${date}`).then(r => {
+        if (!r.ok) throw new Error(`API ${r.status}`);
+        return r.json();
+      }),
+    getReportsHistory: (token: string, from: string, to: string): Promise<DailyReportSummary[]> =>
+      fetch(`${BASE}/partner-portal/${token}/reports-history?from=${from}&to=${to}`).then(r => {
+        if (!r.ok) throw new Error(`API ${r.status}`);
+        return r.json();
+      }),
+    getFinances: (token: string): Promise<PartnerFinances> =>
+      fetch(`${BASE}/partner-portal/${token}/finances`).then(r => {
+        if (!r.ok) throw new Error(`API ${r.status}`);
+        return r.json();
+      }),
+    createPayment: (token: string, body: { amount: number; currency?: string; proofUrl?: string; notes?: string }): Promise<PartnerPayment> =>
+      fetch(`${BASE}/partner-portal/${token}/payments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }).then(r => {
+        if (!r.ok) throw new Error(`API ${r.status}`);
+        return r.json();
+      }),
   },
+
+  // Admin — versements
+  getPayments: (status?: string) =>
+    req<PartnerPayment[]>(`/my/logistics/payments${status ? `?status=${status}` : ''}`),
+  confirmPayment: (id: string, notes?: string) =>
+    req<PartnerPayment>(`/my/logistics/payments/${id}/confirm`, { method: 'PATCH', body: JSON.stringify({ notes }) }),
+  rejectPayment: (id: string, notes?: string) =>
+    req<PartnerPayment>(`/my/logistics/payments/${id}/reject`, { method: 'PATCH', body: JSON.stringify({ notes }) }),
+
   resetPartnerPin: (id: string) =>
     req<unknown>(`/my/logistics/partners/${id}/reset-pin`, { method: 'PATCH' }),
 };
