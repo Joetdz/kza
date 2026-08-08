@@ -229,20 +229,25 @@ export class WhatsAppService implements OnModuleDestroy {
     });
 
     this.sockets.set(userId, sock);
+    this.logger.log(`[WA-DEBUG] Socket created for ${userId}, pairingPhone=${pairingPhone ?? 'none'}`);
 
     sock.ev.on('creds.update', saveCreds);
 
     sock.ev.on('connection.update', async (update) => {
       const { connection, lastDisconnect, qr } = update;
+      this.logger.log(`[WA-DEBUG] connection.update userId=${userId} connection=${connection ?? 'null'} hasQr=${!!qr}`);
 
       if (qr) {
         if (pairingPhone) {
           this.clearPairingTimeout(userId);
+          this.logger.log(`[WA-DEBUG] Requesting pairing code for ${pairingPhone}`);
           try {
             const code = await sock.requestPairingCode(pairingPhone.replace(/\D/g, ''));
+            this.logger.log(`[WA-DEBUG] Pairing code received: ${code}`);
             this.pairingPhones.delete(userId);
             this.emit('pairing_code', userId, { code });
           } catch (err: any) {
+            this.logger.error(`[WA-DEBUG] requestPairingCode failed: ${err?.message}`);
             this.pairingPhones.delete(userId);
             this.emit('pairing_error', userId, {
               message: 'Impossible de générer le code. Réessayez.',
