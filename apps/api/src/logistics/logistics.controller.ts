@@ -252,27 +252,7 @@ export class LogisticsController {
       include: { items: { include: { product: true } }, partner: true, location: true },
     });
 
-    const today = new Date().toISOString().split('T')[0];
-    for (const item of body.items) {
-      await Promise.all([
-        this.prisma.stockMovement.create({
-          data: {
-            userId: user.id,
-            businessId: user.businessId ?? user.id,
-            productId: item.productId,
-            type: 'out',
-            quantity: item.quantity,
-            reason: `Commande manuelle #${orderNumber.toString().padStart(4, '0')}`,
-            date: new Date(today),
-          },
-        }),
-        this.prisma.product.update({
-          where: { id: item.productId },
-          data: { quantity: { decrement: item.quantity } },
-        }),
-      ]);
-    }
-
+    // Stock is decremented only when the order is marked "delivered" — not at creation.
     return order;
   }
 
@@ -396,6 +376,28 @@ export class LogisticsController {
     }
 
     if (body.status === 'delivered' && order.status !== 'delivered') {
+      // Decrement product stock + create movement when delivered (not at order creation)
+      const today = new Date().toISOString().split('T')[0];
+      for (const item of order.items) {
+        await Promise.all([
+          this.prisma.stockMovement.create({
+            data: {
+              userId: order.userId,
+              businessId: order.businessId ?? null,
+              productId: item.productId,
+              type: 'out',
+              quantity: item.quantity,
+              reason: `Commande #${order.orderNumber.toString().padStart(4, '0')} livrée`,
+              date: new Date(today),
+            },
+          }),
+          this.prisma.product.update({
+            where: { id: item.productId },
+            data: { quantity: { decrement: item.quantity } },
+          }),
+        ]).catch(() => {});
+      }
+
       // Decrement location stock — use order's locationId or fall back to partner's location
       const locationId = order.locationId ?? (order.partner as any)?.location?.id ?? null;
       if (locationId) {
@@ -407,7 +409,7 @@ export class LogisticsController {
         }
       }
 
-      // Auto-create sale — no stock decrement (already done at order creation)
+      // Auto-create sale
       await this.prisma.sale.create({
         data: {
           channel: 'logistics',
@@ -537,28 +539,7 @@ export class LogisticsController {
     });
     if (!order) throw new Error('Brouillon introuvable');
 
-    // Apply stock movements now that draft is confirmed
-    const today = new Date().toISOString().split('T')[0];
-    for (const item of order.items) {
-      await Promise.all([
-        this.prisma.stockMovement.create({
-          data: {
-            userId: user.id,
-            businessId: user.businessId ?? user.id,
-            productId: item.productId,
-            type: 'out',
-            quantity: item.quantity,
-            reason: `Commande #${order.orderNumber.toString().padStart(4, '0')} (confirmée depuis brouillon)`,
-            date: new Date(today),
-          },
-        }),
-        this.prisma.product.update({
-          where: { id: item.productId },
-          data: { quantity: { decrement: item.quantity } },
-        }),
-      ]).catch(() => {});
-    }
-
+    // Stock is decremented only when the order is marked "delivered" — not at confirmation.
     const confirmed = await this.prisma.manualOrder.update({
       where: { id },
       data: { isDraft: false, status: 'pending' },

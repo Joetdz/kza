@@ -21,11 +21,17 @@ import pino from 'pino';
 // Normalize a phone number to DRC format (0XXXXXXXXX or +243XXXXXXXXX)
 function normalizeDrcPhone(raw: string | null): string | null {
   if (!raw) return null;
-  const digits = raw.replace(/\D/g, '');
+  // Strip WhatsApp JID suffixes before normalizing
+  const stripped = raw
+    .replace(/@c\.us$/, '')
+    .replace(/@s\.whatsapp\.net$/, '')
+    .replace(/@lid$/, '');
+  const digits = stripped.replace(/\D/g, '');
   if (digits.length === 12 && digits.startsWith('243')) return '+' + digits; // +243XXXXXXXXX
   if (digits.length === 10 && digits.startsWith('0')) return digits;         // 0XXXXXXXXX
   if (digits.length === 9) return '0' + digits;                              // 8XXXXXXXX → 08XXXXXXXX
-  return raw;
+  if (digits.length > 12) return null; // LID or garbage, cannot normalize
+  return stripped || null;
 }
 
 // Baileys JID (@s.whatsapp.net) → legacy @c.us format stored in DB
@@ -100,6 +106,8 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
   private labelNames = new Map<string, string>();
   // Timestamp (ms) when WhatsApp connection opened — used to skip historical label events
   private connectionOpenAt = new Map<string, number>();
+  // LID (Linked Device ID) → real phone (@c.us format): key = `userId:lid`
+  private lidToPhone = new Map<string, string>();
   // Trigger label names (case/accent-insensitive) that auto-create a draft order.
   // Short prefixes — matching uses .includes() so "livraison programmée" still matches "livraison".
   private static DRAFT_TRIGGER_LABELS = ['livraison', 'new order', 'commande', 'nouvelle commande'];
@@ -202,6 +210,26 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
     } catch {
       // Not all WhatsApp accounts support label queries — silently ignore
     }
+  }
+
+  // Resolve a JID or LID to the real phone number (@c.us format).
+  // WhatsApp v7 multi-device uses LIDs in label events instead of phone numbers.
+  private resolvePhone(userId: string, jid: string): string {
+    // Already a normal phone JID
+    if (jid.endsWith('@s.whatsapp.net')) return jidToDb(jid);
+    // Remove the suffix to get the raw ID
+    const raw = jid.replace(/@c\.us$/, '').replace(/@lid$/, '').replace(/@s\.whatsapp\.net$/, '');
+    // Check if it looks like a real DRC/international phone (≤13 digits)
+    const digits = raw.replace(/\D/g, '');
+    if (digits.length <= 13) return jidToDb(jid); // treat as normal phone
+    // Looks like a LID (>13 digits) — look up mapping
+    const mapped = this.lidToPhone.get(`${userId}:${raw}`);
+    if (mapped) {
+      this.logger.log(`LID resolved: ${raw} → ${mapped}`);
+      return mapped;
+    }
+    this.logger.warn(`LID ${raw} not yet mapped — using raw JID as fallback`);
+    return jidToDb(jid);
   }
 
   private scheduleReconnect(userId: string) {
@@ -420,11 +448,38 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
       }
     });
 
-    // Contact name updates
+    // Contact name updates + LID → phone mapping
     sock.ev.on('contacts.upsert', (contacts) => {
       for (const c of contacts) {
         const name = c.notify || c.name || null;
         if (name && c.id) this.contactNames.set(`${userId}:${c.id}`, name);
+        // Build LID ↔ phone map: if contact has a LID field alongside a normal JID
+        const lid: string | undefined = (c as any).lid;
+        if (lid && c.id?.endsWith('@s.whatsapp.net')) {
+          const lidRaw = lid.replace(/@lid$/, '').replace(/@c\.us$/, '');
+          this.lidToPhone.set(`${userId}:${lidRaw}`, jidToDb(c.id));
+        }
+        // Reverse: if the contact itself IS a LID and has a pn (phone number) field
+        const pn: string | undefined = (c as any).pn ?? (c as any).phoneNumber;
+        if (pn && c.id && (c.id.endsWith('@lid') || c.id.endsWith('@c.us'))) {
+          const lidRaw = c.id.replace(/@lid$/, '').replace(/@c\.us$/, '');
+          const digits = lidRaw.replace(/\D/g, '');
+          if (digits.length > 12) { // likely a LID
+            this.lidToPhone.set(`${userId}:${lidRaw}`, jidToDb(pn));
+          }
+        }
+      }
+    });
+
+    // LID-to-phone mapping pushed by WhatsApp (Baileys v7 multi-device)
+    sock.ev.on('lid-mapping.update' as any, (data: any) => {
+      const lid: string = data?.lid ?? '';
+      const pn: string = data?.pn ?? '';
+      if (lid && pn) {
+        const lidRaw = lid.replace(/@lid$/, '').replace(/@c\.us$/, '');
+        const phone = jidToDb(pn);
+        this.lidToPhone.set(`${userId}:${lidRaw}`, phone);
+        this.logger.log(`LID mapped: ${lidRaw} → ${phone}`);
       }
     });
 
@@ -522,7 +577,9 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
         const isTrigger = WhatsAppService.DRAFT_TRIGGER_LABELS.some(t => normalized.includes(t));
         if (!isTrigger) return;
 
-        const phone = jidToDb(chatId);
+        // Resolve LID to real phone number (WhatsApp v7 multi-device uses LIDs in label events)
+        const phone = this.resolvePhone(userId, chatId);
+        this.logger.log(`Label handler → chatId: ${chatId}, resolved phone: ${phone}`);
 
         // Upsert contact — may not exist if conversation was never opened in CRM
         let contact = await this.prisma.whatsAppContact.findUnique({
