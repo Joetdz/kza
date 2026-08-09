@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleDestroy, HttpException, HttpStatus } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit, HttpException, HttpStatus } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AiService } from './ai.service';
 import { AutomationService } from './automation.service';
@@ -60,7 +60,7 @@ export type WaGatewayCallback = (event: string, userId: string, data: any) => vo
 const silentLogger = pino({ level: 'silent' });
 
 @Injectable()
-export class WhatsAppService implements OnModuleDestroy {
+export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(WhatsAppService.name);
   private sockets = new Map<string, WASocket>();
   private connectedUsers = new Set<string>();
@@ -88,14 +88,35 @@ export class WhatsAppService implements OnModuleDestroy {
   private groupsCache = new Map<string, Array<{ id: string; name: string; participants: number }>>();
   // WhatsApp Business label cache: key = `userId:labelId` → label name
   private labelNames = new Map<string, string>();
-  // Trigger label names (case/accent-insensitive) that auto-create a draft order
-  private static DRAFT_TRIGGER_LABELS = ['livraison programmee', 'livraison programmée', 'new order', 'commande confirmee', 'commande confirmée'];
+  // Trigger label names (case/accent-insensitive) that auto-create a draft order.
+  // Short prefixes — matching uses .includes() so "livraison programmée" still matches "livraison".
+  private static DRAFT_TRIGGER_LABELS = ['livraison', 'new order', 'commande', 'nouvelle commande'];
 
   constructor(
     private prisma: PrismaService,
     private aiService: AiService,
     private automationService: AutomationService,
   ) {}
+
+  // ── Auto-reconnect on server startup ─────────────────────────────────────────
+
+  async onModuleInit(): Promise<void> {
+    try {
+      const sessions = await this.prisma.whatsAppSession.findMany({ where: { connected: true } });
+      if (sessions.length === 0) return;
+      this.logger.log(`Auto-reconnecting ${sessions.length} WhatsApp session(s) after server restart...`);
+      sessions.forEach((session, idx) => {
+        // Stagger by 3 s per user to avoid hammering WA simultaneously
+        setTimeout(() => {
+          this.connect(session.userId).catch(err =>
+            this.logger.error(`Auto-reconnect failed for ${session.userId}:`, err?.message),
+          );
+        }, idx * 3000);
+      });
+    } catch (err: any) {
+      this.logger.error('onModuleInit auto-reconnect error:', err?.message);
+    }
+  }
 
   setGatewayEmit(fn: WaGatewayCallback) {
     this.gatewayEmit = fn;
@@ -477,10 +498,14 @@ export class WhatsAppService implements OnModuleDestroy {
         if (!isTrigger) return;
 
         const phone = jidToDb(chatId);
-        const contact = await this.prisma.whatsAppContact.findUnique({
+
+        // Upsert contact — may not exist if conversation was never opened in CRM
+        let contact = await this.prisma.whatsAppContact.findUnique({
           where: { userId_phone: { userId, phone } },
         });
-        if (!contact) return;
+        if (!contact) {
+          contact = await this.upsertContact(userId, phone);
+        }
 
         // Check no draft already exists for this contact
         const existing = await this.prisma.manualOrder.findFirst({
@@ -512,7 +537,16 @@ export class WhatsAppService implements OnModuleDestroy {
           }
         }
 
-        const bizId = contact.businessId ?? userId;
+        // Get business ID — prefer contact's business, fallback to first business of this user
+        let bizId: string = (contact as any).businessId ?? null;
+        if (!bizId) {
+          const biz = await this.prisma.business.findFirst({
+            where: { userId },
+            orderBy: { createdAt: 'asc' },
+            select: { id: true },
+          });
+          bizId = biz?.id ?? userId;
+        }
         const orderCount = await this.prisma.manualOrder.count({ where: { userId, businessId: bizId } });
         const qty = details.productQuantity ?? 1;
 
