@@ -18,6 +18,16 @@ import * as path from 'path';
 import * as fs from 'fs';
 import pino from 'pino';
 
+// Normalize a phone number to DRC format (0XXXXXXXXX or +243XXXXXXXXX)
+function normalizeDrcPhone(raw: string | null): string | null {
+  if (!raw) return null;
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length === 12 && digits.startsWith('243')) return '+' + digits; // +243XXXXXXXXX
+  if (digits.length === 10 && digits.startsWith('0')) return digits;         // 0XXXXXXXXX
+  if (digits.length === 9) return '0' + digits;                              // 8XXXXXXXX → 08XXXXXXXX
+  return raw;
+}
+
 // Baileys JID (@s.whatsapp.net) → legacy @c.us format stored in DB
 function jidToDb(jid: string): string {
   if (!jid) return jid;
@@ -556,7 +566,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
             businessId: bizId,
             orderNumber: orderCount + 1,
             customerName: details.customerName ?? contact.leadName ?? contact.displayName ?? 'Client WhatsApp',
-            customerPhone: details.customerPhone ?? phone ?? null,
+            customerPhone: normalizeDrcPhone(details.customerPhone) ?? normalizeDrcPhone(phone) ?? null,
             city: details.city ?? contact.leadCity ?? '',
             address: details.address ?? '',
             deliveryFee: details.deliveryFeeCdf ?? 0,

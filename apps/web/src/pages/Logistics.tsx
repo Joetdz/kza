@@ -77,6 +77,7 @@ export function Logistics() {
   // Draft order editing
   const [draftEditId, setDraftEditId] = useState<string | null>(null);
   const [draftEditForm, setDraftEditForm] = useState<Partial<ManualOrder & { items: any[] }>>({});
+  const [draftEditItems, setDraftEditItems] = useState<{ productId: string; quantity: string; unitPrice: string }[]>([]);
   const [confirmingDraft, setConfirmingDraft] = useState<string | null>(null);
 
   // Partner phone inline edit
@@ -392,6 +393,9 @@ export function Logistics() {
 
   async function handleSaveDraftEdit(id: string) {
     try {
+      const validItems = draftEditItems
+        .filter(i => i.productId)
+        .map(i => ({ productId: i.productId, quantity: Number(i.quantity) || 1, unitPrice: Number(i.unitPrice) || 0 }));
       const updated = await logisticsApi.editDraft(id, {
         customerName: draftEditForm.customerName,
         customerPhone: draftEditForm.customerPhone ?? undefined,
@@ -399,6 +403,7 @@ export function Logistics() {
         address: draftEditForm.address,
         deliveryFee: draftEditForm.deliveryFee !== undefined ? Number(draftEditForm.deliveryFee) : undefined,
         notes: draftEditForm.notes ?? undefined,
+        items: validItems.length > 0 ? validItems : undefined,
       });
       setOrders(prev => prev.map(o => o.id === id ? updated : o));
       setDraftEditId(null);
@@ -669,12 +674,58 @@ export function Logistics() {
                           <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">Brouillon IA — Édition</span>
                           <span className="font-black text-indigo-600 text-sm">{orderNum(o.orderNumber)}</span>
                         </div>
+
+                        {/* Produits */}
+                        <div>
+                          <p className="text-[10px] text-gray-400 mb-1.5 font-semibold">Produits *</p>
+                          {draftEditItems.map((item, idx) => {
+                            const prod = products.find(p => p.id === item.productId);
+                            return (
+                              <div key={idx} className="flex gap-1.5 mb-1.5 items-center">
+                                {prod?.imageUrl
+                                  ? <img src={prod.imageUrl} alt={prod.name} className="w-7 h-7 rounded-lg object-cover border border-gray-100 shrink-0" />
+                                  : <div className="w-7 h-7 rounded-lg bg-gray-100 shrink-0" />}
+                                <select value={item.productId}
+                                  onChange={e => {
+                                    const p = products.find(pr => pr.id === e.target.value);
+                                    setDraftEditItems(items => items.map((it, i) => i === idx
+                                      ? { ...it, productId: e.target.value, unitPrice: p ? String(p.sellingPrice) : it.unitPrice }
+                                      : it));
+                                  }}
+                                  className="flex-1 border border-gray-200 rounded-lg px-2 py-1.5 text-xs outline-none focus:ring-1 focus:ring-indigo-400 bg-white">
+                                  <option value="">— Produit</option>
+                                  {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                </select>
+                                <input type="number" min="1" value={item.quantity} placeholder="Qté"
+                                  onChange={e => setDraftEditItems(items => items.map((it, i) => i === idx ? { ...it, quantity: e.target.value } : it))}
+                                  className="w-12 border border-gray-200 rounded-lg px-1.5 py-1.5 text-xs outline-none text-center" />
+                                <div className="relative">
+                                  <input type="number" min="0" value={item.unitPrice} placeholder="Prix"
+                                    onChange={e => setDraftEditItems(items => items.map((it, i) => i === idx ? { ...it, unitPrice: e.target.value } : it))}
+                                    className="w-16 border border-gray-200 rounded-lg pl-1.5 pr-5 py-1.5 text-xs outline-none" />
+                                  <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] text-gray-400 font-bold">$</span>
+                                </div>
+                                {draftEditItems.length > 1 && (
+                                  <button onClick={() => setDraftEditItems(items => items.filter((_, i) => i !== idx))} className="text-red-400 hover:text-red-600">
+                                    <X size={13} />
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          })}
+                          <button onClick={() => setDraftEditItems(items => [...items, { productId: '', quantity: '1', unitPrice: '' }])}
+                            className="flex items-center gap-1 text-[11px] text-indigo-600 font-semibold mt-0.5 hover:text-indigo-700">
+                            <Plus size={11} /> Ajouter un produit
+                          </button>
+                        </div>
+
+                        {/* Champs client */}
                         <div className="grid grid-cols-2 gap-2">
                           {[
                             { label: 'Nom client', key: 'customerName' as const },
                             { label: 'Téléphone', key: 'customerPhone' as const },
                             { label: 'Ville', key: 'city' as const },
-                            { label: 'Adresse', key: 'address' as const },
+                            { label: 'Adresse complète', key: 'address' as const },
                           ].map(({ label, key }) => (
                             <div key={key} className={key === 'address' ? 'col-span-2' : ''}>
                               <p className="text-[10px] text-gray-400 mb-1">{label}</p>
@@ -702,6 +753,7 @@ export function Logistics() {
                             />
                           </div>
                         </div>
+
                         <div className="flex gap-2">
                           <button onClick={() => handleSaveDraftEdit(o.id)} className="flex-1 py-2 bg-indigo-600 text-white rounded-xl text-xs font-semibold hover:bg-indigo-700">Sauvegarder</button>
                           <button onClick={() => setDraftEditId(null)} className="px-3 py-2 bg-gray-100 text-gray-600 rounded-xl text-xs font-semibold hover:bg-gray-200">Annuler</button>
@@ -774,7 +826,13 @@ export function Logistics() {
                         {o.isDraft && (
                           <>
                             <button
-                              onClick={() => { setDraftEditId(o.id); setDraftEditForm({ customerName: o.customerName, customerPhone: o.customerPhone ?? '', city: o.city, address: o.address, deliveryFee: Number(o.deliveryFee), notes: o.notes ?? '' }); }}
+                              onClick={() => {
+                                setDraftEditId(o.id);
+                                setDraftEditForm({ customerName: o.customerName, customerPhone: o.customerPhone ?? '', city: o.city, address: o.address, deliveryFee: Number(o.deliveryFee), notes: o.notes ?? '' });
+                                setDraftEditItems(o.items.length > 0
+                                  ? o.items.map((i: any) => ({ productId: i.product?.id ?? i.productId ?? '', quantity: String(i.quantity), unitPrice: String(i.unitPrice) }))
+                                  : [{ productId: '', quantity: '1', unitPrice: '' }]);
+                              }}
                               className="flex items-center gap-1 px-2.5 py-1.5 bg-amber-50 text-amber-700 rounded-lg text-xs font-semibold hover:bg-amber-100">
                               <Edit2 size={12} /> Modifier
                             </button>

@@ -433,29 +433,36 @@ Réponds UNIQUEMENT en JSON, rien d'autre.`;
     notes: string | null;
   }> {
     const conversation = history
-      .slice(-20)
-      .map(m => `${m.direction === 'in' ? 'Client' : 'Agent'}: ${m.content}`)
+      .slice(-40)
+      .map(m => `${m.direction === 'in' ? 'Client' : 'Vendeur'}: ${m.content}`)
       .join('\n');
 
-    const prompt = `Tu analyses une conversation WhatsApp entre un vendeur et un client pour extraire les détails d'une commande confirmée.
+    const prompt = `Tu es un assistant expert pour un e-commerce en RDC (République Démocratique du Congo).
+Analyse cette conversation WhatsApp et extrais les informations de la commande.
 
 Conversation :
 ${conversation}
 
-Extrais les informations suivantes. Réponds UNIQUEMENT en JSON valide :
+Réponds UNIQUEMENT avec un objet JSON valide, sans texte avant ni après :
 {
   "customerName": string|null,
   "customerPhone": string|null,
   "city": string|null,
   "address": string|null,
   "productName": string|null,
-  "productQuantity": number (défaut 1),
-  "agreedPriceUsd": number|null (prix en dollars convenus, sans le signe $),
-  "deliveryFeeCdf": number|null (frais de livraison en FC, sans le symbole),
-  "notes": string|null (notes supplémentaires pertinentes)
+  "productQuantity": number,
+  "agreedPriceUsd": number|null,
+  "deliveryFeeCdf": number|null,
+  "notes": string|null
 }
 
-Ne devine pas les informations absentes — mets null si non mentionné dans la conversation.`;
+Règles strictes :
+- customerPhone : normalise en format DRC — 0XXXXXXXXX (ex: 0898495566) ou +243XXXXXXXXX (ex: +243898495566). Si tu vois 9 chiffres sans 0 devant, ajoute le 0. Ne retourne jamais un format WhatsApp brut (ex: +243812345678 → ok, 812345678 → ajoute 0 devant → 0812345678).
+- agreedPriceUsd : prix en dollars USD convenus pour le(s) produit(s) — pas les frais de livraison — nombre seul sans symbole.
+- deliveryFeeCdf : frais de livraison convenus en francs congolais FC — nombre seul sans symbole.
+- address : adresse complète fournie par le client (avenue, quartier, commune, numéro, références).
+- productQuantity : défaut 1 si non précisé.
+- Ne devine JAMAIS une info absente → null. Ne confonds pas le prix produit et les frais de livraison.`;
 
     try {
       const response = await this.openai.chat.completions.create({
