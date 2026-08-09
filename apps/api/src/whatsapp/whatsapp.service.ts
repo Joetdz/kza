@@ -98,9 +98,13 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
   private groupsCache = new Map<string, Array<{ id: string; name: string; participants: number }>>();
   // WhatsApp Business label cache: key = `userId:labelId` → label name
   private labelNames = new Map<string, string>();
+  // Timestamp (ms) when WhatsApp connection opened — used to skip historical label events
+  private connectionOpenAt = new Map<string, number>();
   // Trigger label names (case/accent-insensitive) that auto-create a draft order.
   // Short prefixes — matching uses .includes() so "livraison programmée" still matches "livraison".
   private static DRAFT_TRIGGER_LABELS = ['livraison', 'new order', 'commande', 'nouvelle commande'];
+  // Grace window after connection during which label events are treated as historical and ignored
+  private static LABEL_SYNC_GRACE_MS = 45_000; // 45 seconds
 
   constructor(
     private prisma: PrismaService,
@@ -335,8 +339,9 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
           })
         );
 
+        this.connectionOpenAt.set(userId, Date.now());
         this.emit('connected', userId, { phone });
-        this.logger.log(`WhatsApp connected for ${userId} (${phone})`);
+        this.logger.log(`WhatsApp connected for ${userId} (${phone}) — label sync window: ${WhatsAppService.LABEL_SYNC_GRACE_MS / 1000}s`);
 
         // Keep-alive: periodic presence update to prevent session idle-expiry
         this.clearKeepAlive(userId);
@@ -481,6 +486,16 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
     // Label applied to a chat from the physical WhatsApp Business app → auto-create draft order
     sock.ev.on('labels.association' as any, async (data: any) => {
       try {
+        // Ignore label events that arrive within the grace window after connection open.
+        // Baileys replays ALL historical label associations during initial app-state sync,
+        // which would create hundreds of bogus drafts. Only process real-time events.
+        const openAt = this.connectionOpenAt.get(userId) ?? 0;
+        const ageMs = Date.now() - openAt;
+        if (ageMs < WhatsAppService.LABEL_SYNC_GRACE_MS) {
+          this.logger.log(`Skipping historical label event for ${userId} (${Math.round(ageMs / 1000)}s after connect, grace=${WhatsAppService.LABEL_SYNC_GRACE_MS / 1000}s)`);
+          return;
+        }
+
         this.logger.log(`labels.association raw: ${JSON.stringify(data)}`);
 
         // Baileys structure: { type: 'add'|'remove', association: { chatId, labelId, type: 'label_chat'|'label_jid' } }
