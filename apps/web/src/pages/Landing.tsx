@@ -207,8 +207,8 @@ function FeatSection({
   const tagC = dark ? '#25d366' : INDIGO;
 
   return (
-    <section style={{ background: bg, padding: '88px 24px', overflow: 'hidden', position: 'relative' }}>
-      <div style={{
+    <section className="feat-section" style={{ background: bg, padding: '88px 24px', overflow: 'hidden', position: 'relative' }}>
+      <div className="feat-section-grid" style={{
         maxWidth: 1100, margin: '0 auto',
         display: 'grid',
         gridTemplateColumns: '1fr 1fr',
@@ -560,7 +560,7 @@ function FeedMockup() {
     { caption: 'Chaussures T38 — confort premium', price: '42 $', accent: AMBER },
   ];
   return (
-    <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
+    <div className="feed-reel" style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
       {slides.map(({ caption, price, accent }, i) => (
         <div key={i} style={{
           width: 130, height: 230, borderRadius: 18, overflow: 'hidden', position: 'relative',
@@ -732,15 +732,28 @@ export function Landing() {
         @keyframes bounce    { 0%,60%,100%{transform:translateY(0)} 30%{transform:translateY(-5px)} }
         @keyframes waBubble  { from{opacity:0;transform:translateX(-12px)} to{opacity:1;transform:translateX(0)} }
         @media (max-width:768px) {
-          .hero-grid,.feat-section-grid,.wa-grid { grid-template-columns:1fr !important; gap:36px !important; direction:ltr !important; }
+          .hero-grid,.feat-section-grid { grid-template-columns:1fr !important; gap:36px !important; direction:ltr !important; }
           .hero-scene { display:none !important; }
           .stats-grid { grid-template-columns:repeat(2,1fr) !important; }
+          .stat-item { border-right:none !important; padding:20px 16px !important; }
+          .feat-section { padding:56px 20px !important; }
+          .feed-reel { overflow-x:auto !important; justify-content:flex-start !important; padding-bottom:12px; -webkit-overflow-scrolling:touch; }
+          .hero-btns { flex-direction:column !important; align-items:stretch !important; }
+          .hero-btns button { text-align:center !important; justify-content:center !important; }
+          .hero-checks { flex-direction:column !important; gap:6px !important; }
+          .cta-strip { flex-direction:column !important; gap:12px !important; align-items:stretch !important; text-align:center; }
+          .cta-strip button { width:100% !important; justify-content:center !important; }
+        }
+        @media (max-width:480px) {
+          .nav-login { display:none !important; }
+          .nav-pill { padding:8px 8px 8px 16px !important; }
+          .hero-title { font-size:clamp(34px,8vw,48px) !important; }
         }
       `}</style>
 
       {/* ── NAVBAR pill ── */}
       <div style={{ position: 'fixed', top: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 50, width: 'calc(100% - 48px)', maxWidth: 1040 }}>
-        <nav style={{ background: WHITE, borderRadius: 100, boxShadow: '0 4px 32px rgba(15,13,11,0.10)', padding: '10px 10px 10px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <nav className="nav-pill" style={{ background: WHITE, borderRadius: 100, boxShadow: '0 4px 32px rgba(15,13,11,0.10)', padding: '10px 10px 10px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
             <div style={{ width: 32, height: 32, borderRadius: 10, background: INDIGO, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <span style={{ color: '#fff', fontWeight: 900, fontSize: 15 }}>K</span>
@@ -748,7 +761,7 @@ export function Landing() {
             <span style={{ fontWeight: 800, fontSize: 15, letterSpacing: '-0.02em', color: INK }}>KZA Manager</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <button onClick={() => openAuth('login')} style={{ padding: '8px 18px', borderRadius: 100, background: 'transparent', border: 'none', color: INK2, fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>Connexion</button>
+            <button className="nav-login" onClick={() => openAuth('login')} style={{ padding: '8px 18px', borderRadius: 100, background: 'transparent', border: 'none', color: INK2, fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>Connexion</button>
             <button onClick={() => openAuth('register')} style={{ padding: '10px 22px', borderRadius: 100, background: INDIGO, border: 'none', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}
               onMouseEnter={e => (e.currentTarget.style.opacity = '0.88')} onMouseLeave={e => (e.currentTarget.style.opacity = '1')}>
               Commencer
@@ -774,7 +787,7 @@ export function Landing() {
             <p style={{ fontSize: 17, lineHeight: 1.7, color: INK2, marginBottom: 36, maxWidth: 420 }}>
               Stock, ventes, WhatsApp CRM et IA business — tout ce qu'il faut pour faire croître votre boutique, en un seul endroit.
             </p>
-            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 28 }}>
+            <div className="hero-btns" style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 28 }}>
               <button onClick={() => openAuth('register')} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '14px 28px', borderRadius: 100, background: INDIGO, border: 'none', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer', boxShadow: `0 6px 24px ${INDIGO}40`, transition: 'all .2s' }}
                 onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = `0 12px 36px ${INDIGO}50`; }}
                 onMouseLeave={e => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = `0 6px 24px ${INDIGO}40`; }}>
@@ -785,7 +798,7 @@ export function Landing() {
                 Se connecter
               </button>
             </div>
-            <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
+            <div className="hero-checks" style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
               {['Gratuit pour démarrer', 'Aucune carte requise', 'Support en français'].map(t => (
                 <div key={t} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: INK2 }}>
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
@@ -891,7 +904,7 @@ export function Landing() {
             { num: '20',      label: 'Pays africains' },
             { num: '24/7',    label: 'IA disponible' },
           ].map(({ num, label }, i) => (
-            <div key={label} style={{ padding: '28px 20px', textAlign: 'center', borderRight: i < 3 ? '1px solid rgba(15,13,11,0.07)' : 'none' }}>
+            <div key={label} className="stat-item" style={{ padding: '28px 20px', textAlign: 'center', borderRight: i < 3 ? '1px solid rgba(15,13,11,0.07)' : 'none' }}>
               <div style={{ fontSize: 36, fontWeight: 900, letterSpacing: '-0.04em', color: INK, fontVariantNumeric: 'tabular-nums', marginBottom: 4 }}>{num}</div>
               <div style={{ fontSize: 12, color: INK2 }}>{label}</div>
             </div>
@@ -1058,7 +1071,7 @@ export function Landing() {
       />
 
       {/* ── CTA ── */}
-      <section style={{ padding: '100px 24px', background: INK, position: 'relative', overflow: 'hidden' }}>
+      <section className="feat-section" style={{ padding: '100px 24px', background: INK, position: 'relative', overflow: 'hidden' }}>
         <div style={{ position: 'absolute', top: '-30%', left: '50%', transform: 'translateX(-50%)', width: 600, height: 600, borderRadius: '50%', background: `radial-gradient(circle,${INDIGO}20 0%,transparent 70%)`, pointerEvents: 'none' }} />
         <div style={{ maxWidth: 680, margin: '0 auto', textAlign: 'center', position: 'relative' }}>
           <h2 style={{ fontSize: 'clamp(32px,5vw,60px)', fontWeight: 900, letterSpacing: '-0.04em', lineHeight: 1.05, color: WHITE, marginBottom: 20 }}>

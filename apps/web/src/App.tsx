@@ -27,6 +27,7 @@ import { Automations } from './pages/whatsapp/Automations';
 import { KnowledgeBase } from './pages/whatsapp/KnowledgeBase';
 import { Audience } from './pages/whatsapp/Audience';
 import { BusinessAdvisor } from './components/BusinessAdvisor';
+import PwaInstallBanner from './components/PwaInstallBanner';
 import { useStore } from './store/useStore';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 
@@ -160,6 +161,7 @@ function AppInner() {
       )}
     <HashRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <BusinessAdvisor />
+      <PwaInstallBanner />
       <Routes>
         <Route element={<AppShell />}>
           <Route path="/" element={<Dashboard />} />

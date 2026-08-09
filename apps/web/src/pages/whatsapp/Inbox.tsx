@@ -364,10 +364,11 @@ export function Inbox() {
                 {syncPct}%
               </div>
             )}
-            <button onClick={() => setShowProductStats(v => !v)} title="Statistiques produits"
-              className="p-1.5 rounded-full hover:bg-[#2a3942] transition-colors"
-              style={{ color: showProductStats ? '#00a884' : C.icon }}>
-              <BarChart2 size={20} />
+            <button onClick={() => setShowProductStats(v => !v)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-semibold transition-colors"
+              style={{ background: showProductStats ? '#00a88420' : 'transparent', color: showProductStats ? '#00a884' : C.icon, border: `1px solid ${showProductStats ? '#00a884' : 'transparent'}` }}>
+              <BarChart2 size={15} />
+              <span className="hidden sm:inline">Stats produits</span>
             </button>
             <button onClick={initDisconnect} title="Déconnecter"
               className="p-1.5 rounded-full hover:bg-[#2a3942] transition-colors">
@@ -527,7 +528,7 @@ export function Inbox() {
                   {selectedContact.phone.replace('@s.whatsapp.net', '').replace('@c.us', '')}
                 </p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
                 <button title={selectedContact.aiEnabled ? 'Désactiver IA' : 'Activer IA'}
                   onClick={() => updateContact(selectedContact.id, { aiEnabled: !selectedContact.aiEnabled })}
                   className="p-2 rounded-full hover:bg-[#2a3942] transition-colors">
@@ -535,6 +536,27 @@ export function Inbox() {
                     ? <Bot size={20} style={{ color: '#00a884' }} />
                     : <BotOff size={20} style={{ color: C.icon }} />}
                 </button>
+
+                {/* Create draft order — shortcut visible directly in chat header */}
+                {draftCreated ? (
+                  <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-semibold"
+                    style={{ background: '#00a88420', color: '#00a884' }}>
+                    <CheckCheck size={13} /> Brouillon créé
+                  </div>
+                ) : (
+                  <button
+                    onClick={handleCreateDraft}
+                    disabled={creatingDraft}
+                    title="Créer un brouillon de commande depuis cette conversation"
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-semibold transition-all disabled:opacity-60"
+                    style={{ background: '#25d36620', color: '#25d366', border: '1px solid #25d36640' }}>
+                    {creatingDraft
+                      ? <span className="w-3 h-3 border-2 border-[#25d366]/30 border-t-[#25d366] rounded-full animate-spin" />
+                      : <ShoppingCart size={13} />}
+                    <span className="hidden sm:inline">{creatingDraft ? 'Analyse…' : 'Commande'}</span>
+                  </button>
+                )}
+
                 <button onClick={() => {
                     if (window.innerWidth < 1024) { setMobilePanel('crm'); }
                     else { setShowCrmPanel(v => !v); }
@@ -720,22 +742,28 @@ export function Inbox() {
             </div>
 
             {/* Créer brouillon de commande */}
-            <div className="rounded-lg p-3 border" style={{ background: '#0d2016', borderColor: '#25d36630' }}>
-              <p className="text-xs mb-2" style={{ color: '#8696a0' }}>Commande détectée dans la conversation</p>
+            <div className="rounded-xl p-3 border-2" style={{ background: '#0d2016', borderColor: draftCreated ? '#00a88450' : '#25d36640' }}>
+              <div className="flex items-center gap-1.5 mb-2">
+                <ShoppingCart size={12} style={{ color: '#25d366' }} />
+                <p className="text-xs font-semibold" style={{ color: '#25d366' }}>Créer brouillon de commande</p>
+              </div>
+              <p className="text-[11px] mb-2.5" style={{ color: '#8696a0' }}>
+                L'IA lit la conversation et pré-remplit la commande dans Logistique
+              </p>
               {draftCreated ? (
-                <div className="flex items-center gap-2 text-xs" style={{ color: '#00a884' }}>
+                <div className="flex items-center gap-2 text-xs font-semibold" style={{ color: '#00a884' }}>
                   <CheckCheck size={14} />
-                  Brouillon créé dans Logistique
+                  Brouillon créé — ouvre Logistique pour valider
                 </div>
               ) : (
                 <button
                   onClick={handleCreateDraft}
                   disabled={creatingDraft}
-                  className="w-full flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-semibold transition-opacity disabled:opacity-60"
+                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-xs font-bold transition-opacity disabled:opacity-60"
                   style={{ background: '#25d366', color: '#0d2016' }}>
                   {creatingDraft
                     ? <><span className="w-3 h-3 border-2 border-[#0d2016]/30 border-t-[#0d2016] rounded-full animate-spin" />Analyse en cours…</>
-                    : <><ShoppingCart size={13} />Créer brouillon de commande</>
+                    : <><ShoppingCart size={13} />Créer brouillon</>
                   }
                 </button>
               )}

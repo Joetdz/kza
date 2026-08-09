@@ -147,6 +147,28 @@ export class WhatsAppService implements OnModuleDestroy {
     return this.getCache(userId, phone).map(m => ({ direction: m.direction, content: m.content }));
   }
 
+  // Request WA Business label list so labelNames cache is populated after reconnect
+  private async refreshLabels(userId: string, sock: WASocket): Promise<void> {
+    try {
+      const result = await (sock as any).query({
+        tag: 'iq',
+        attrs: { to: 's.whatsapp.net', type: 'get', xmlns: 'w:biz:label' },
+        content: [{ tag: 'label', attrs: {} }],
+      });
+      const nodes: any[] = Array.isArray(result?.content) ? result.content : [];
+      for (const node of nodes) {
+        const id = node?.attrs?.id;
+        const name = node?.attrs?.name;
+        if (id && name) {
+          this.labelNames.set(`${userId}:${id}`, name);
+          this.logger.log(`Label refreshed: ${id} → "${name}"`);
+        }
+      }
+    } catch {
+      // Not all WhatsApp accounts support label queries — silently ignore
+    }
+  }
+
   private scheduleReconnect(userId: string) {
     if (this.loggedOut.has(userId)) return;
     // Don't auto-reconnect if a pairing is in progress — let the timeout handle it
@@ -297,6 +319,9 @@ export class WhatsAppService implements OnModuleDestroy {
         this.syncContactDirectory(userId).catch(err =>
           this.logger.error(`Contact sync failed for ${userId}:`, err?.message)
         );
+
+        // Request WhatsApp Business labels so cache is populated on reconnect
+        this.refreshLabels(userId, sock).catch(() => {});
       }
 
       if (connection === 'close') {
@@ -408,27 +433,45 @@ export class WhatsAppService implements OnModuleDestroy {
       if (updated.length > 0) this.groupsCache.set(userId, updated.sort((a, b) => a.name.localeCompare(b.name)));
     });
 
-    // WhatsApp Business labels — cache label id→name
-    sock.ev.on('labels.edit' as any, (labels: any[]) => {
-      for (const label of (Array.isArray(labels) ? labels : [])) {
+    // WhatsApp Business labels — cache label id→name (fires during initial sync)
+    const cacheLabels = (labels: any) => {
+      const list: any[] = Array.isArray(labels) ? labels : (labels ? [labels] : []);
+      for (const label of list) {
         if (label?.id && label?.name) {
           this.labelNames.set(`${userId}:${label.id}`, label.name);
+          this.logger.log(`Label cached: ${label.id} → "${label.name}"`);
         }
       }
-    });
+    };
+    sock.ev.on('labels.edit' as any, cacheLabels);
+    // Some Baileys builds use 'label.edit' (singular)
+    sock.ev.on('label.edit' as any, cacheLabels);
 
     // Label applied to a chat from the physical WhatsApp Business app → auto-create draft order
     sock.ev.on('labels.association' as any, async (data: any) => {
       try {
+        this.logger.log(`labels.association raw: ${JSON.stringify(data)}`);
+
+        // Baileys structure: { type: 'add'|'remove', association: { chatId, labelId, type: 'label_chat'|'label_jid' } }
+        // The add/remove flag is at data.type, NOT inside data.association.type
+        const addOrRemove: string = data?.type ?? data?.association?.type ?? '';
+        if (addOrRemove !== 'add') return;
+
         const assoc = data?.association ?? data;
-        if (!assoc || assoc.type !== 'add') return;
+        const labelId: string = assoc?.labelId ?? assoc?.label_id ?? '';
+        const chatId: string = assoc?.chatId ?? assoc?.chat_id ?? '';
+        if (!labelId || !chatId) return;
 
-        const labelId: string = assoc.labelId;
-        const chatId: string = assoc.chatId; // JID of the conversation
+        // Look up label name; if not cached yet, try to refresh then retry
+        let labelName = this.labelNames.get(`${userId}:${labelId}`) ?? '';
+        if (!labelName) {
+          await this.refreshLabels(userId, sock);
+          labelName = this.labelNames.get(`${userId}:${labelId}`) ?? '';
+        }
 
-        // Look up the label name
-        const labelName = this.labelNames.get(`${userId}:${labelId}`) ?? '';
-        const normalized = labelName.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+        this.logger.log(`Label association: id=${labelId} name="${labelName}" chat=${chatId}`);
+
+        const normalized = (labelName || labelId).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
 
         const isTrigger = WhatsAppService.DRAFT_TRIGGER_LABELS.some(t => normalized.includes(t));
         if (!isTrigger) return;
