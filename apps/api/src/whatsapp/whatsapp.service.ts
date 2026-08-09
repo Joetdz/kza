@@ -86,6 +86,10 @@ export class WhatsAppService implements OnModuleDestroy {
   private bulkQueue = Promise.resolve();
   // Groups cache: key = userId, populated on chats.set / chats.upsert
   private groupsCache = new Map<string, Array<{ id: string; name: string; participants: number }>>();
+  // WhatsApp Business label cache: key = `userId:labelId` → label name
+  private labelNames = new Map<string, string>();
+  // Trigger label names (case/accent-insensitive) that auto-create a draft order
+  private static DRAFT_TRIGGER_LABELS = ['livraison programmee', 'livraison programmée', 'new order', 'commande confirmee', 'commande confirmée'];
 
   constructor(
     private prisma: PrismaService,
@@ -136,6 +140,11 @@ export class WhatsAppService implements OnModuleDestroy {
 
   private getCache(userId: string, phone: string): CachedMsg[] {
     return this.msgCache.get(`${userId}:${phone}`) ?? [];
+  }
+
+  // Public accessor for controller (create-draft-order)
+  getCacheForContact(userId: string, phone: string): Array<{ direction: string; content: string }> {
+    return this.getCache(userId, phone).map(m => ({ direction: m.direction, content: m.content }));
   }
 
   private scheduleReconnect(userId: string) {
@@ -229,25 +238,20 @@ export class WhatsAppService implements OnModuleDestroy {
     });
 
     this.sockets.set(userId, sock);
-    this.logger.log(`[WA-DEBUG] Socket created for ${userId}, pairingPhone=${pairingPhone ?? 'none'}`);
 
     sock.ev.on('creds.update', saveCreds);
 
     sock.ev.on('connection.update', async (update) => {
       const { connection, lastDisconnect, qr } = update;
-      this.logger.log(`[WA-DEBUG] connection.update userId=${userId} connection=${connection ?? 'null'} hasQr=${!!qr}`);
 
       if (qr) {
         if (pairingPhone) {
           this.clearPairingTimeout(userId);
-          this.logger.log(`[WA-DEBUG] Requesting pairing code for ${pairingPhone}`);
           try {
             const code = await sock.requestPairingCode(pairingPhone.replace(/\D/g, ''));
-            this.logger.log(`[WA-DEBUG] Pairing code received: ${code}`);
             this.pairingPhones.delete(userId);
             this.emit('pairing_code', userId, { code });
           } catch (err: any) {
-            this.logger.error(`[WA-DEBUG] requestPairingCode failed: ${err?.message}`);
             this.pairingPhones.delete(userId);
             this.emit('pairing_error', userId, {
               message: 'Impossible de générer le code. Réessayez.',
@@ -403,6 +407,106 @@ export class WhatsAppService implements OnModuleDestroy {
       }
       if (updated.length > 0) this.groupsCache.set(userId, updated.sort((a, b) => a.name.localeCompare(b.name)));
     });
+
+    // WhatsApp Business labels — cache label id→name
+    sock.ev.on('labels.edit' as any, (labels: any[]) => {
+      for (const label of (Array.isArray(labels) ? labels : [])) {
+        if (label?.id && label?.name) {
+          this.labelNames.set(`${userId}:${label.id}`, label.name);
+        }
+      }
+    });
+
+    // Label applied to a chat from the physical WhatsApp Business app → auto-create draft order
+    sock.ev.on('labels.association' as any, async (data: any) => {
+      try {
+        const assoc = data?.association ?? data;
+        if (!assoc || assoc.type !== 'add') return;
+
+        const labelId: string = assoc.labelId;
+        const chatId: string = assoc.chatId; // JID of the conversation
+
+        // Look up the label name
+        const labelName = this.labelNames.get(`${userId}:${labelId}`) ?? '';
+        const normalized = labelName.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+
+        const isTrigger = WhatsAppService.DRAFT_TRIGGER_LABELS.some(t => normalized.includes(t));
+        if (!isTrigger) return;
+
+        const phone = jidToDb(chatId);
+        const contact = await this.prisma.whatsAppContact.findUnique({
+          where: { userId_phone: { userId, phone } },
+        });
+        if (!contact) return;
+
+        // Check no draft already exists for this contact
+        const existing = await this.prisma.manualOrder.findFirst({
+          where: { userId, sourceContactId: contact.id, isDraft: true },
+        });
+        if (existing) {
+          this.logger.log(`Draft already exists for contact ${contact.id}, skipping`);
+          return;
+        }
+
+        const history = this.getCacheForContact(userId, phone);
+        const details = await this.aiService.extractOrderDetails(history);
+
+        const products = await this.prisma.product.findMany({
+          where: { userId },
+          select: { id: true, name: true, sellingPrice: true },
+        });
+
+        let matchedProductId: string | null = null;
+        let unitPrice = details.agreedPriceUsd ?? 0;
+        if (details.productName && products.length > 0) {
+          const needle = details.productName.toLowerCase();
+          const matched = products.find(p =>
+            p.name.toLowerCase().includes(needle) || needle.includes(p.name.toLowerCase())
+          );
+          if (matched) {
+            matchedProductId = matched.id;
+            if (!unitPrice) unitPrice = matched.sellingPrice ?? 0;
+          }
+        }
+
+        const bizId = contact.businessId ?? userId;
+        const orderCount = await this.prisma.manualOrder.count({ where: { userId, businessId: bizId } });
+        const qty = details.productQuantity ?? 1;
+
+        const order = await this.prisma.manualOrder.create({
+          data: {
+            userId,
+            businessId: bizId,
+            orderNumber: orderCount + 1,
+            customerName: details.customerName ?? contact.leadName ?? contact.displayName ?? 'Client WhatsApp',
+            customerPhone: details.customerPhone ?? phone ?? null,
+            city: details.city ?? contact.leadCity ?? '',
+            address: details.address ?? '',
+            deliveryFee: details.deliveryFeeCdf ?? 0,
+            totalAmount: matchedProductId ? qty * unitPrice : unitPrice,
+            isDraft: true,
+            sourceContactId: contact.id,
+            notes: details.notes ?? `Brouillon créé automatiquement — label WhatsApp: ${labelName}`,
+            items: matchedProductId ? {
+              create: [{ productId: matchedProductId, quantity: qty, unitPrice }],
+            } : undefined,
+          },
+        });
+
+        // Mark mentions as converted
+        await this.prisma.whatsAppProductMention.updateMany({
+          where: { contactId: contact.id, isConverted: false },
+          data: { isConverted: true },
+        }).catch(() => {});
+
+        this.logger.log(`Auto-draft order #${order.orderNumber} created for contact ${contact.phone} (label: ${labelName})`);
+
+        // Notify frontend
+        this.emit('draft-order-created', userId, { orderId: order.id, orderNumber: order.orderNumber, contactId: contact.id });
+      } catch (err: any) {
+        this.logger.error('labels.association draft error:', err?.message);
+      }
+    });
   }
 
   async connectWithPairingCode(userId: string, phone: string): Promise<void> {
@@ -501,6 +605,9 @@ export class WhatsAppService implements OnModuleDestroy {
     const sentAt = new Date(timestamp).toISOString();
     this.addToCache(userId, phone, { direction: 'in', content, mediaType, mediaUrl, waId: msg.key.id ?? undefined, sentAt });
 
+    // Silent product mention classification (always runs, regardless of AI being enabled)
+    if (text) this.classifyAndSaveMention(userId, contact.businessId, contact.id, text).catch(() => {});
+
     const quotedMsgId: string | null =
       (msg.message?.extendedTextMessage?.contextInfo?.stanzaId) ?? null;
 
@@ -595,6 +702,11 @@ export class WhatsAppService implements OnModuleDestroy {
           if (qualification.leadStatus === 'converted' && contact.leadStatus !== 'converted') {
             const recap = await this.aiService.generateOrderRecap(qualifyHistory, aiConfig?.primaryLanguage ?? 'fr');
             if (recap) await this.sendMessageViaSocket(userId, sock, jid, phone, recap, contact.id, true);
+            // Mark all product mentions for this contact as converted
+            await this.prisma.whatsAppProductMention.updateMany({
+              where: { contactId: contact.id, isConverted: false },
+              data: { isConverted: true },
+            }).catch(() => {});
           }
         }
       }
@@ -627,6 +739,34 @@ export class WhatsAppService implements OnModuleDestroy {
         ack: 1,
         fromAi: false,
         sentAt,
+      },
+    });
+  }
+
+  // ── Silent product mention classification ─────────────────────────────────────
+  private async classifyAndSaveMention(
+    userId: string,
+    businessId: string | null | undefined,
+    contactId: string,
+    text: string,
+  ): Promise<void> {
+    const products = await this.prisma.product.findMany({
+      where: { userId },
+      select: { id: true, name: true },
+    });
+    if (!products.length) return;
+
+    const result = await this.aiService.classifyProductMention(text, products);
+    if (!result.productName) return;
+
+    await this.prisma.whatsAppProductMention.create({
+      data: {
+        userId,
+        businessId: businessId ?? userId,
+        contactId,
+        productId: result.productId ?? null,
+        productName: result.productName,
+        messageText: text.substring(0, 500),
       },
     });
   }

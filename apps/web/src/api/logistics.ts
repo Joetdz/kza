@@ -87,6 +87,8 @@ export interface ManualOrder {
   deliveryFee: number;
   totalAmount: number;
   status: string;
+  isDraft: boolean;
+  sourceContactId: string | null;
   notes: string | null;
   agentId: string | null;
   agent: DeliveryAgent | null;
@@ -238,6 +240,13 @@ export const logisticsApi = {
     req<{ sent: boolean; reason?: string }>(`/my/logistics/orders/${orderId}/notify-partner`, { method: 'POST' }),
   deleteOrder: (id: string) =>
     req<unknown>(`/my/logistics/orders/${id}`, { method: 'DELETE' }),
+  editDraft: (id: string, body: {
+    customerName?: string; customerPhone?: string; city?: string; address?: string;
+    deliveryFee?: number; notes?: string; partnerId?: string;
+    items?: { productId: string; quantity: number; unitPrice: number }[];
+  }) => req<ManualOrder>(`/my/logistics/orders/${id}/edit-draft`, { method: 'PATCH', body: JSON.stringify(body) }),
+  confirmDraft: (id: string) =>
+    req<ManualOrder>(`/my/logistics/orders/${id}/confirm-draft`, { method: 'POST' }),
 
   // Partner portal (public — no auth token)
   partnerPortal: {

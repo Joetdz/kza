@@ -107,4 +107,12 @@ export const waApi = {
     req<{ id: string; businessSector: string | null; companyName: string | null }>('/whatsapp/profile'),
   updateProfile: (data: { businessSector?: string; companyName?: string }) =>
     req<any>('/whatsapp/profile', { method: 'PATCH', body: JSON.stringify(data) }),
+
+  // Statistiques produits mentionnés
+  getProductStats: () =>
+    req<Array<{ productName: string; productId: string | null; totalMentions: number; conversions: number; conversionRate: number }>>('/whatsapp/product-stats'),
+
+  // Créer un brouillon de commande depuis une conversation
+  createDraftOrder: (contactId: string) =>
+    req<any>(`/whatsapp/contacts/${contactId}/create-draft-order`, { method: 'POST' }),
 };

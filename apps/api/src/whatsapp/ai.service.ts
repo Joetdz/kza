@@ -376,6 +376,116 @@ ${conversation}`;
     }
   }
 
+  // ── Silent product mention classifier (runs on every incoming message) ────────
+  async classifyProductMention(
+    text: string,
+    products: { id: string; name: string }[],
+  ): Promise<{ productId: string | null; productName: string | null }> {
+    if (!text?.trim() || products.length === 0) return { productId: null, productName: null };
+
+    const list = products.map(p => `- ${p.name} (id:${p.id})`).join('\n');
+    const prompt = `Tu analyses un message WhatsApp d'un client pour identifier quel produit est mentionné.
+
+Produits disponibles :
+${list}
+
+Message client : "${text.substring(0, 300)}"
+
+Si le message mentionne clairement un produit de la liste (ou une variante proche), réponds en JSON :
+{"productId":"<id>","productName":"<nom exact du produit>"}
+
+Si aucun produit n'est clairement mentionné, réponds :
+{"productId":null,"productName":null}
+
+Réponds UNIQUEMENT en JSON, rien d'autre.`;
+
+    try {
+      const response = await this.openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0,
+        max_tokens: 60,
+        response_format: { type: 'json_object' },
+      });
+      const raw = response.choices[0]?.message?.content ?? '{}';
+      const parsed = JSON.parse(raw);
+      return {
+        productId: parsed.productId ?? null,
+        productName: parsed.productName ?? null,
+      };
+    } catch {
+      return { productId: null, productName: null };
+    }
+  }
+
+  // ── Extract order details from conversation for auto-draft ────────────────────
+  async extractOrderDetails(
+    history: Array<{ direction: string; content: string }>,
+  ): Promise<{
+    customerName: string | null;
+    customerPhone: string | null;
+    city: string | null;
+    address: string | null;
+    productName: string | null;
+    productQuantity: number;
+    agreedPriceUsd: number | null;
+    deliveryFeeCdf: number | null;
+    notes: string | null;
+  }> {
+    const conversation = history
+      .slice(-20)
+      .map(m => `${m.direction === 'in' ? 'Client' : 'Agent'}: ${m.content}`)
+      .join('\n');
+
+    const prompt = `Tu analyses une conversation WhatsApp entre un vendeur et un client pour extraire les détails d'une commande confirmée.
+
+Conversation :
+${conversation}
+
+Extrais les informations suivantes. Réponds UNIQUEMENT en JSON valide :
+{
+  "customerName": string|null,
+  "customerPhone": string|null,
+  "city": string|null,
+  "address": string|null,
+  "productName": string|null,
+  "productQuantity": number (défaut 1),
+  "agreedPriceUsd": number|null (prix en dollars convenus, sans le signe $),
+  "deliveryFeeCdf": number|null (frais de livraison en FC, sans le symbole),
+  "notes": string|null (notes supplémentaires pertinentes)
+}
+
+Ne devine pas les informations absentes — mets null si non mentionné dans la conversation.`;
+
+    try {
+      const response = await this.openai.chat.completions.create({
+        model: 'gpt-4o',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0,
+        max_tokens: 300,
+        response_format: { type: 'json_object' },
+      });
+      const raw = response.choices[0]?.message?.content ?? '{}';
+      const parsed = JSON.parse(raw);
+      return {
+        customerName: parsed.customerName ?? null,
+        customerPhone: parsed.customerPhone ?? null,
+        city: parsed.city ?? null,
+        address: parsed.address ?? null,
+        productName: parsed.productName ?? null,
+        productQuantity: Number(parsed.productQuantity) || 1,
+        agreedPriceUsd: parsed.agreedPriceUsd != null ? Number(parsed.agreedPriceUsd) : null,
+        deliveryFeeCdf: parsed.deliveryFeeCdf != null ? Number(parsed.deliveryFeeCdf) : null,
+        notes: parsed.notes ?? null,
+      };
+    } catch {
+      return {
+        customerName: null, customerPhone: null, city: null, address: null,
+        productName: null, productQuantity: 1, agreedPriceUsd: null, deliveryFeeCdf: null, notes: null,
+      };
+    }
+  }
+
   // ── Order recap sent automatically when leadStatus = converted ────────────────
   async generateOrderRecap(
     history: Array<{ direction: string; content: string }>,

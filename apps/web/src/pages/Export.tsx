@@ -87,7 +87,7 @@ export function Export() {
       <div className="space-y-3">
         {/* Excel */}
         <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-          <div className="flex items-start gap-4">
+          <div className="flex flex-wrap items-start gap-4">
             <div className="p-3 bg-emerald-50 rounded-xl text-emerald-600">
               <FileSpreadsheet size={24} />
             </div>
@@ -118,7 +118,7 @@ export function Export() {
 
         {/* PDF */}
         <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-          <div className="flex items-start gap-4">
+          <div className="flex flex-wrap items-start gap-4">
             <div className="p-3 bg-red-50 rounded-xl text-red-600">
               <FileText size={24} />
             </div>

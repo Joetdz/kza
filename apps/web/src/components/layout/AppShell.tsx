@@ -1,8 +1,8 @@
 import { Outlet, NavLink, useLocation } from 'react-router-dom';
 import { Menu, Calendar, LogOut, User } from 'lucide-react';
 import {
-  LayoutDashboard, Package, ShoppingCart,
-  BarChart2, Target, MessageCircle,
+  LayoutDashboard, Package, ShoppingCart, CreditCard,
+  BarChart2, Target, MessageCircle, Store, Download,
 } from 'lucide-react';
 import { useStore } from '../../store/useStore';
 import { useAuth } from '../../contexts/AuthContext';
@@ -11,11 +11,14 @@ import { Sidebar } from './Sidebar';
 import { Toaster } from '../ui/Toaster';
 
 const mobileNav = [
-  { to: '/',           icon: LayoutDashboard, end: true },
+  { to: '/',           icon: LayoutDashboard, end: true  },
   { to: '/stock',      icon: Package,         end: false },
   { to: '/ventes',     icon: ShoppingCart,    end: false },
+  { to: '/depenses',   icon: CreditCard,      end: false },
   { to: '/analytique', icon: BarChart2,       end: false },
   { to: '/objectifs',  icon: Target,          end: false },
+  { to: '/boutique',   icon: Store,           end: false },
+  { to: '/export',     icon: Download,        end: false },
   { to: '/whatsapp',   icon: MessageCircle,   end: false },
 ];
 
@@ -103,21 +106,23 @@ export function AppShell() {
           <Outlet />
         </main>
 
-        {/* Mobile bottom nav */}
-        <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-md border-t border-gray-200 z-20 flex">
-          {mobileNav.map(({ to, icon: Icon, end }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={end}
-              className={({ isActive }) =>
-                `flex-1 flex flex-col items-center justify-center py-2.5 transition-colors
-                ${isActive ? 'text-indigo-600' : 'text-gray-400 hover:text-gray-600'}`
-              }
-            >
-              <Icon size={22} />
-            </NavLink>
-          ))}
+        {/* Mobile bottom nav — scrollable */}
+        <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-md border-t border-gray-200 z-20">
+          <div className="flex overflow-x-auto scrollbar-hide">
+            {mobileNav.map(({ to, icon: Icon, end }) => (
+              <NavLink
+                key={to}
+                to={to}
+                end={end}
+                className={({ isActive }) =>
+                  `min-w-[56px] flex flex-col items-center justify-center py-2.5 px-1 transition-colors flex-shrink-0
+                  ${isActive ? 'text-indigo-600' : 'text-gray-400 hover:text-gray-600'}`
+                }
+              >
+                <Icon size={22} />
+              </NavLink>
+            ))}
+          </div>
         </nav>
       </div>
 

@@ -440,4 +440,112 @@ export class WhatsAppController {
       update: dto,
     });
   }
+
+  // ── Statistiques produits mentionnés ─────────────────────────────────────────
+
+  @Get('product-stats')
+  async getProductStats(@CurrentUser() user: AuthUser) {
+    const [allMentions, converted] = await Promise.all([
+      this.prisma.whatsAppProductMention.groupBy({
+        by: ['productName', 'productId'],
+        where: { userId: user.id },
+        _count: { _all: true },
+        orderBy: { _count: { productName: 'desc' } },
+      }),
+      this.prisma.whatsAppProductMention.groupBy({
+        by: ['productName'],
+        where: { userId: user.id, isConverted: true },
+        _count: { _all: true },
+      }),
+    ]);
+
+    const convertedMap = new Map(converted.map(c => [c.productName, c._count._all]));
+
+    return allMentions.map(m => {
+      const conv = convertedMap.get(m.productName) ?? 0;
+      return {
+        productName: m.productName,
+        productId: m.productId,
+        totalMentions: m._count._all,
+        conversions: conv,
+        conversionRate: m._count._all > 0 ? Number(((conv / m._count._all) * 100).toFixed(1)) : 0,
+      };
+    });
+  }
+
+  // ── Créer un brouillon de commande depuis une conversation ────────────────────
+
+  @Post('contacts/:id/create-draft-order')
+  async createDraftOrder(
+    @Param('id') contactId: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    const contact = await this.prisma.whatsAppContact.findFirst({
+      where: { id: contactId, userId: user.id },
+    });
+    if (!contact) throw new NotFoundException('Contact introuvable');
+
+    // Get conversation history from in-memory cache
+    const history = this.wa.getCacheForContact(user.id, contact.phone);
+
+    // Extract order details with AI
+    const details = await this.ai.extractOrderDetails(history);
+
+    // Find matching product by name (fuzzy)
+    const products = await this.prisma.product.findMany({
+      where: { userId: user.id },
+      select: { id: true, name: true, sellingPrice: true },
+    });
+
+    let matchedProductId: string | null = null;
+    let unitPrice = details.agreedPriceUsd ?? 0;
+
+    if (details.productName && products.length > 0) {
+      const needle = details.productName.toLowerCase();
+      const matched = products.find(p =>
+        p.name.toLowerCase().includes(needle) || needle.includes(p.name.toLowerCase())
+      );
+      if (matched) {
+        matchedProductId = matched.id;
+        if (!unitPrice) unitPrice = matched.sellingPrice ?? 0;
+      }
+    }
+
+    const bizId = user.businessId ?? user.id;
+    const orderCount = await this.prisma.manualOrder.count({
+      where: { userId: user.id, businessId: bizId },
+    });
+
+    const qty = details.productQuantity ?? 1;
+    const totalAmount = matchedProductId ? qty * unitPrice : unitPrice;
+
+    const order = await this.prisma.manualOrder.create({
+      data: {
+        userId: user.id,
+        businessId: bizId,
+        orderNumber: orderCount + 1,
+        customerName: details.customerName ?? contact.leadName ?? contact.displayName ?? 'Client WhatsApp',
+        customerPhone: details.customerPhone ?? contact.phone ?? null,
+        city: details.city ?? contact.leadCity ?? '',
+        address: details.address ?? '',
+        deliveryFee: details.deliveryFeeCdf ?? 0,
+        totalAmount,
+        isDraft: true,
+        sourceContactId: contactId,
+        notes: details.notes ?? null,
+        items: matchedProductId ? {
+          create: [{ productId: matchedProductId, quantity: qty, unitPrice }],
+        } : undefined,
+      },
+      include: { items: { include: { product: true } }, partner: true, location: true },
+    });
+
+    // Mark contact mentions as converted
+    await this.prisma.whatsAppProductMention.updateMany({
+      where: { contactId, isConverted: false },
+      data: { isConverted: true },
+    }).catch(() => {});
+
+    return order;
+  }
 }

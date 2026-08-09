@@ -1,9 +1,15 @@
 import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Package, Truck, X, MapPin, Users, ShoppingBag, LogOut, Trash2, Plus, KeyRound, Calendar, DollarSign, Phone, MessageCircle, FileText, Printer } from 'lucide-react';
 import type { DailyReport, DailyReportSummary, DailyReportOrder } from '../api/logistics';
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api';
 import { logisticsApi, type ManualOrder, type DeliveryAgent, type PartnerFinances } from '../api/logistics';
+import { ScrollLock } from '../components/ui/ScrollLock';
+
+function ModalPortal({ children }: { children: React.ReactNode }) {
+  return createPortal(children, document.body);
+}
 
 const ALL_STATUSES: { value: string; label: string; color: string }[] = [
   { value: 'pending',        label: 'En attente',                    color: 'bg-gray-100 text-gray-600' },
@@ -142,7 +148,7 @@ function LoginScreen({ token, hasPin, onSuccess }: { token: string; hasPin: bool
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-slate-100 flex items-center justify-center p-4">
-      <div className="bg-white rounded-3xl shadow-xl w-full max-w-sm p-8">
+      <div className="bg-white rounded-3xl shadow-xl w-full max-w-sm mx-auto p-8">
         <div className="flex justify-center mb-6">
           <div className="w-16 h-16 bg-indigo-100 rounded-2xl flex items-center justify-center">
             <KeyRound size={28} className="text-indigo-600" />
@@ -276,7 +282,7 @@ function Portal({ data: initialData, token, onLogout }: {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="bg-indigo-600 text-white px-4 pt-6 pb-0">
+      <div className="bg-indigo-600 text-white px-3 sm:px-4 pt-6 pb-0">
         <div className="max-w-2xl mx-auto">
           <div className="flex items-start justify-between mb-4">
             <div>
@@ -299,7 +305,7 @@ function Portal({ data: initialData, token, onLogout }: {
           </div>
 
           {/* Tabs */}
-          <div className="flex gap-1">
+          <div className="overflow-x-auto flex gap-1 pb-1">
             {tabs.map(({ id, label, icon: Icon, count }) => (
               <button key={id} onClick={() => setTab(id)}
                 className={`flex items-center gap-1.5 px-3 py-2.5 text-xs font-semibold rounded-t-xl transition-all
@@ -319,7 +325,7 @@ function Portal({ data: initialData, token, onLogout }: {
       </div>
 
       {/* Content */}
-      <div className="max-w-2xl mx-auto px-4 py-5">
+      <div className="max-w-2xl mx-auto px-3 sm:px-4 py-5">
         {tab === 'orders' && (
           <OrdersTab
             orders={data.orders}
@@ -352,14 +358,16 @@ function Portal({ data: initialData, token, onLogout }: {
 
       {/* Delivery confirm modal */}
       {deliverModal && (
+        <ModalPortal>
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <ScrollLock />
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
               <h2 className="font-bold text-gray-900">Confirmer la livraison</h2>
               <button onClick={() => { setDeliverModal(null); setCollectedUsd(''); setCollectedCdf(''); }}
                 className="p-1.5 rounded-lg hover:bg-gray-100"><X size={18} className="text-gray-500" /></button>
             </div>
-            <div className="p-5 space-y-3">
+            <div className="p-5 space-y-3 overflow-y-auto flex-1">
               <p className="text-sm text-gray-600 font-medium">Montants encaissés à la livraison</p>
               <div className="grid grid-cols-2 gap-2">
                 <div>
@@ -400,6 +408,7 @@ function Portal({ data: initialData, token, onLogout }: {
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
     </div>
   );
@@ -629,30 +638,35 @@ function OrdersTab({ orders, agents, token, partnerName, businessName, updatingI
 
       {/* ── Modal Reporter ── */}
       {rescheduleOrderId && (
+        <ModalPortal>
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5 space-y-4">
-            <div className="flex items-center justify-between">
+          <ScrollLock />
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
               <h3 className="font-bold text-gray-900 flex items-center gap-2"><Calendar size={16} /> Reporter la livraison</h3>
               <button onClick={() => { setRescheduleOrderId(null); setRescheduleDate(''); }} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
             </div>
-            <div>
-              <label className="block text-xs font-semibold text-gray-600 mb-1">Nouvelle date et heure</label>
-              <input type="datetime-local" value={rescheduleDate}
-                onChange={e => setRescheduleDate(e.target.value)}
-                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-purple-400" />
-            </div>
-            <div className="flex gap-2 pt-1">
-              <button onClick={() => { setRescheduleOrderId(null); setRescheduleDate(''); }}
-                className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50">
-                Annuler
-              </button>
-              <button onClick={handleReschedule} disabled={rescheduling}
-                className="flex-1 px-4 py-2.5 bg-purple-600 text-white rounded-xl text-sm font-semibold hover:bg-purple-700 disabled:opacity-50">
-                {rescheduling ? '...' : 'Confirmer'}
-              </button>
+            <div className="p-5 space-y-4 overflow-y-auto flex-1">
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Nouvelle date et heure</label>
+                <input type="datetime-local" value={rescheduleDate}
+                  onChange={e => setRescheduleDate(e.target.value)}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-purple-400" />
+              </div>
+              <div className="flex gap-2 pt-1">
+                <button onClick={() => { setRescheduleOrderId(null); setRescheduleDate(''); }}
+                  className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50">
+                  Annuler
+                </button>
+                <button onClick={handleReschedule} disabled={rescheduling}
+                  className="flex-1 px-4 py-2.5 bg-purple-600 text-white rounded-xl text-sm font-semibold hover:bg-purple-700 disabled:opacity-50">
+                  {rescheduling ? '...' : 'Confirmer'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
     </div>
   );
@@ -981,7 +995,7 @@ function ReportsTab({ token, partnerName }: { token: string; partnerName: string
                 <div>
                   <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Commandes</h3>
                   <div className="overflow-x-auto rounded-2xl border border-gray-100 shadow-sm">
-                    <table className="w-full text-xs">
+                    <table className="w-full text-xs min-w-[600px]">
                       <thead className="bg-gray-50 text-gray-500">
                         <tr>{['N°','Zone','Agent','$','FC','Observation','Frais','Statut'].map(h => (
                           <th key={h} className="px-2 py-2 text-left font-semibold whitespace-nowrap">{h}</th>
@@ -1054,7 +1068,7 @@ function ReportsTab({ token, partnerName }: { token: string; partnerName: string
                 <div>
                   <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Rapport Stock</h3>
                   <div className="overflow-x-auto rounded-2xl border border-gray-100 shadow-sm">
-                    <table className="w-full text-xs">
+                    <table className="w-full text-xs min-w-[400px]">
                       <thead className="bg-gray-50 text-gray-500">
                         <tr>{['Produit','Stock début','Livré','Entrées','Stock actuel'].map(h => (
                           <th key={h} className="px-3 py-2 text-left font-semibold">{h}</th>
@@ -1127,7 +1141,7 @@ function ReportsTab({ token, partnerName }: { token: string; partnerName: string
 
           {!histLoading && history.length > 0 && (
             <div className="overflow-x-auto rounded-2xl border border-gray-100 shadow-sm">
-              <table className="w-full text-xs">
+              <table className="w-full text-xs min-w-[600px]">
                 <thead className="bg-gray-50 text-gray-500">
                   <tr>{['Date','Cmds','Livrées','Échecs','CA $','CA FC','Frais','Solde $','Solde FC'].map(h => (
                     <th key={h} className="px-2 py-2 text-left font-semibold whitespace-nowrap">{h}</th>
@@ -1245,7 +1259,7 @@ function FinancesTab({ token }: { token: string }) {
   return (
     <div className="space-y-5">
       {/* Balance summary */}
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm text-center">
           <p className="text-[10px] font-semibold text-gray-400 mb-1">Total dû</p>
           <p className="text-base font-black text-gray-900">{Number(finances.totalOwed).toLocaleString('fr-FR')}</p>

@@ -201,8 +201,8 @@ export function Dashboard() {
       </div>
 
       {/* Charts Row 1 */}
-      <div className="grid lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="sm:col-span-2 lg:col-span-2 bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
           <h2 className="font-semibold text-gray-900 mb-4">CA & Profit — Évolution</h2>
           {timeSeries.length > 0 ? (
             <ResponsiveContainer width="100%" height={220}>
@@ -285,7 +285,7 @@ export function Dashboard() {
       )}
 
       {/* Bottom Row */}
-      <div className="grid lg:grid-cols-2 gap-6">
+      <div className="grid sm:grid-cols-2 gap-6">
         {/* Top Products — hidden when filtering a single product */}
         {selectedProductId === 'all' && (
           <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">

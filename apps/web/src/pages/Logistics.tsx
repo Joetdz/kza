@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Plus, Trash2, MapPin, Truck, ShoppingBag, ChevronRight, X, Package, AlertCircle, MessageCircle, BarChart2, Link, Printer, Edit2, Check, Calendar, DollarSign, FileText } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useStore } from '../store/useStore';
 import { logisticsApi, type StockLocation, type DeliveryPartner, type ManualOrder, type PartnerReport, type PartnerPayment } from '../api/logistics';
+import { ScrollLock } from '../components/ui/ScrollLock';
 import { CitySelect } from '../components/CitySelect';
 
 const ADMIN_EMAILS = (import.meta.env.VITE_ADMIN_EMAILS ?? '')
@@ -72,6 +74,10 @@ export function Logistics() {
   const [collectedUsd, setCollectedUsd] = useState('');
   const [collectedCdf, setCollectedCdf] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  // Draft order editing
+  const [draftEditId, setDraftEditId] = useState<string | null>(null);
+  const [draftEditForm, setDraftEditForm] = useState<Partial<ManualOrder & { items: any[] }>>({});
+  const [confirmingDraft, setConfirmingDraft] = useState<string | null>(null);
 
   // Partner phone inline edit
   const [editPhoneId, setEditPhoneId] = useState<string | null>(null);
@@ -370,6 +376,37 @@ export function Logistics() {
     setOrders(prev => prev.filter(o => o.id !== id));
   }
 
+  async function handleConfirmDraft(id: string) {
+    if (!confirm('Confirmer ce brouillon ? Le stock sera décrémenté.')) return;
+    setConfirmingDraft(id);
+    try {
+      const confirmed = await logisticsApi.confirmDraft(id);
+      setOrders(prev => prev.map(o => o.id === id ? confirmed : o));
+      setDraftEditId(null);
+    } catch (e: any) {
+      alert('Erreur : ' + (e?.message ?? 'Impossible de confirmer'));
+    } finally {
+      setConfirmingDraft(null);
+    }
+  }
+
+  async function handleSaveDraftEdit(id: string) {
+    try {
+      const updated = await logisticsApi.editDraft(id, {
+        customerName: draftEditForm.customerName,
+        customerPhone: draftEditForm.customerPhone ?? undefined,
+        city: draftEditForm.city,
+        address: draftEditForm.address,
+        deliveryFee: draftEditForm.deliveryFee !== undefined ? Number(draftEditForm.deliveryFee) : undefined,
+        notes: draftEditForm.notes ?? undefined,
+      });
+      setOrders(prev => prev.map(o => o.id === id ? updated : o));
+      setDraftEditId(null);
+    } catch (e: any) {
+      alert('Erreur : ' + (e?.message ?? 'Impossible de sauvegarder'));
+    }
+  }
+
   // ── Payments ─────────────────────────────────────────────────────
 
   async function handleConfirmPayment(id: string) {
@@ -407,7 +444,7 @@ export function Logistics() {
   ] as const;
 
   return (
-    <div className="min-h-screen bg-gray-50 lg:pl-64">
+    <div className="min-h-screen bg-gray-50">
       <div className="max-w-5xl mx-auto px-4 py-8">
         <h1 className="text-2xl font-black text-gray-900 mb-6">Logistique</h1>
 
@@ -614,7 +651,7 @@ export function Logistics() {
         {!loading && tab === 'orders' && (
           <div>
             <div className="flex justify-between items-center mb-4">
-              <p className="text-sm text-gray-500">{orders.length} commande{orders.length !== 1 ? 's' : ''}</p>
+              <p className="text-sm text-gray-500">{orders.filter(o => !o.isDraft).length} commande{orders.filter(o => !o.isDraft).length !== 1 ? 's' : ''}{orders.filter(o => o.isDraft).length > 0 && <span className="ml-2 px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full text-xs font-semibold">{orders.filter(o => o.isDraft).length} brouillon{orders.filter(o => o.isDraft).length !== 1 ? 's' : ''}</span>}</p>
               <button onClick={() => setShowOrderModal(true)}
                 className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 transition-colors">
                 <Plus size={15} /> Nouvelle commande
@@ -624,14 +661,69 @@ export function Logistics() {
               {orders.map(o => {
                 const st = STATUS_LABELS[o.status] ?? STATUS_LABELS.pending;
                 return (
-                  <div key={o.id} className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
+                  <div key={o.id} className={`bg-white rounded-2xl p-4 border shadow-sm ${o.isDraft ? 'border-amber-200 bg-amber-50/30' : 'border-gray-100'}`}>
+                    {/* Draft editing form */}
+                    {o.isDraft && draftEditId === o.id ? (
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">Brouillon IA — Édition</span>
+                          <span className="font-black text-indigo-600 text-sm">{orderNum(o.orderNumber)}</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          {[
+                            { label: 'Nom client', key: 'customerName' as const },
+                            { label: 'Téléphone', key: 'customerPhone' as const },
+                            { label: 'Ville', key: 'city' as const },
+                            { label: 'Adresse', key: 'address' as const },
+                          ].map(({ label, key }) => (
+                            <div key={key} className={key === 'address' ? 'col-span-2' : ''}>
+                              <p className="text-[10px] text-gray-400 mb-1">{label}</p>
+                              <input
+                                value={(draftEditForm[key] as string) ?? ''}
+                                onChange={e => setDraftEditForm(f => ({ ...f, [key]: e.target.value }))}
+                                className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm outline-none focus:ring-1 focus:ring-indigo-400"
+                              />
+                            </div>
+                          ))}
+                          <div>
+                            <p className="text-[10px] text-gray-400 mb-1">Livraison (FC)</p>
+                            <input
+                              type="number" value={(draftEditForm.deliveryFee as number) ?? 0}
+                              onChange={e => setDraftEditForm(f => ({ ...f, deliveryFee: Number(e.target.value) }))}
+                              className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm outline-none focus:ring-1 focus:ring-indigo-400"
+                            />
+                          </div>
+                          <div>
+                            <p className="text-[10px] text-gray-400 mb-1">Notes</p>
+                            <input
+                              value={(draftEditForm.notes as string) ?? ''}
+                              onChange={e => setDraftEditForm(f => ({ ...f, notes: e.target.value }))}
+                              className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm outline-none focus:ring-1 focus:ring-indigo-400"
+                            />
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <button onClick={() => handleSaveDraftEdit(o.id)} className="flex-1 py-2 bg-indigo-600 text-white rounded-xl text-xs font-semibold hover:bg-indigo-700">Sauvegarder</button>
+                          <button onClick={() => setDraftEditId(null)} className="px-3 py-2 bg-gray-100 text-gray-600 rounded-xl text-xs font-semibold hover:bg-gray-200">Annuler</button>
+                        </div>
+                        <button
+                          onClick={() => handleConfirmDraft(o.id)}
+                          disabled={confirmingDraft === o.id}
+                          className="w-full py-2 bg-green-600 text-white rounded-xl text-xs font-bold hover:bg-green-700 disabled:opacity-60 flex items-center justify-center gap-2">
+                          {confirmingDraft === o.id ? <><span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />Confirmation…</> : '✓ Confirmer la commande'}
+                        </button>
+                      </div>
+                    ) : (
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex-1 min-w-0">
                         {/* Header */}
                         <div className="flex items-center gap-2 flex-wrap mb-1">
                           <span className="font-black text-indigo-600 text-sm">{orderNum(o.orderNumber)}</span>
                           <p className="font-bold text-gray-900">{o.customerName}</p>
-                          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${st.color}`}>{st.label}</span>
+                          {o.isDraft
+                            ? <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">Brouillon IA</span>
+                            : <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${st.color}`}>{st.label}</span>
+                          }
                         </div>
                         <p className="text-xs text-gray-400 mb-1">
                           {new Date(o.createdAt).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })}
@@ -678,13 +770,30 @@ export function Logistics() {
 
                       {/* Actions */}
                       <div className="flex flex-col gap-1.5 shrink-0">
-                        {o.status === 'pending' && (
+                        {/* Draft-specific actions */}
+                        {o.isDraft && (
+                          <>
+                            <button
+                              onClick={() => { setDraftEditId(o.id); setDraftEditForm({ customerName: o.customerName, customerPhone: o.customerPhone ?? '', city: o.city, address: o.address, deliveryFee: Number(o.deliveryFee), notes: o.notes ?? '' }); }}
+                              className="flex items-center gap-1 px-2.5 py-1.5 bg-amber-50 text-amber-700 rounded-lg text-xs font-semibold hover:bg-amber-100">
+                              <Edit2 size={12} /> Modifier
+                            </button>
+                            <button
+                              onClick={() => handleConfirmDraft(o.id)}
+                              disabled={confirmingDraft === o.id}
+                              className="flex items-center gap-1 px-2.5 py-1.5 bg-green-50 text-green-700 rounded-lg text-xs font-semibold hover:bg-green-100 disabled:opacity-60">
+                              {confirmingDraft === o.id ? <span className="w-3 h-3 border-2 border-green-700/30 border-t-green-700 rounded-full animate-spin" /> : <Check size={12} />}
+                              Confirmer
+                            </button>
+                          </>
+                        )}
+                        {!o.isDraft && o.status === 'pending' && (
                           <button onClick={() => { setDispatchModal({ orderId: o.id }); setDispatchPartnerId(o.partner?.id ?? ''); }}
                             className="flex items-center gap-1 px-2.5 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-xs font-semibold hover:bg-blue-100">
                             <ChevronRight size={12} /> Assigner
                           </button>
                         )}
-                        {o.status === 'dispatched' && (
+                        {!o.isDraft && o.status === 'dispatched' && (
                           <>
                             <button onClick={() => { setDeliverModal({ orderId: o.id }); setDeliveryPersonName(''); }}
                               className="flex items-center gap-1 px-2.5 py-1.5 bg-green-50 text-green-700 rounded-lg text-xs font-semibold hover:bg-green-100">
@@ -700,7 +809,7 @@ export function Logistics() {
                             </button>
                           </>
                         )}
-                        {(o.status === 'pending' || o.status === 'dispatched') && (
+                        {!o.isDraft && (o.status === 'pending' || o.status === 'dispatched') && (
                           <>
                             <button onClick={() => handleStatusChange(o.id, 'returned')}
                               className="px-2.5 py-1.5 bg-orange-50 text-orange-700 rounded-lg text-xs font-semibold hover:bg-orange-100">
@@ -717,6 +826,7 @@ export function Logistics() {
                         </button>
                       </div>
                     </div>
+                    )}
                   </div>
                 );
               })}
@@ -872,13 +982,13 @@ export function Logistics() {
             </div>
 
             {/* Client */}
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Field label="Nom client *" value={orderForm.customerName} onChange={v => setOrderForm(f => ({ ...f, customerName: v }))} placeholder="Nom complet" />
               <Field label="Téléphone" value={orderForm.customerPhone} onChange={v => setOrderForm(f => ({ ...f, customerPhone: v }))} placeholder="+243..." />
             </div>
 
             {/* Ville + Commune + Frais */}
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <CitySelect value={orderForm.city} onChange={v => setOrderForm(f => ({ ...f, city: v, commune: '' }))} required />
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1">Frais de livraison</label>
@@ -991,7 +1101,7 @@ export function Logistics() {
       {deliverModal && (
         <Modal title="Confirmer la livraison" onClose={() => { setDeliverModal(null); setCollectedUsd(''); setCollectedCdf(''); }}>
           <p className="text-sm text-gray-600">Montants encaissés par le livreur à la livraison.</p>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-gray-600 mb-1">Montant encaissé ($)</label>
               <div className="relative">
@@ -1256,8 +1366,9 @@ export function Logistics() {
 // ── Helpers UI ──────────────────────────────────────────────────────────────
 
 function Modal({ title, onClose, children, wide }: { title: string; onClose: () => void; children: React.ReactNode; wide?: boolean }) {
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+      <ScrollLock />
       <div className={`bg-white rounded-2xl shadow-2xl w-full ${wide ? 'max-w-2xl' : 'max-w-md'} max-h-[90vh] flex flex-col`}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <h2 className="font-bold text-gray-900">{title}</h2>
@@ -1265,7 +1376,8 @@ function Modal({ title, onClose, children, wide }: { title: string; onClose: () 
         </div>
         <div className="flex-1 overflow-y-auto p-5 space-y-3">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 

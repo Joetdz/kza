@@ -481,6 +481,93 @@ export class LogisticsController {
     return this.prisma.manualOrder.deleteMany({ where: { id, ...this.where(user) } });
   }
 
+  // ── Brouillons (drafts) ────────────────────────────────────────────────────────
+
+  @Patch('my/logistics/orders/:id/edit-draft')
+  async editDraft(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() body: {
+      customerName?: string;
+      customerPhone?: string;
+      city?: string;
+      address?: string;
+      deliveryFee?: number;
+      notes?: string;
+      partnerId?: string;
+      items?: { productId: string; quantity: number; unitPrice: number }[];
+    },
+  ) {
+    const order = await this.prisma.manualOrder.findFirst({ where: { id, ...this.where(user), isDraft: true } });
+    if (!order) throw new Error('Brouillon introuvable');
+
+    const totalAmount = body.items
+      ? body.items.reduce((s, i) => s + i.quantity * i.unitPrice, 0)
+      : Number(order.totalAmount);
+
+    const updated = await this.prisma.manualOrder.update({
+      where: { id },
+      data: {
+        ...(body.customerName !== undefined && { customerName: body.customerName }),
+        ...(body.customerPhone !== undefined && { customerPhone: body.customerPhone }),
+        ...(body.city !== undefined && { city: body.city }),
+        ...(body.address !== undefined && { address: body.address }),
+        ...(body.deliveryFee !== undefined && { deliveryFee: body.deliveryFee }),
+        ...(body.notes !== undefined && { notes: body.notes }),
+        ...(body.partnerId !== undefined && { partnerId: body.partnerId || null }),
+        totalAmount,
+        ...(body.items && {
+          items: {
+            deleteMany: {},
+            create: body.items.map(i => ({ productId: i.productId, quantity: i.quantity, unitPrice: i.unitPrice })),
+          },
+        }),
+      },
+      include: { items: { include: { product: true } }, partner: true, location: true },
+    });
+
+    return updated;
+  }
+
+  @Post('my/logistics/orders/:id/confirm-draft')
+  async confirmDraft(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    const order = await this.prisma.manualOrder.findFirst({
+      where: { id, ...this.where(user), isDraft: true },
+      include: { items: true },
+    });
+    if (!order) throw new Error('Brouillon introuvable');
+
+    // Apply stock movements now that draft is confirmed
+    const today = new Date().toISOString().split('T')[0];
+    for (const item of order.items) {
+      await Promise.all([
+        this.prisma.stockMovement.create({
+          data: {
+            userId: user.id,
+            businessId: user.businessId ?? user.id,
+            productId: item.productId,
+            type: 'out',
+            quantity: item.quantity,
+            reason: `Commande #${order.orderNumber.toString().padStart(4, '0')} (confirmée depuis brouillon)`,
+            date: new Date(today),
+          },
+        }),
+        this.prisma.product.update({
+          where: { id: item.productId },
+          data: { quantity: { decrement: item.quantity } },
+        }),
+      ]).catch(() => {});
+    }
+
+    const confirmed = await this.prisma.manualOrder.update({
+      where: { id },
+      data: { isDraft: false, status: 'pending' },
+      include: { items: { include: { product: true } }, partner: true, location: true },
+    });
+
+    return confirmed;
+  }
+
   // ── Versements (admin) ────────────────────────────────────────────
 
   @Get('my/logistics/payments')

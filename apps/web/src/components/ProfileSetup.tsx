@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { authApi, categoriesApi } from '../api';
+import { ScrollLock } from './ui/ScrollLock';
 
 const COUNTRIES = [
   'RD Congo', 'Côte d\'Ivoire', 'Sénégal', 'Cameroun', 'Mali',
@@ -37,8 +38,9 @@ export function ProfileSetup({ onDone }: { onDone: () => void }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)' }}>
-      <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl overflow-hidden">
-        <div className="p-6 space-y-5">
+      <ScrollLock />
+      <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl max-h-[90vh] flex flex-col overflow-hidden">
+        <div className="p-6 space-y-5 overflow-y-auto flex-1">
           <div>
             <div className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center mb-3">
               <span className="text-white font-black text-lg">K</span>

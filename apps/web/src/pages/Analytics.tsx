@@ -173,7 +173,7 @@ export function Analytics() {
   const [expandedZone, setExpandedZone] = useState<string | null>(null);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 overflow-x-hidden">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Analyse Financière</h1>
@@ -201,7 +201,7 @@ export function Analytics() {
       </div>
 
       {/* Charts */}
-      <div className="grid lg:grid-cols-2 gap-6">
+      <div className="grid sm:grid-cols-2 gap-6">
         <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
           <h2 className="font-semibold text-gray-900 mb-4">Marges par produit (%)</h2>
           {marginData.length > 0 ? (
@@ -500,7 +500,7 @@ export function Analytics() {
           </div>
 
           {/* Insights */}
-          <div className="grid lg:grid-cols-3 gap-4">
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
             <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4">
               <div className="text-sm font-semibold text-emerald-800 mb-1">🚀 Potentiel de scaling</div>
               <div className="text-2xl font-black text-emerald-700">{MAD(scaleRevPotential)}</div>
@@ -559,13 +559,13 @@ export function Analytics() {
                   const color = a.stockRotationDays <= 7 ? '#10b981' : a.stockRotationDays <= 14 ? '#6366f1' : a.stockRotationDays <= 30 ? '#f59e0b' : '#ef4444';
                   return (
                     <div key={a.productId} className="flex items-center gap-3">
-                      <div className="w-36 sm:w-48 text-sm font-medium text-gray-700 truncate">{a.productName}</div>
+                      <div className="flex-1 min-w-0 text-sm font-medium text-gray-700 truncate">{a.productName}</div>
                       <div className="flex-1">
                         <div className="w-full bg-gray-100 rounded-full h-2">
                           <div className="h-2 rounded-full transition-all" style={{ width: `${pct_val}%`, backgroundColor: color }} />
                         </div>
                       </div>
-                      <div className="text-right w-32 shrink-0">
+                      <div className="text-right w-20 sm:w-28 shrink-0">
                         <span className="text-sm font-semibold" style={{ color }}>
                           {a.stockRotationDays === 9999 ? '∞' : `${a.stockRotationDays} j`}
                         </span>

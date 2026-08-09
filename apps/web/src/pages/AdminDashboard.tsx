@@ -230,7 +230,8 @@ function DetailCA({ onClose }: { onClose: () => void }) {
             </div>
             <div>
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Top 20 ventes</p>
-              <div className="overflow-auto max-h-52 rounded-xl border border-gray-100">
+              <div className="overflow-y-auto max-h-52 rounded-xl border border-gray-100">
+                <div className="overflow-x-auto">
                 <table className="w-full text-xs">
                   <thead className="bg-gray-50 sticky top-0">
                     <tr>{['Date', 'Business', 'Client', 'Canal', 'CA'].map(h => <th key={h} className="text-left px-3 py-2 font-semibold text-gray-500">{h}</th>)}</tr>
@@ -247,12 +248,14 @@ function DetailCA({ onClose }: { onClose: () => void }) {
                     ))}
                   </tbody>
                 </table>
+                </div>
               </div>
             </div>
           </div>
           <div>
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">CA par business</p>
-            <div className="overflow-auto max-h-48 rounded-xl border border-gray-100">
+            <div className="overflow-y-auto max-h-48 rounded-xl border border-gray-100">
+              <div className="overflow-x-auto">
               <table className="w-full text-xs">
                 <thead className="bg-gray-50 sticky top-0">
                   <tr>{['Business', 'Devise', 'CA', 'Ventes'].map(h => <th key={h} className="text-left px-3 py-2 font-semibold text-gray-500">{h}</th>)}</tr>
@@ -268,6 +271,7 @@ function DetailCA({ onClose }: { onClose: () => void }) {
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
           </div>
         </div>
@@ -309,7 +313,8 @@ function DetailVentes({ onClose }: { onClose: () => void }) {
             </div>
             <div>
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Statut par canal</p>
-              <div className="overflow-auto max-h-52 rounded-xl border border-gray-100">
+              <div className="overflow-y-auto max-h-52 rounded-xl border border-gray-100">
+                <div className="overflow-x-auto">
                 <table className="w-full text-xs">
                   <thead className="bg-gray-50 sticky top-0">
                     <tr>{['Canal', 'Statut', 'Nb'].map(h => <th key={h} className="text-left px-3 py-2 font-semibold text-gray-500">{h}</th>)}</tr>
@@ -324,12 +329,14 @@ function DetailVentes({ onClose }: { onClose: () => void }) {
                     ))}
                   </tbody>
                 </table>
+                </div>
               </div>
             </div>
           </div>
           <div>
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">30 dernières ventes</p>
-            <div className="overflow-auto max-h-56 rounded-xl border border-gray-100">
+            <div className="overflow-y-auto max-h-56 rounded-xl border border-gray-100">
+              <div className="overflow-x-auto">
               <table className="w-full text-xs">
                 <thead className="bg-gray-50 sticky top-0">
                   <tr>{['Date', 'Business', 'Client', 'Canal', 'Statut', 'Total'].map(h => <th key={h} className="text-left px-3 py-2 font-semibold text-gray-500">{h}</th>)}</tr>
@@ -347,6 +354,7 @@ function DetailVentes({ onClose }: { onClose: () => void }) {
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
           </div>
         </div>
@@ -407,7 +415,8 @@ function DetailDepenses({ onClose }: { onClose: () => void }) {
           </div>
           <div>
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">25 dernières dépenses</p>
-            <div className="overflow-auto max-h-48 rounded-xl border border-gray-100">
+            <div className="overflow-y-auto max-h-48 rounded-xl border border-gray-100">
+              <div className="overflow-x-auto">
               <table className="w-full text-xs">
                 <thead className="bg-gray-50 sticky top-0">
                   <tr>{['Date', 'Business', 'Catégorie', 'Description', 'Montant'].map(h => <th key={h} className="text-left px-3 py-2 font-semibold text-gray-500">{h}</th>)}</tr>
@@ -424,6 +433,7 @@ function DetailDepenses({ onClose }: { onClose: () => void }) {
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
           </div>
         </div>
@@ -464,7 +474,8 @@ function DetailBenefice({ topBusinesses, onClose }: { topBusinesses: AdminOvervi
           </div>
           <div>
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">CA vs Dépenses vs Bénéfice</p>
-            <div className="overflow-auto max-h-56 rounded-xl border border-gray-100">
+            <div className="overflow-y-auto max-h-56 rounded-xl border border-gray-100">
+              <div className="overflow-x-auto">
               <table className="w-full text-xs">
                 <thead className="bg-gray-50 sticky top-0">
                   <tr>{['Business', 'Devise', 'CA', 'Dépenses', 'Bénéfice'].map(h => <th key={h} className="text-left px-3 py-2 font-semibold text-gray-500">{h}</th>)}</tr>
@@ -483,6 +494,7 @@ function DetailBenefice({ topBusinesses, onClose }: { topBusinesses: AdminOvervi
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
           </div>
         </div>
@@ -509,7 +521,8 @@ function DetailProduits({ onClose }: { onClose: () => void }) {
           </div>
           <div>
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Top 25 produits par CA généré</p>
-            <div className="overflow-auto max-h-64 rounded-xl border border-gray-100">
+            <div className="overflow-y-auto max-h-64 rounded-xl border border-gray-100">
+              <div className="overflow-x-auto">
               <table className="w-full text-xs">
                 <thead className="bg-gray-50 sticky top-0">
                   <tr>{['#', 'Produit', 'Business', 'CA', 'Qté vendue', 'Stock'].map(h => <th key={h} className="text-left px-3 py-2 font-semibold text-gray-500">{h}</th>)}</tr>
@@ -527,6 +540,7 @@ function DetailProduits({ onClose }: { onClose: () => void }) {
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
           </div>
         </div>
@@ -562,7 +576,8 @@ function DetailUsers({ onClose }: { onClose: () => void }) {
               placeholder="Filtrer par email…"
               className="flex-1 bg-transparent outline-none text-sm text-gray-700 placeholder-gray-400" />
           </div>
-          <div className="overflow-auto max-h-64 rounded-xl border border-gray-100">
+          <div className="overflow-y-auto max-h-64 rounded-xl border border-gray-100">
+            <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead className="bg-gray-50 sticky top-0">
                 <tr>{['Email', 'Businesses', 'WhatsApp', 'Inscrit le'].map(h => <th key={h} className="text-left px-3 py-2 font-semibold text-gray-500">{h}</th>)}</tr>
@@ -583,6 +598,7 @@ function DetailUsers({ onClose }: { onClose: () => void }) {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
       )}
@@ -660,8 +676,8 @@ function TabOverview({ overview, refreshing, onRefresh }: {
       {detail === 'produits' && <DetailProduits  onClose={() => setDetail(null)} />}
 
       {/* Charts */}
-      <div className="grid lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="sm:col-span-2 lg:col-span-2 bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-semibold text-gray-900">CA — 30 derniers jours</h3>
             <button onClick={onRefresh} disabled={refreshing}
@@ -1539,10 +1555,10 @@ export function AdminDashboard() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 border-b border-gray-200">
+      <div className="flex gap-1 border-b border-gray-200 overflow-x-auto scrollbar-hide">
         {TABS.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
-            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors shrink-0 whitespace-nowrap ${
               tab === t.id
                 ? 'border-indigo-600 text-indigo-600'
                 : 'border-transparent text-gray-500 hover:text-gray-700'

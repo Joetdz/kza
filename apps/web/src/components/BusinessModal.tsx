@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react';
 import { X, Building2, Phone, Globe, DollarSign, Loader2, MapPin, Image, Upload } from 'lucide-react';
+import { ScrollLock } from './ui/ScrollLock';
 import { useStore, type BusinessRecord } from '../store/useStore';
 import { uploadApi } from '../api';
 
@@ -111,8 +112,9 @@ export function BusinessModal({ business, onClose, isFirstBusiness = false }: Pr
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+      <ScrollLock />
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
           <div>
             <h2 className="text-lg font-bold text-gray-900">
               {business ? 'Modifier le business' : isFirstBusiness ? 'Créer votre business' : 'Nouveau business'}
@@ -128,7 +130,7 @@ export function BusinessModal({ business, onClose, isFirstBusiness = false }: Pr
           )}
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto flex-1">
           {/* Logo upload */}
           <div className="flex items-center gap-4">
             <div className="w-16 h-16 rounded-xl border-2 border-dashed border-gray-200 flex items-center justify-center overflow-hidden bg-gray-50 shrink-0">

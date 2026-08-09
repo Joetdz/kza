@@ -4,6 +4,7 @@ import {
   Info, Phone, Video,
   Reply, CheckCheck, Check, Clock, Mic, Image, FileText,
   Plus, ChevronLeft, Copy, Check as CheckIcon, Hash,
+  BarChart2, ShoppingCart, TrendingUp,
 } from 'lucide-react';
 import { useWhatsApp, WaContact, WaMessage } from '../../hooks/useWhatsApp';
 import { waApi } from '../../api/whatsapp';
@@ -253,6 +254,12 @@ export function Inbox() {
   const [notes, setNotes] = useState<any[]>([]);
   const [noteText, setNoteText] = useState('');
   const [showNoteInput, setShowNoteInput] = useState(false);
+  // Product stats
+  const [productStats, setProductStats] = useState<Array<{ productName: string; productId: string | null; totalMentions: number; conversions: number; conversionRate: number }>>([]);
+  const [showProductStats, setShowProductStats] = useState(false);
+  // Draft order creation
+  const [creatingDraft, setCreatingDraft] = useState(false);
+  const [draftCreated, setDraftCreated] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -278,11 +285,31 @@ export function Inbox() {
     setContacts(prev => prev.map(c => c.id === selectedId ? { ...c, isRead: true } : c));
     waApi.getNotes(selectedId).then(setNotes).catch(() => {});
     setRepliedTo(null);
+    setDraftCreated(false);
   }, [selectedId]);
+
+  const handleCreateDraft = async () => {
+    if (!selectedId || creatingDraft) return;
+    setCreatingDraft(true);
+    try {
+      await waApi.createDraftOrder(selectedId);
+      setDraftCreated(true);
+    } catch (e) {
+      console.error('Draft creation failed', e);
+    } finally {
+      setCreatingDraft(false);
+    }
+  };
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [selectedMessages.length]);
+
+  useEffect(() => {
+    if (showProductStats) {
+      waApi.getProductStats().then(setProductStats).catch(() => {});
+    }
+  }, [showProductStats]);
 
   const handleSend = async () => {
     if (!msgText.trim() || !selectedId || !selectedContact) return;
@@ -337,6 +364,11 @@ export function Inbox() {
                 {syncPct}%
               </div>
             )}
+            <button onClick={() => setShowProductStats(v => !v)} title="Statistiques produits"
+              className="p-1.5 rounded-full hover:bg-[#2a3942] transition-colors"
+              style={{ color: showProductStats ? '#00a884' : C.icon }}>
+              <BarChart2 size={20} />
+            </button>
             <button onClick={initDisconnect} title="Déconnecter"
               className="p-1.5 rounded-full hover:bg-[#2a3942] transition-colors">
               <X size={20} style={{ color: C.icon }} />
@@ -383,6 +415,34 @@ export function Inbox() {
             </button>
           ))}
         </div>
+
+        {/* Product stats panel */}
+        {showProductStats && (
+          <div className="border-b overflow-y-auto max-h-72" style={{ borderColor: C.divider, background: '#0d1f29' }}>
+            <div className="px-4 py-3 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <TrendingUp size={14} style={{ color: '#00a884' }} />
+                <span className="text-xs font-semibold" style={{ color: C.text }}>Produits mentionnés</span>
+              </div>
+              <span className="text-[10px]" style={{ color: C.textSub }}>Taux de conversion</span>
+            </div>
+            {productStats.length === 0 ? (
+              <p className="text-xs text-center pb-4" style={{ color: C.textSub }}>Aucune donnée — les messages entrants seront analysés automatiquement.</p>
+            ) : productStats.map(s => (
+              <div key={s.productName} className="px-4 pb-3">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs font-medium truncate flex-1" style={{ color: C.text }}>{s.productName}</span>
+                  <span className="text-xs ml-3 shrink-0" style={{ color: s.conversionRate >= 10 ? '#00a884' : C.textSub }}>
+                    {s.conversions}/{s.totalMentions} · {s.conversionRate}%
+                  </span>
+                </div>
+                <div className="h-1.5 rounded-full overflow-hidden" style={{ background: C.inputBg }}>
+                  <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(s.conversionRate, 100)}%`, background: s.conversionRate >= 10 ? '#00a884' : '#f0a052' }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Contact list */}
         <div className="flex-1 overflow-y-auto">
@@ -657,6 +717,28 @@ export function Inbox() {
                 <option value="converted">✅ Converti</option>
                 <option value="lost">❌ Perdu</option>
               </select>
+            </div>
+
+            {/* Créer brouillon de commande */}
+            <div className="rounded-lg p-3 border" style={{ background: '#0d2016', borderColor: '#25d36630' }}>
+              <p className="text-xs mb-2" style={{ color: '#8696a0' }}>Commande détectée dans la conversation</p>
+              {draftCreated ? (
+                <div className="flex items-center gap-2 text-xs" style={{ color: '#00a884' }}>
+                  <CheckCheck size={14} />
+                  Brouillon créé dans Logistique
+                </div>
+              ) : (
+                <button
+                  onClick={handleCreateDraft}
+                  disabled={creatingDraft}
+                  className="w-full flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-semibold transition-opacity disabled:opacity-60"
+                  style={{ background: '#25d366', color: '#0d2016' }}>
+                  {creatingDraft
+                    ? <><span className="w-3 h-3 border-2 border-[#0d2016]/30 border-t-[#0d2016] rounded-full animate-spin" />Analyse en cours…</>
+                    : <><ShoppingCart size={13} />Créer brouillon de commande</>
+                  }
+                </button>
+              )}
             </div>
 
             {/* Lead data */}

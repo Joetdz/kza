@@ -54,6 +54,7 @@ model Product {
   media          ProductMedia[]
   orderItems     ManualOrderItem[]
   locationStocks LocationStock[]
+  waMentions     WhatsAppProductMention[]
 
   @@unique([userId, sku])
   @@index([userId])
@@ -187,6 +188,7 @@ model WhatsAppContact {
   messages WhatsAppMessage[]
   notes    WhatsAppNote[]
   tags     WhatsAppContactTag[]
+  mentions WhatsAppProductMention[]
 
   @@unique([userId, phone])
   @@index([userId])
@@ -280,6 +282,25 @@ model WhatsAppAIConfig {
 
   @@index([userId])
   @@map("wa_ai_configs")
+}
+
+model WhatsAppProductMention {
+  id          String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId      String          @map("user_id")
+  businessId  String?         @map("business_id") @db.Uuid
+  contactId   String          @map("contact_id") @db.Uuid
+  contact     WhatsAppContact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  productId   String?         @map("product_id") @db.Uuid
+  product     Product?        @relation(fields: [productId], references: [id])
+  productName String          @map("product_name")
+  messageText String?         @map("message_text")
+  isConverted Boolean         @default(false) @map("is_converted")
+  createdAt   DateTime        @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([contactId])
+  @@index([productId])
+  @@map("wa_product_mentions")
 }
 
 model WhatsAppKBEntry {
@@ -571,6 +592,8 @@ model ManualOrder {
   deliveryFee        Decimal         @map("delivery_fee") @db.Decimal(10, 2)
   totalAmount        Decimal         @map("total_amount") @db.Decimal(10, 2)
   status             String          @default("pending")
+  isDraft            Boolean         @default(false) @map("is_draft")
+  sourceContactId    String?         @map("source_contact_id") @db.Uuid
   partnerId          String?         @map("partner_id") @db.Uuid
   partner            DeliveryPartner? @relation(fields: [partnerId], references: [id])
   locationId         String?         @map("location_id") @db.Uuid
