@@ -419,76 +419,81 @@ Réponds UNIQUEMENT en JSON, rien d'autre.`;
   }
 
   // ── Extract order details from conversation for auto-draft ────────────────────
+  // Name and phone come from WhatsApp directly — AI only extracts order details.
   async extractOrderDetails(
     history: Array<{ direction: string; content: string }>,
+    catalog: Array<{ id: string; name: string; sellingPrice: number }>,
   ): Promise<{
-    customerName: string | null;
-    customerPhone: string | null;
-    city: string | null;
-    address: string | null;
+    productId: string | null;
     productName: string | null;
     productQuantity: number;
     agreedPriceUsd: number | null;
     deliveryFeeCdf: number | null;
-    notes: string | null;
+    city: string | null;
+    address: string | null;
   }> {
     const conversation = history
       .slice(-40)
       .map(m => `${m.direction === 'in' ? 'Client' : 'Vendeur'}: ${m.content}`)
       .join('\n');
 
-    const prompt = `Tu es un assistant expert pour un e-commerce en RDC (République Démocratique du Congo).
-Analyse cette conversation WhatsApp et extrais les informations de la commande.
+    const catalogLines = catalog.length > 0
+      ? catalog.map(p => `- ${p.name} (id: ${p.id})${p.sellingPrice > 0 ? ` — prix catalogue: ${p.sellingPrice}$` : ''}`).join('\n')
+      : '(catalogue vide)';
+
+    const prompt = `Tu es un extracteur de données de commande. Lis la conversation WhatsApp ci-dessous et extrais uniquement les informations EXPLICITEMENT mentionnées.
+
+⛔ RÈGLE ABSOLUE : Tu n'inventes RIEN. Si une information n'est pas littéralement dans la conversation → null. Pas de déduction, pas d'estimation.
+
+Catalogue produits disponibles :
+${catalogLines}
 
 Conversation :
 ${conversation}
 
-Réponds UNIQUEMENT avec un objet JSON valide, sans texte avant ni après :
+Réponds UNIQUEMENT en JSON valide :
 {
-  "customerName": string|null,
-  "customerPhone": string|null,
-  "city": string|null,
-  "address": string|null,
+  "productId": string|null,
   "productName": string|null,
   "productQuantity": number,
   "agreedPriceUsd": number|null,
   "deliveryFeeCdf": number|null,
-  "notes": string|null
+  "city": string|null,
+  "address": string|null
 }
 
-Règles strictes :
-- customerPhone : normalise en format DRC — 0XXXXXXXXX (ex: 0898495566) ou +243XXXXXXXXX (ex: +243898495566). Si tu vois 9 chiffres sans 0 devant, ajoute le 0. Ne retourne jamais un format WhatsApp brut (ex: +243812345678 → ok, 812345678 → ajoute 0 devant → 0812345678).
-- agreedPriceUsd : prix en dollars USD convenus pour le(s) produit(s) — pas les frais de livraison — nombre seul sans symbole.
-- deliveryFeeCdf : frais de livraison convenus en francs congolais FC — nombre seul sans symbole.
-- address : adresse complète fournie par le client (avenue, quartier, commune, numéro, références).
-- productQuantity : défaut 1 si non précisé.
-- Ne devine JAMAIS une info absente → null. Ne confonds pas le prix produit et les frais de livraison.`;
+Règles :
+- productId : id du produit du catalogue qui correspond à ce que le client a commandé. Si le produit n'est pas dans le catalogue → null pour productId, mais mets le nom dans productName.
+- productName : nom exact du produit commandé tel que mentionné dans la conversation. null si non mentionné.
+- productQuantity : quantité explicitement mentionnée. 1 si non précisée.
+- agreedPriceUsd : prix en $ USD du produit convenu dans la conversation (pas la livraison). null si non mentionné.
+- deliveryFeeCdf : frais de livraison en FC convenus dans la conversation. null si non mentionné.
+- city : ville explicitement mentionnée. null si absente.
+- address : adresse complète telle qu'écrite par le client. null si absente.`;
 
     try {
       const response = await this.openai.chat.completions.create({
         model: 'gpt-4o',
         messages: [{ role: 'user', content: prompt }],
         temperature: 0,
-        max_tokens: 300,
+        max_tokens: 250,
         response_format: { type: 'json_object' },
       });
       const raw = response.choices[0]?.message?.content ?? '{}';
       const parsed = JSON.parse(raw);
       return {
-        customerName: parsed.customerName ?? null,
-        customerPhone: parsed.customerPhone ?? null,
-        city: parsed.city ?? null,
-        address: parsed.address ?? null,
+        productId: parsed.productId ?? null,
         productName: parsed.productName ?? null,
         productQuantity: Number(parsed.productQuantity) || 1,
         agreedPriceUsd: parsed.agreedPriceUsd != null ? Number(parsed.agreedPriceUsd) : null,
         deliveryFeeCdf: parsed.deliveryFeeCdf != null ? Number(parsed.deliveryFeeCdf) : null,
-        notes: parsed.notes ?? null,
+        city: parsed.city ?? null,
+        address: parsed.address ?? null,
       };
     } catch {
       return {
-        customerName: null, customerPhone: null, city: null, address: null,
-        productName: null, productQuantity: 1, agreedPriceUsd: null, deliveryFeeCdf: null, notes: null,
+        productId: null, productName: null, productQuantity: 1,
+        agreedPriceUsd: null, deliveryFeeCdf: null, city: null, address: null,
       };
     }
   }

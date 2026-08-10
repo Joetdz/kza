@@ -660,12 +660,24 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
           return;
         }
 
-        const details = await this.aiService.extractOrderDetails(history);
+        // ── Name + phone come from WhatsApp, not from AI ─────────────────────────
+        const resolvedCustomerPhone = normalizeDrcPhone(phone) ?? null;
+        const resolvedCustomerName  =
+          contactDisplayName
+          ?? this.contactNames.get(`${userId}:${toJid(phone)}`)
+          ?? contact.leadName
+          ?? contact.displayName
+          ?? null;
 
-        // ── Validation gate — all 5 fields must be present before creating a draft ──
-        const resolvedCustomerPhone = normalizeDrcPhone(details.customerPhone) ?? normalizeDrcPhone(phone) ?? null;
-        const resolvedCustomerName  = details.customerName ?? contact.leadName ?? contact.displayName ?? contactDisplayName ?? null;
+        // ── AI extracts order details from conversation + catalog ─────────────────
+        const products = await this.prisma.product.findMany({
+          where: { userId },
+          select: { id: true, name: true, sellingPrice: true },
+        });
 
+        const details = await this.aiService.extractOrderDetails(history, products);
+
+        // ── Validation gate — all 5 fields required before creating draft ─────────
         const missingFields: string[] = [];
         if (!resolvedCustomerPhone)          missingFields.push('numéro client');
         if (!resolvedCustomerName)           missingFields.push('nom client');
@@ -680,14 +692,10 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
           return;
         }
 
-        const products = await this.prisma.product.findMany({
-          where: { userId },
-          select: { id: true, name: true, sellingPrice: true },
-        });
-
-        let matchedProductId: string | null = null;
+        // Use productId returned by AI if it matched catalog, else fallback fuzzy match
+        let matchedProductId: string | null = details.productId ?? null;
         let unitPrice = details.agreedPriceUsd ?? 0;
-        if (details.productName && products.length > 0) {
+        if (!matchedProductId && details.productName && products.length > 0) {
           const needle = details.productName.toLowerCase();
           const matched = products.find(p =>
             p.name.toLowerCase().includes(needle) || needle.includes(p.name.toLowerCase())
@@ -696,6 +704,9 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
             matchedProductId = matched.id;
             if (!unitPrice) unitPrice = matched.sellingPrice ?? 0;
           }
+        } else if (matchedProductId && !unitPrice) {
+          const catalogProduct = products.find(p => p.id === matchedProductId);
+          if (catalogProduct) unitPrice = catalogProduct.sellingPrice ?? 0;
         }
 
         // Get business ID — prefer contact's business, fallback to first business of this user
@@ -724,7 +735,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
             totalAmount: matchedProductId ? qty * unitPrice : unitPrice,
             isDraft: true,
             sourceContactId: contact.id,
-            notes: details.notes ?? `Brouillon créé automatiquement — label WhatsApp: ${labelName}`,
+            notes: `Brouillon créé automatiquement — label WhatsApp: ${labelName}`,
             items: matchedProductId ? {
               create: [{ productId: matchedProductId, quantity: qty, unitPrice }],
             } : undefined,
