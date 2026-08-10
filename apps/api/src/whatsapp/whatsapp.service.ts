@@ -592,12 +592,30 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
         // Detect if LID was not resolved (still has >13 digit number as @c.us)
         const phoneIsLid = /^\d{13,}@c\.us$/.test(phone);
 
-        // Build message history — try in-memory cache first
+        if (phoneIsLid) {
+          // Use Baileys v7 built-in LID→PN mapping (backed by auth-state DB + WA USync query)
+          try {
+            const pn: string | null = await (sock as any).signalRepository?.lidMapping?.getPNForLID(chatId);
+            if (pn) {
+              const realPhone = jidToDb(jidNormalizedUser(pn));
+              const lidRaw = chatId.replace(/@lid$/, '').replace(/@c\.us$/, '');
+              this.lidToPhone.set(`${userId}:${lidRaw}`, realPhone);
+              this.logger.log(`LID resolved via signalRepository: ${chatId} → ${realPhone}`);
+              phone = realPhone;
+            } else {
+              this.logger.warn(`signalRepository.getPNForLID returned null for ${chatId}`);
+            }
+          } catch (err: any) {
+            this.logger.warn(`getPNForLID failed for ${chatId}: ${err?.message}`);
+          }
+        }
+
+        // Build message history from in-memory cache
         let history = this.getCacheForContact(userId, phone);
         let contactDisplayName: string | null = null;
 
-        // If cache is empty OR phone is still a LID, load messages directly from WA
-        if (phoneIsLid || history.length === 0) {
+        // If cache is still empty, load messages from WA server
+        if (history.length === 0) {
           try {
             const rawResult = await (sock as any).loadMessages(chatId, 40, undefined, false);
             const waMessages: WAMessage[] = Array.isArray(rawResult)
@@ -605,39 +623,20 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
               : (rawResult?.messages ?? []);
 
             if (waMessages.length > 0) {
-              // Extract real phone JID from a message's remoteJid (non-LID)
-              const realMsg = waMessages.find(m =>
-                m.key?.remoteJid && !m.key.remoteJid.endsWith('@lid')
-              );
-              if (realMsg?.key?.remoteJid) {
-                const realPhone = jidToDb(realMsg.key.remoteJid);
-                if (realPhone !== phone) {
-                  const lidRaw = chatId.replace(/@c\.us$/, '').replace(/@lid$/, '');
-                  this.lidToPhone.set(`${userId}:${lidRaw}`, realPhone);
-                  this.logger.log(`LID resolved via loadMessages: ${chatId} → ${realPhone}`);
-                  phone = realPhone;
-                  const cached = this.getCacheForContact(userId, phone);
-                  if (cached.length > 0) history = cached;
-                }
-              }
-
-              // Extract contact display name from pushName on incoming messages
               contactDisplayName = waMessages.find(m => !m.key.fromMe && m.pushName)?.pushName ?? null;
-
-              // Build history from WA messages if still empty
-              if (history.length === 0) {
-                history = waMessages
-                  .sort((a, b) => Number(a.messageTimestamp ?? 0) - Number(b.messageTimestamp ?? 0))
-                  .map(m => ({
-                    direction: (m.key.fromMe ? 'out' : 'in') as 'in' | 'out',
-                    content: extractText(m.message) || '',
-                  }))
-                  .filter(m => m.content.trim().length > 0);
-                this.logger.log(`Loaded ${history.length} msgs from WA for ${chatId}`);
-              }
+              history = waMessages
+                .sort((a, b) => Number(a.messageTimestamp ?? 0) - Number(b.messageTimestamp ?? 0))
+                .map(m => ({
+                  direction: (m.key.fromMe ? 'out' : 'in') as 'in' | 'out',
+                  content: extractText(m.message) || '',
+                }))
+                .filter(m => m.content.trim().length > 0);
+              this.logger.log(`Loaded ${history.length} msgs from WA for ${chatId}`);
+            } else {
+              this.logger.warn(`loadMessages returned 0 msgs for ${chatId}`);
             }
           } catch (err: any) {
-            this.logger.warn(`loadMessages for ${chatId} failed: ${err?.message}`);
+            this.logger.warn(`loadMessages failed for ${chatId}: ${err?.message}`);
           }
         }
 
@@ -665,6 +664,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
         const resolvedCustomerName  =
           contactDisplayName
           ?? this.contactNames.get(`${userId}:${toJid(phone)}`)
+          ?? this.contactNames.get(`${userId}:${chatId}`)
           ?? contact.leadName
           ?? contact.displayName
           ?? null;
