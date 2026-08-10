@@ -449,26 +449,34 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
     });
 
     // Contact name updates + LID → phone mapping
-    sock.ev.on('contacts.upsert', (contacts) => {
-      for (const c of contacts) {
-        const name = c.notify || c.name || null;
-        if (name && c.id) this.contactNames.set(`${userId}:${c.id}`, name);
-        // Build LID ↔ phone map: if contact has a LID field alongside a normal JID
-        const lid: string | undefined = (c as any).lid;
-        if (lid && c.id?.endsWith('@s.whatsapp.net')) {
-          const lidRaw = lid.replace(/@lid$/, '').replace(/@c\.us$/, '');
-          this.lidToPhone.set(`${userId}:${lidRaw}`, jidToDb(c.id));
-        }
-        // Reverse: if the contact itself IS a LID and has a pn (phone number) field
-        const pn: string | undefined = (c as any).pn ?? (c as any).phoneNumber;
-        if (pn && c.id && (c.id.endsWith('@lid') || c.id.endsWith('@c.us'))) {
-          const lidRaw = c.id.replace(/@lid$/, '').replace(/@c\.us$/, '');
-          const digits = lidRaw.replace(/\D/g, '');
-          if (digits.length > 12) { // likely a LID
-            this.lidToPhone.set(`${userId}:${lidRaw}`, jidToDb(pn));
-          }
+    const processContact = (c: any) => {
+      const name = c.notify || c.name || null;
+      if (name && c.id) this.contactNames.set(`${userId}:${c.id}`, name);
+      // Build LID ↔ phone map: if contact has a LID field alongside a normal JID
+      const lid: string | undefined = c.lid ?? c.lidJid ?? c.linkedDeviceId;
+      if (lid && c.id?.endsWith('@s.whatsapp.net')) {
+        const lidRaw = lid.replace(/@lid$/, '').replace(/@c\.us$/, '');
+        this.lidToPhone.set(`${userId}:${lidRaw}`, jidToDb(c.id));
+        this.logger.log(`LID cached (upsert): ${lidRaw} → ${jidToDb(c.id)}`);
+      }
+      // Reverse: if the contact itself IS a LID and has a pn (phone number) field
+      const pn: string | undefined = c.pn ?? c.phoneNumber ?? c.phone;
+      if (pn && c.id && (c.id.endsWith('@lid') || c.id.endsWith('@c.us'))) {
+        const lidRaw = c.id.replace(/@lid$/, '').replace(/@c\.us$/, '');
+        const digits = lidRaw.replace(/\D/g, '');
+        if (digits.length > 12) {
+          this.lidToPhone.set(`${userId}:${lidRaw}`, jidToDb(pn));
+          this.logger.log(`LID cached (pn): ${lidRaw} → ${jidToDb(pn)}`);
         }
       }
+    };
+
+    sock.ev.on('contacts.upsert', (contacts) => {
+      for (const c of contacts) processContact(c);
+    });
+
+    sock.ev.on('contacts.update', (updates) => {
+      for (const c of updates) processContact(c);
     });
 
     // LID-to-phone mapping pushed by WhatsApp (Baileys v7 multi-device)
@@ -578,15 +586,69 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
         if (!isTrigger) return;
 
         // Resolve LID to real phone number (WhatsApp v7 multi-device uses LIDs in label events)
-        const phone = this.resolvePhone(userId, chatId);
+        let phone = this.resolvePhone(userId, chatId);
         this.logger.log(`Label handler → chatId: ${chatId}, resolved phone: ${phone}`);
+
+        // Detect if LID was not resolved (still has >13 digit number as @c.us)
+        const phoneIsLid = /^\d{13,}@c\.us$/.test(phone);
+
+        // Build message history — try in-memory cache first
+        let history = this.getCacheForContact(userId, phone);
+        let contactDisplayName: string | null = null;
+
+        // If cache is empty OR phone is still a LID, load messages directly from WA
+        if (phoneIsLid || history.length === 0) {
+          try {
+            const rawResult = await (sock as any).loadMessages(chatId, 40, undefined, false);
+            const waMessages: WAMessage[] = Array.isArray(rawResult)
+              ? rawResult
+              : (rawResult?.messages ?? []);
+
+            if (waMessages.length > 0) {
+              // Extract real phone JID from a message's remoteJid (non-LID)
+              const realMsg = waMessages.find(m =>
+                m.key?.remoteJid && !m.key.remoteJid.endsWith('@lid')
+              );
+              if (realMsg?.key?.remoteJid) {
+                const realPhone = jidToDb(realMsg.key.remoteJid);
+                if (realPhone !== phone) {
+                  const lidRaw = chatId.replace(/@c\.us$/, '').replace(/@lid$/, '');
+                  this.lidToPhone.set(`${userId}:${lidRaw}`, realPhone);
+                  this.logger.log(`LID resolved via loadMessages: ${chatId} → ${realPhone}`);
+                  phone = realPhone;
+                  const cached = this.getCacheForContact(userId, phone);
+                  if (cached.length > 0) history = cached;
+                }
+              }
+
+              // Extract contact display name from pushName on incoming messages
+              contactDisplayName = waMessages.find(m => !m.key.fromMe && m.pushName)?.pushName ?? null;
+
+              // Build history from WA messages if still empty
+              if (history.length === 0) {
+                history = waMessages
+                  .sort((a, b) => Number(a.messageTimestamp ?? 0) - Number(b.messageTimestamp ?? 0))
+                  .map(m => ({
+                    direction: (m.key.fromMe ? 'out' : 'in') as 'in' | 'out',
+                    content: extractText(m.message) || '',
+                  }))
+                  .filter(m => m.content.trim().length > 0);
+                this.logger.log(`Loaded ${history.length} msgs from WA for ${chatId}`);
+              }
+            }
+          } catch (err: any) {
+            this.logger.warn(`loadMessages for ${chatId} failed: ${err?.message}`);
+          }
+        }
 
         // Upsert contact — may not exist if conversation was never opened in CRM
         let contact = await this.prisma.whatsAppContact.findUnique({
           where: { userId_phone: { userId, phone } },
         });
         if (!contact) {
-          contact = await this.upsertContact(userId, phone);
+          contact = await this.upsertContact(userId, phone, { displayName: contactDisplayName ?? undefined });
+        } else if (contactDisplayName && !contact.displayName) {
+          contact = await this.upsertContact(userId, phone, { displayName: contactDisplayName });
         }
 
         // Check no draft already exists for this contact
@@ -598,8 +660,25 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
           return;
         }
 
-        const history = this.getCacheForContact(userId, phone);
         const details = await this.aiService.extractOrderDetails(history);
+
+        // ── Validation gate — all 5 fields must be present before creating a draft ──
+        const resolvedCustomerPhone = normalizeDrcPhone(details.customerPhone) ?? normalizeDrcPhone(phone) ?? null;
+        const resolvedCustomerName  = details.customerName ?? contact.leadName ?? contact.displayName ?? contactDisplayName ?? null;
+
+        const missingFields: string[] = [];
+        if (!resolvedCustomerPhone)          missingFields.push('numéro client');
+        if (!resolvedCustomerName)           missingFields.push('nom client');
+        if (!details.productName)            missingFields.push('produit commandé');
+        if (details.agreedPriceUsd == null)  missingFields.push('prix $ commande');
+        if (details.deliveryFeeCdf == null)  missingFields.push('frais livraison FC');
+
+        if (missingFields.length > 0) {
+          this.logger.warn(
+            `Draft skipped (missing: ${missingFields.join(', ')}) — label: "${labelName}" chat: ${chatId} history: ${history.length} msgs`
+          );
+          return;
+        }
 
         const products = await this.prisma.product.findMany({
           where: { userId },
@@ -637,8 +716,8 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
             userId,
             businessId: bizId,
             orderNumber: orderCount + 1,
-            customerName: details.customerName ?? contact.leadName ?? contact.displayName ?? 'Client WhatsApp',
-            customerPhone: normalizeDrcPhone(details.customerPhone) ?? normalizeDrcPhone(phone) ?? null,
+            customerName: resolvedCustomerName,
+            customerPhone: resolvedCustomerPhone,
             city: details.city ?? contact.leadCity ?? '',
             address: details.address ?? '',
             deliveryFee: details.deliveryFeeCdf ?? 0,
