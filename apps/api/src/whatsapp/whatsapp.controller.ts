@@ -488,19 +488,18 @@ export class WhatsAppController {
     // Get conversation history from in-memory cache
     const history = this.wa.getCacheForContact(user.id, contact.phone);
 
-    // Extract order details with AI
-    const details = await this.ai.extractOrderDetails(history);
-
-    // Find matching product by name (fuzzy)
+    // Load catalog then extract order details with AI
     const products = await this.prisma.product.findMany({
       where: { userId: user.id },
       select: { id: true, name: true, sellingPrice: true },
     });
 
-    let matchedProductId: string | null = null;
+    const details = await this.ai.extractOrderDetails(history, products);
+
+    let matchedProductId: string | null = details.productId ?? null;
     let unitPrice = details.agreedPriceUsd ?? 0;
 
-    if (details.productName && products.length > 0) {
+    if (!matchedProductId && details.productName && products.length > 0) {
       const needle = details.productName.toLowerCase();
       const matched = products.find(p =>
         p.name.toLowerCase().includes(needle) || needle.includes(p.name.toLowerCase())
@@ -509,6 +508,9 @@ export class WhatsAppController {
         matchedProductId = matched.id;
         if (!unitPrice) unitPrice = matched.sellingPrice ?? 0;
       }
+    } else if (matchedProductId && !unitPrice) {
+      const cp = products.find(p => p.id === matchedProductId);
+      if (cp) unitPrice = cp.sellingPrice ?? 0;
     }
 
     const bizId = user.businessId ?? user.id;
@@ -524,15 +526,15 @@ export class WhatsAppController {
         userId: user.id,
         businessId: bizId,
         orderNumber: orderCount + 1,
-        customerName: details.customerName ?? contact.leadName ?? contact.displayName ?? 'Client WhatsApp',
-        customerPhone: details.customerPhone ?? contact.phone ?? null,
+        customerName: contact.leadName ?? contact.displayName ?? 'Client WhatsApp',
+        customerPhone: contact.phone ?? null,
         city: details.city ?? contact.leadCity ?? '',
         address: details.address ?? '',
         deliveryFee: details.deliveryFeeCdf ?? 0,
         totalAmount,
         isDraft: true,
         sourceContactId: contactId,
-        notes: details.notes ?? null,
+        notes: null,
         items: matchedProductId ? {
           create: [{ productId: matchedProductId, quantity: qty, unitPrice }],
         } : undefined,
