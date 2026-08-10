@@ -716,7 +716,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
             userId,
             businessId: bizId,
             orderNumber: orderCount + 1,
-            customerName: resolvedCustomerName,
+            customerName: resolvedCustomerName ?? 'Client WhatsApp',
             customerPhone: resolvedCustomerPhone,
             city: details.city ?? contact.leadCity ?? '',
             address: details.address ?? '',
