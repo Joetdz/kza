@@ -517,8 +517,36 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
       }
     };
 
-    // In Baileys v7, initial chats arrive via messaging-history.set
-    sock.ev.on('messaging-history.set', ({ chats } : any) => cacheGroups(chats ?? []));
+    // In Baileys v7, initial history arrives via messaging-history.set
+    sock.ev.on('messaging-history.set', ({ chats, contacts, messages } : any) => {
+      // Groups cache
+      cacheGroups(chats ?? []);
+
+      // Populate contact names from history contacts
+      for (const c of (contacts ?? [])) {
+        processContact(c);
+      }
+
+      // Populate message cache from historical messages (so label events can find history)
+      const msgs: WAMessage[] = Array.isArray(messages) ? messages : [];
+      let cached = 0;
+      for (const msg of msgs) {
+        const jid = msg.key?.remoteJid;
+        if (!jid || jid === 'status@broadcast' || jid.endsWith('@g.us') || jid.endsWith('@broadcast')) continue;
+        const phone = jidToDb(jid);
+        const text = extractText(msg.message) ?? '';
+        if (!text) continue;
+        const timestamp = Number(msg.messageTimestamp ?? Date.now() / 1000) * 1000;
+        this.addToCache(userId, phone, {
+          direction: msg.key.fromMe ? 'out' : 'in',
+          content: text,
+          waId: msg.key.id ?? undefined,
+          sentAt: new Date(timestamp).toISOString(),
+        });
+        cached++;
+      }
+      if (cached > 0) this.logger.log(`History sync: cached ${cached} msgs for ${userId}`);
+    });
     sock.ev.on('chats.upsert' as any, (chats: any) => {
       const current = this.groupsCache.get(userId) ?? [];
       const updated = [...current];
@@ -610,44 +638,16 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
           }
         }
 
-        // Build message history from in-memory cache
-        let history = this.getCacheForContact(userId, phone);
-        let contactDisplayName: string | null = null;
-
-        // If cache is still empty, load messages from WA server
-        if (history.length === 0) {
-          try {
-            const rawResult = await (sock as any).loadMessages(chatId, 40, undefined, false);
-            const waMessages: WAMessage[] = Array.isArray(rawResult)
-              ? rawResult
-              : (rawResult?.messages ?? []);
-
-            if (waMessages.length > 0) {
-              contactDisplayName = waMessages.find(m => !m.key.fromMe && m.pushName)?.pushName ?? null;
-              history = waMessages
-                .sort((a, b) => Number(a.messageTimestamp ?? 0) - Number(b.messageTimestamp ?? 0))
-                .map(m => ({
-                  direction: (m.key.fromMe ? 'out' : 'in') as 'in' | 'out',
-                  content: extractText(m.message) || '',
-                }))
-                .filter(m => m.content.trim().length > 0);
-              this.logger.log(`Loaded ${history.length} msgs from WA for ${chatId}`);
-            } else {
-              this.logger.warn(`loadMessages returned 0 msgs for ${chatId}`);
-            }
-          } catch (err: any) {
-            this.logger.warn(`loadMessages failed for ${chatId}: ${err?.message}`);
-          }
-        }
+        // Build message history from in-memory cache (populated by messages.upsert + messaging-history.set)
+        const history = this.getCacheForContact(userId, phone);
+        this.logger.log(`History for ${phone}: ${history.length} msgs`);
 
         // Upsert contact — may not exist if conversation was never opened in CRM
         let contact = await this.prisma.whatsAppContact.findUnique({
           where: { userId_phone: { userId, phone } },
         });
         if (!contact) {
-          contact = await this.upsertContact(userId, phone, { displayName: contactDisplayName ?? undefined });
-        } else if (contactDisplayName && !contact.displayName) {
-          contact = await this.upsertContact(userId, phone, { displayName: contactDisplayName });
+          contact = await this.upsertContact(userId, phone);
         }
 
         // Check no draft already exists for this contact
@@ -662,8 +662,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
         // ── Name + phone come from WhatsApp, not from AI ─────────────────────────
         const resolvedCustomerPhone = normalizeDrcPhone(phone) ?? null;
         const resolvedCustomerName  =
-          contactDisplayName
-          ?? this.contactNames.get(`${userId}:${toJid(phone)}`)
+          this.contactNames.get(`${userId}:${toJid(phone)}`)
           ?? this.contactNames.get(`${userId}:${chatId}`)
           ?? contact.leadName
           ?? contact.displayName
@@ -677,19 +676,20 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
 
         const details = await this.aiService.extractOrderDetails(history, products);
 
-        // ── Validation gate — all 5 fields required before creating draft ─────────
+        // ── Validation gate — only phone is strictly required ────────────────────
+        if (!resolvedCustomerPhone) {
+          this.logger.warn(`Draft skipped — numéro client introuvable (LID: ${chatId})`);
+          return;
+        }
+
+        // Signal missing fields but still create the draft
         const missingFields: string[] = [];
-        if (!resolvedCustomerPhone)          missingFields.push('numéro client');
         if (!resolvedCustomerName)           missingFields.push('nom client');
         if (!details.productName)            missingFields.push('produit commandé');
         if (details.agreedPriceUsd == null)  missingFields.push('prix $ commande');
         if (details.deliveryFeeCdf == null)  missingFields.push('frais livraison FC');
-
         if (missingFields.length > 0) {
-          this.logger.warn(
-            `Draft skipped (missing: ${missingFields.join(', ')}) — label: "${labelName}" chat: ${chatId} history: ${history.length} msgs`
-          );
-          return;
+          this.logger.warn(`Draft créé mais incomplet (à compléter: ${missingFields.join(', ')}) — chat: ${chatId}`);
         }
 
         // Use productId returned by AI if it matched catalog, else fallback fuzzy match
@@ -727,7 +727,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
             userId,
             businessId: bizId,
             orderNumber: orderCount + 1,
-            customerName: resolvedCustomerName ?? 'Client WhatsApp',
+            customerName: resolvedCustomerName ?? resolvedCustomerPhone ?? 'Client WhatsApp',
             customerPhone: resolvedCustomerPhone,
             city: details.city ?? contact.leadCity ?? '',
             address: details.address ?? '',
