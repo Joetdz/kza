@@ -639,8 +639,18 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
         }
 
         // Build message history from in-memory cache (populated by messages.upsert + messaging-history.set)
-        const history = this.getCacheForContact(userId, phone);
-        this.logger.log(`History for ${phone}: ${history.length} msgs`);
+        // Also try the LID-format key — messaging-history.set caches messages under the LID remoteJid
+        let history = this.getCacheForContact(userId, phone);
+        if (history.length === 0) {
+          const lidKey = jidToDb(chatId); // e.g. 259544957616361@c.us
+          if (lidKey !== phone) {
+            history = this.getCacheForContact(userId, lidKey);
+            if (history.length > 0) {
+              this.logger.log(`History found under LID key ${lidKey}: ${history.length} msgs`);
+            }
+          }
+        }
+        this.logger.log(`History for ${phone}: ${history.length} msgs — preview: ${history.slice(0, 2).map(m => m.content.substring(0, 60)).join(' | ')}`);
 
         // Upsert contact — may not exist if conversation was never opened in CRM
         let contact = await this.prisma.whatsAppContact.findUnique({
@@ -674,7 +684,9 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
           select: { id: true, name: true, sellingPrice: true },
         });
 
+        this.logger.log(`Sending ${history.length} msgs to AI for extraction (chat: ${chatId})`);
         const details = await this.aiService.extractOrderDetails(history, products);
+        this.logger.log(`AI extracted: product=${details.productName} price=${details.agreedPriceUsd} delivery=${details.deliveryFeeCdf} address=${details.address}`);
 
         // ── Validation gate — only phone is strictly required ────────────────────
         if (!resolvedCustomerPhone) {
