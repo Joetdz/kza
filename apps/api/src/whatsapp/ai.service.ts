@@ -431,6 +431,8 @@ Réponds UNIQUEMENT en JSON, rien d'autre.`;
     deliveryFeeCdf: number | null;
     city: string | null;
     address: string | null;
+    expectedDeliveryDate: string | null;
+    notes: string | null;
   }> {
     const conversation = history
       .slice(-40)
@@ -459,7 +461,9 @@ Réponds UNIQUEMENT en JSON valide :
   "agreedPriceUsd": number|null,
   "deliveryFeeCdf": number|null,
   "city": string|null,
-  "address": string|null
+  "address": string|null,
+  "expectedDeliveryDate": string|null,
+  "notes": string|null
 }
 
 Règles :
@@ -469,7 +473,9 @@ Règles :
 - agreedPriceUsd : prix en $ USD du produit convenu dans la conversation (pas la livraison). null si non mentionné.
 - deliveryFeeCdf : frais de livraison en FC convenus dans la conversation. null si non mentionné.
 - city : ville explicitement mentionnée. null si absente.
-- address : adresse complète telle qu'écrite par le client. null si absente.`;
+- address : adresse complète telle qu'écrite par le client (avenue, quartier, commune, numéro, références). null si absente.
+- expectedDeliveryDate : date de livraison prévue au format ISO YYYY-MM-DD. Interprète les expressions comme "lundi", "demain", "dans 2 jours", "le 15" en date absolue par rapport à aujourd'hui (${new Date().toISOString().split('T')[0]}). null si non mentionnée.
+- notes : tout commentaire, attente particulière, instruction spéciale ou information supplémentaire du client qui ne rentre pas dans les autres champs. null si rien.`;
 
     try {
       const response = await this.openai.chat.completions.create({
@@ -489,11 +495,14 @@ Règles :
         deliveryFeeCdf: parsed.deliveryFeeCdf != null ? Number(parsed.deliveryFeeCdf) : null,
         city: parsed.city ?? null,
         address: parsed.address ?? null,
+        expectedDeliveryDate: parsed.expectedDeliveryDate ?? null,
+        notes: parsed.notes ?? null,
       };
     } catch {
       return {
         productId: null, productName: null, productQuantity: 1,
         agreedPriceUsd: null, deliveryFeeCdf: null, city: null, address: null,
+        expectedDeliveryDate: null, notes: null,
       };
     }
   }

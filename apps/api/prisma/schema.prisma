@@ -161,6 +161,18 @@ model WhatsAppSession {
   @@map("wa_sessions")
 }
 
+model WaBaileyAuthKey {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @map("user_id")
+  keyType   String   @map("key_type")
+  keyId     String   @map("key_id")
+  keyData   Json     @map("key_data")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([userId, keyType, keyId])
+  @@map("wa_baileys_keys")
+}
+
 model WhatsAppContact {
   id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId          String    @map("user_id")

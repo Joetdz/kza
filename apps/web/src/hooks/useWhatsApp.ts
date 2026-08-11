@@ -242,6 +242,11 @@ export function useWhatsApp() {
         setContacts(prev => prev.map(c => (c.id === data.contactId ? { ...c, ...data } : c)));
       });
 
+      // Draft order created from WhatsApp label → notify Logistics page
+      sock.on('draft-order-created', (data: any) => {
+        window.dispatchEvent(new CustomEvent('wa:draft-order-created', { detail: data }));
+      });
+
       socketRef.current = sock;
     });
 

@@ -132,6 +132,34 @@ export function Logistics() {
 
   useEffect(() => { if (isAdmin) refresh(); }, [isAdmin]);
 
+  // Auto-refresh + sound when a draft is created from WhatsApp label
+  useEffect(() => {
+    const playSound = () => {
+      try {
+        const ctx = new AudioContext();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(880, ctx.currentTime);
+        osc.frequency.setValueAtTime(1100, ctx.currentTime + 0.12);
+        gain.gain.setValueAtTime(0.4, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 0.5);
+      } catch { /* AudioContext blocked */ }
+    };
+
+    const handler = () => {
+      playSound();
+      refresh();
+    };
+
+    window.addEventListener('wa:draft-order-created', handler);
+    return () => window.removeEventListener('wa:draft-order-created', handler);
+  }, []);
+
   async function refresh() {
     setLoading(true);
     try {

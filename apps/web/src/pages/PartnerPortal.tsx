@@ -455,6 +455,8 @@ function OrdersTab({ orders, agents, token, partnerName, businessName, updatingI
   const [rescheduleOrderId, setRescheduleOrderId] = useState<string | null>(null);
   const [rescheduleDate, setRescheduleDate] = useState('');
   const [rescheduling, setRescheduling] = useState(false);
+  const [filterDate, setFilterDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [filterStatus, setFilterStatus] = useState('');
 
   async function handleReschedule() {
     if (!rescheduleOrderId) return;
@@ -481,6 +483,18 @@ function OrdersTab({ orders, agents, token, partnerName, businessName, updatingI
     finally { setAssigningId(null); setTimeout(() => setWaFeedback(null), 3000); }
   }
 
+  // Apply filters
+  const filtered = orders.filter(o => {
+    if (filterDate) {
+      const createdDay   = new Date(o.createdAt).toISOString().slice(0, 10);
+      const scheduledDay = o.scheduledAt ? new Date(o.scheduledAt).toISOString().slice(0, 10) : null;
+      // Keep order if creation date OR scheduled delivery date matches the filter
+      if (createdDay !== filterDate && scheduledDay !== filterDate) return false;
+    }
+    if (filterStatus && o.status !== filterStatus) return false;
+    return true;
+  });
+
   if (orders.length === 0) {
     return (
       <div className="text-center py-12 text-gray-400">
@@ -492,7 +506,42 @@ function OrdersTab({ orders, agents, token, partnerName, businessName, updatingI
 
   return (
     <div className="space-y-3">
-      {orders.map(o => {
+      {/* Filters */}
+      <div className="bg-white rounded-2xl p-3 border border-gray-100 shadow-sm">
+        <div className="flex gap-2 flex-wrap items-center">
+          <div className="flex items-center gap-1.5 flex-1 min-w-[130px]">
+            <Calendar size={13} className="text-gray-400 shrink-0" />
+            <input
+              type="date"
+              value={filterDate}
+              onChange={e => setFilterDate(e.target.value)}
+              className="w-full border border-gray-200 rounded-xl px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-indigo-400 bg-white"
+            />
+          </div>
+          <select
+            value={filterStatus}
+            onChange={e => setFilterStatus(e.target.value)}
+            className="flex-1 min-w-[130px] border border-gray-200 rounded-xl px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-indigo-400 bg-white"
+          >
+            <option value="">Tous les statuts</option>
+            {ALL_STATUSES.map(s => (
+              <option key={s.value} value={s.value}>{s.label}</option>
+            ))}
+          </select>
+        </div>
+        <p className="text-[10px] text-gray-400 mt-2">
+          {filtered.length} commande{filtered.length !== 1 ? 's' : ''} sur {orders.length} au total
+        </p>
+      </div>
+
+      {filtered.length === 0 && (
+        <div className="text-center py-10 text-gray-400">
+          <Truck size={32} className="mx-auto mb-2 opacity-40" />
+          <p className="text-sm">Aucune commande ne correspond aux filtres.</p>
+        </div>
+      )}
+
+      {filtered.map(o => {
         const st = statusInfo(o.status);
         const isTerminal = ['delivered', 'cancelled', 'fake'].includes(o.status);
         const currentAgentId = selectedAgent[o.id] ?? o.agentId ?? '';

@@ -174,22 +174,55 @@ export class PartnerPortalController {
       include: { items: { include: { product: true } }, agent: true },
     });
 
-    // Send WhatsApp notification — to group if configured, else to agent's phone
+    // Send WhatsApp notifications when an agent is assigned
     if (body.agentId) {
       const agent = await this.prisma.deliveryAgent.findUnique({ where: { id: body.agentId } });
-      const destination = (partner as any).whatsappGroupId ?? agent?.phone ?? null;
-      if (destination) {
-        const num = String(order.orderNumber).padStart(4, '0');
-        const lines = order.items.map(i =>
-          `• ${(i as any).product.name} × ${i.quantity}`
-        ).join('\n');
 
-        const scheduledLine = order.scheduledAt
-          ? `📅 Livraison prévue : ${new Date(order.scheduledAt).toLocaleString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`
-          : null;
+      const num = String(order.orderNumber).padStart(4, '0');
+      const lines = order.items.map(i =>
+        `• ${(i as any).product.name} × ${i.quantity}`
+      ).join('\n');
 
-        const msg = [
-          `🚚 *Course assignée — #${num}*`,
+      const scheduledLine = order.scheduledAt
+        ? `📅 Livraison prévue : ${new Date(order.scheduledAt).toLocaleString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`
+        : null;
+
+      const deliveryDate = order.scheduledAt ? new Date(order.scheduledAt) : new Date();
+      const dayOfWeek = deliveryDate.toLocaleDateString('fr-FR', { weekday: 'long' });
+
+      const uploadsRoot = join(process.cwd(), 'uploads');
+      const firstWithImage = (order.items as any[]).find((i: any) => i.product?.imageUrl);
+      const imagePath = firstWithImage
+        ? join(uploadsRoot, (firstWithImage.product.imageUrl as string).replace(/^\/uploads\//, ''))
+        : undefined;
+
+      // ── 1. Message groupe (format inchangé) ──────────────────────────
+      const groupMsg = [
+        `🚚 *Course assignée — #${num}*`,
+        ``,
+        `👤 Client : ${order.customerName}${order.customerPhone ? ` (${order.customerPhone})` : ''}`,
+        `📍 Adresse : ${order.city} — ${order.address}`,
+        scheduledLine,
+        ``,
+        `📦 Produits :`,
+        lines,
+        ``,
+        `💰 Montant produits : $${Number(order.totalAmount).toLocaleString('fr-FR')}`,
+        `🛵 Livraison : ${Number(order.deliveryFee).toLocaleString('fr-FR')} FC`,
+        order.notes ? `📝 Notes : ${order.notes}` : null,
+      ].filter(l => l !== null).join('\n');
+
+      if ((partner as any).whatsappGroupId) {
+        await this.whatsapp.notifyOrder(order.userId, (partner as any).whatsappGroupId, groupMsg, imagePath);
+      }
+
+      // ── 2. Message personnel au livreur ──────────────────────────────
+      if (agent?.phone) {
+        const agentTag = `@${agent.phone.replace(/\D/g, '')}`;
+        const agentMsg = [
+          `Bonjour *${agent.name}* 👋 ${agentTag}`,
+          ``,
+          `La course *#${num}* du *${dayOfWeek}* vous est assignée.`,
           ``,
           `👤 Client : ${order.customerName}${order.customerPhone ? ` (${order.customerPhone})` : ''}`,
           `📍 Adresse : ${order.city} — ${order.address}`,
@@ -198,18 +231,12 @@ export class PartnerPortalController {
           `📦 Produits :`,
           lines,
           ``,
-          `💰 Montant produits : $${Number(order.totalAmount).toLocaleString('fr-FR')}`,
+          `💰 Montant : $${Number(order.totalAmount).toLocaleString('fr-FR')}`,
           `🛵 Livraison : ${Number(order.deliveryFee).toLocaleString('fr-FR')} FC`,
           order.notes ? `📝 Notes : ${order.notes}` : null,
         ].filter(l => l !== null).join('\n');
 
-        const uploadsRoot = join(process.cwd(), 'uploads');
-        const firstWithImage = (order.items as any[]).find((i: any) => i.product?.imageUrl);
-        const imagePath = firstWithImage
-          ? join(uploadsRoot, (firstWithImage.product.imageUrl as string).replace(/^\/uploads\//, ''))
-          : undefined;
-
-        await this.whatsapp.notifyOrder(order.userId, destination, msg, imagePath);
+        await this.whatsapp.notifyOrder(order.userId, agent.phone, agentMsg, imagePath);
       }
     }
 

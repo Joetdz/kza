@@ -3,7 +3,6 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AiService } from './ai.service';
 import { AutomationService } from './automation.service';
 import makeWASocket, {
-  useMultiFileAuthState,
   DisconnectReason,
   fetchLatestBaileysVersion,
   proto,
@@ -17,6 +16,7 @@ import * as qrcode from 'qrcode';
 import * as path from 'path';
 import * as fs from 'fs';
 import pino from 'pino';
+import { useDbAuthState, clearDbAuth } from './wa-auth-state';
 
 // Normalize a phone number to DRC format (0XXXXXXXXX or +243XXXXXXXXX)
 function normalizeDrcPhone(raw: string | null): string | null {
@@ -146,10 +146,6 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
 
   private emit(event: string, userId: string, data: any) {
     if (this.gatewayEmit) this.gatewayEmit(event, userId, data);
-  }
-
-  private authPath(userId: string): string {
-    return path.join(process.cwd(), '.baileys_auth', userId);
   }
 
   private getPendingSet(userId: string): Set<string> {
@@ -291,10 +287,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    const authDir = this.authPath(userId);
-    fs.mkdirSync(authDir, { recursive: true });
-
-    const { state, saveCreds } = await useMultiFileAuthState(authDir);
+    const { state, saveCreds } = await useDbAuthState(userId, this.prisma);
 
     // fetchLatestBaileysVersion hits GitHub — may hang on VPS; fall back to pinned version after 5s
     const FALLBACK_VERSION: [number, number, number] = [2, 3000, 1015901307];
@@ -404,8 +397,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
         this.emit('disconnected', userId, { reason: String(statusCode) });
 
         if (isLogout) {
-          const dir = this.authPath(userId);
-          if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
+          await clearDbAuth(userId, this.prisma);
           this.logger.log(`WhatsApp logged out for ${userId}`);
 
           if (this.pairingPhones.has(userId)) {
@@ -747,7 +739,8 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
             totalAmount: matchedProductId ? qty * unitPrice : unitPrice,
             isDraft: true,
             sourceContactId: contact.id,
-            notes: `Brouillon créé automatiquement — label WhatsApp: ${labelName}`,
+            scheduledAt: details.expectedDeliveryDate ? new Date(details.expectedDeliveryDate) : null,
+            notes: details.notes ?? null,
             items: matchedProductId ? {
               create: [{ productId: matchedProductId, quantity: qty, unitPrice }],
             } : undefined,
@@ -785,11 +778,8 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
     }
 
     // Always wipe stale auth so WhatsApp generates a fresh QR/pairing code
-    const authDir = this.authPath(userId);
-    if (fs.existsSync(authDir)) {
-      fs.rmSync(authDir, { recursive: true, force: true });
-      this.logger.log(`Cleared stale auth for ${userId} — fresh pairing`);
-    }
+    await clearDbAuth(userId, this.prisma);
+    this.logger.log(`Cleared stale auth for ${userId} — fresh pairing`);
 
     // Emit error if no code arrives within 35s
     const timeout = setTimeout(() => {
@@ -1416,8 +1406,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
       this.sockets.delete(userId);
       this.connectedUsers.delete(userId);
     }
-    const dir = this.authPath(userId);
-    if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
+    await clearDbAuth(userId, this.prisma);
 
     await this.prisma.whatsAppSession.upsert({
       where: { userId },
