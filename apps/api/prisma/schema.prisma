@@ -651,3 +651,34 @@ model LocationStock {
   @@unique([locationId, productId])
   @@map("location_stocks")
 }
+
+// ─── Follow-up automatique (relance + fidélisation) ────────────────────────────
+
+model WaFollowUpConfig {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId           String   @unique @map("user_id")
+  relanceEnabled   Boolean  @default(false) @map("relance_enabled")
+  relanceDelayH    Int      @default(24) @map("relance_delay_h")
+  relanceTemplate  String   @default("Bonjour {{nom}}, votre commande #{{numero_commande}} ({{produit}}) n'a pas encore été livrée. Êtes-vous disponible pour la réception ?") @map("relance_template")
+  loyaltyEnabled   Boolean  @default(false) @map("loyalty_enabled")
+  loyaltyDelayH    Int      @default(24) @map("loyalty_delay_h")
+  loyaltyTemplate  String   @default("Bonjour {{nom}} ! Merci pour votre commande #{{numero_commande}} 🙏. Nous espérons que {{produit}} vous satisfait. N'hésitez pas à nous partager votre avis !") @map("loyalty_template")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  @@map("wa_followup_configs")
+}
+
+model WaFollowUp {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @map("user_id")
+  orderId   String   @map("order_id") @db.Uuid
+  type      String   // "relance" | "loyalty"
+  phone     String
+  message   String
+  sentAt    DateTime @default(now()) @map("sent_at")
+
+  @@unique([orderId, type])
+  @@index([userId])
+  @@map("wa_followups")
+}

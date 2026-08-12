@@ -97,22 +97,30 @@ function MediaContent({ msg }: { msg: WaMessage }) {
 
 // QR / connect screen
 function ConnectScreen({
-  pairingCode, pairingError, loading, onConnectPairing, businessPhone,
+  qr, pairingCode, pairingError, loading, onConnect, onConnectPairing, businessPhone,
 }: {
+  qr: string | null;
   pairingCode: string | null;
   pairingError: string | null;
   loading: any;
+  onConnect: () => Promise<void>;
   onConnectPairing: (phone: string) => Promise<void>;
   businessPhone?: string;
 }) {
+  const [mode, setMode] = useState<'code' | 'qr'>('code');
   const [phoneInput, setPhoneInput] = useState(businessPhone ?? '');
   const [connecting, setConnecting] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  const handleConnect = async () => {
+  const handleConnectPairing = async () => {
     if (!phoneInput.trim()) return;
     setConnecting(true);
     try { await onConnectPairing(phoneInput.trim()); } catch { setConnecting(false); }
+  };
+
+  const handleConnectQr = async () => {
+    setConnecting(true);
+    try { await onConnect(); } catch { /* ignore */ } finally { setConnecting(false); }
   };
 
   useEffect(() => {
@@ -126,50 +134,15 @@ function ConnectScreen({
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // ── Code reçu ──
-  if (pairingCode) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full px-4" style={{ background: C.chatBg }}>
-        <div className="bg-[#202c33] rounded-2xl p-8 max-w-sm w-full text-center shadow-xl space-y-5">
-          <div className="w-14 h-14 rounded-full flex items-center justify-center mx-auto" style={{ background: '#00a884' }}>
-            <Hash size={24} color="white" />
-          </div>
-          <div>
-            <p className="text-base font-semibold mb-1" style={{ color: C.text }}>Votre code de liaison</p>
-            <p className="text-xs" style={{ color: C.textSub }}>Ouvre WhatsApp sur ton téléphone</p>
-          </div>
-          <div className="rounded-2xl py-4 px-6 flex items-center justify-center gap-4"
-            style={{ background: '#111b21', border: '1px solid #374151' }}>
-            <span className="text-4xl font-black tracking-[0.25em] font-mono" style={{ color: '#00a884' }}>
-              {pairingCode}
-            </span>
-            <button onClick={handleCopy} title="Copier"
-              className="p-2 rounded-xl transition-colors"
-              style={{ background: copied ? '#00a884' : '#2a3942', color: 'white' }}>
-              {copied ? <CheckIcon size={16} /> : <Copy size={16} />}
-            </button>
-          </div>
-          <ol className="text-sm text-left space-y-2" style={{ color: C.textSub }}>
-            <li>1. Paramètres → <strong style={{ color: C.text }}>Appareils liés</strong></li>
-            <li>2. <strong style={{ color: C.text }}>+ Lier un appareil</strong></li>
-            <li>3. <strong style={{ color: C.text }}>Lier avec un numéro de téléphone</strong></li>
-            <li>4. Entrez le code ci-dessus</li>
-          </ol>
-          <p className="text-xs" style={{ color: '#6b7280' }}>Le code se renouvelle toutes les 3 minutes</p>
-        </div>
-      </div>
-    );
-  }
-
-  // ── Chargement Chrome ──
-  if (loading || connecting) {
+  // ── Chargement ──
+  if ((loading || connecting) && !pairingCode && !qr) {
     return (
       <div className="flex flex-col items-center justify-center h-full px-4" style={{ background: C.chatBg }}>
         <div className="bg-[#202c33] rounded-2xl p-8 max-w-sm w-full text-center shadow-xl space-y-4">
           <div className="flex items-center justify-center gap-3">
             <span className="w-5 h-5 border-2 border-[#00a884] border-t-transparent rounded-full animate-spin" />
             <span className="text-sm" style={{ color: C.textSub }}>
-              {loading ? (loading.message || 'Chargement...') : 'Démarrage du navigateur...'}
+              {loading ? (loading.message || 'Chargement...') : 'Connexion en cours...'}
             </span>
           </div>
           {loading && (
@@ -181,52 +154,131 @@ function ConnectScreen({
               <p className="text-xs" style={{ color: C.textSub }}>{loading.percent}%</p>
             </>
           )}
-          <p className="text-xs" style={{ color: C.textSub }}>Génération du code en cours...</p>
         </div>
       </div>
     );
   }
 
-  // ── Saisie du numéro ──
   return (
     <div className="flex flex-col items-center justify-center h-full px-4" style={{ background: C.chatBg }}>
       <div className="bg-[#202c33] rounded-2xl p-6 sm:p-8 max-w-sm w-full shadow-xl space-y-5">
+
+        {/* Header */}
         <div className="text-center">
           <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-3" style={{ background: '#00a884' }}>
             <Phone size={28} color="white" />
           </div>
           <h2 className="text-xl font-semibold" style={{ color: C.text }}>Connecter WhatsApp</h2>
-          <p className="text-xs mt-1" style={{ color: C.textSub }}>
-            Entrez votre numéro pour recevoir un code de liaison
-          </p>
         </div>
-        {pairingError && (
-          <div className="rounded-xl px-4 py-3 text-sm" style={{ background: '#3b1515', color: '#f87171', border: '1px solid #7f1d1d' }}>
-            {pairingError}
+
+        {/* Mode toggle */}
+        <div className="flex rounded-xl overflow-hidden" style={{ border: '1px solid #374151' }}>
+          {(['code', 'qr'] as const).map(m => (
+            <button key={m} onClick={() => setMode(m)}
+              className="flex-1 py-2 text-xs font-semibold transition-colors"
+              style={{
+                background: mode === m ? '#00a884' : 'transparent',
+                color: mode === m ? 'white' : C.textSub,
+              }}>
+              {m === 'code' ? '# Code de liaison' : '⬛ QR Code'}
+            </button>
+          ))}
+        </div>
+
+        {/* ── Mode CODE ── */}
+        {mode === 'code' && !pairingCode && (
+          <>
+            {pairingError && (
+              <div className="rounded-xl px-4 py-3 text-sm" style={{ background: '#3b1515', color: '#f87171', border: '1px solid #7f1d1d' }}>
+                {pairingError}
+              </div>
+            )}
+            <input
+              type="tel"
+              value={phoneInput}
+              onChange={e => !businessPhone && setPhoneInput(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && !businessPhone && handleConnectPairing()}
+              placeholder="243812345678"
+              readOnly={!!businessPhone}
+              className="w-full rounded-xl px-4 py-3 text-sm outline-none"
+              style={{ background: '#111b21', color: C.text, border: '1px solid #374151', opacity: businessPhone ? 0.7 : 1 }}
+            />
+            {businessPhone && (
+              <p className="text-xs text-center" style={{ color: C.textSub }}>
+                Numéro configuré dans les paramètres du business
+              </p>
+            )}
+            <p className="text-xs text-center" style={{ color: C.textSub }}>
+              Format international sans + ni espaces (ex : 243812345678)
+            </p>
+            <button
+              onClick={handleConnectPairing}
+              disabled={!phoneInput.trim() || connecting}
+              className="w-full py-3 rounded-xl font-semibold text-sm transition-opacity disabled:opacity-50 flex items-center justify-center gap-2"
+              style={{ background: '#00a884', color: 'white' }}>
+              {connecting
+                ? <><span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Génération...</>
+                : 'Obtenir le code de liaison'}
+            </button>
+          </>
+        )}
+
+        {/* ── Code reçu ── */}
+        {mode === 'code' && pairingCode && (
+          <div className="space-y-4">
+            <div className="rounded-2xl py-4 px-6 flex items-center justify-center gap-4"
+              style={{ background: '#111b21', border: '1px solid #374151' }}>
+              <span className="text-4xl font-black tracking-[0.25em] font-mono" style={{ color: '#00a884' }}>
+                {pairingCode}
+              </span>
+              <button onClick={handleCopy} title="Copier"
+                className="p-2 rounded-xl transition-colors"
+                style={{ background: copied ? '#00a884' : '#2a3942', color: 'white' }}>
+                {copied ? <CheckIcon size={16} /> : <Copy size={16} />}
+              </button>
+            </div>
+            <ol className="text-sm text-left space-y-1.5" style={{ color: C.textSub }}>
+              <li>1. Paramètres → <strong style={{ color: C.text }}>Appareils liés</strong></li>
+              <li>2. <strong style={{ color: C.text }}>+ Lier un appareil</strong></li>
+              <li>3. <strong style={{ color: C.text }}>Lier avec un numéro de téléphone</strong></li>
+              <li>4. Entrez le code ci-dessus</li>
+            </ol>
+            <p className="text-xs text-center" style={{ color: '#6b7280' }}>Le code se renouvelle toutes les 3 minutes</p>
           </div>
         )}
-        <input
-          type="tel"
-          value={phoneInput}
-          onChange={e => !businessPhone && setPhoneInput(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && !businessPhone && handleConnect()}
-          placeholder="+243 812 345 678"
-          readOnly={!!businessPhone}
-          className="w-full rounded-xl px-4 py-3 text-sm outline-none"
-          style={{ background: '#111b21', color: C.text, border: '1px solid #374151', opacity: businessPhone ? 0.7 : 1 }}
-        />
-        {businessPhone && (
-          <p className="text-xs text-center" style={{ color: C.textSub }}>
-            Numéro configuré dans les paramètres du business
-          </p>
+
+        {/* ── Mode QR ── */}
+        {mode === 'qr' && !qr && (
+          <div className="space-y-4 text-center">
+            <p className="text-xs" style={{ color: C.textSub }}>
+              Un QR code va apparaître. Scannez-le depuis WhatsApp sur votre téléphone.
+            </p>
+            <button
+              onClick={handleConnectQr}
+              disabled={connecting}
+              className="w-full py-3 rounded-xl font-semibold text-sm transition-opacity disabled:opacity-50 flex items-center justify-center gap-2"
+              style={{ background: '#00a884', color: 'white' }}>
+              {connecting
+                ? <><span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Génération...</>
+                : 'Générer le QR Code'}
+            </button>
+          </div>
         )}
-        <button
-          onClick={handleConnect}
-          disabled={!phoneInput.trim()}
-          className="w-full py-3 rounded-xl font-semibold text-sm transition-opacity disabled:opacity-50"
-          style={{ background: '#00a884', color: 'white' }}>
-          Obtenir le code de liaison
-        </button>
+
+        {mode === 'qr' && qr && (
+          <div className="space-y-3 text-center">
+            <div className="rounded-2xl p-3 mx-auto w-fit" style={{ background: 'white' }}>
+              <img src={qr} alt="QR Code WhatsApp" className="w-52 h-52" />
+            </div>
+            <ol className="text-sm text-left space-y-1.5" style={{ color: C.textSub }}>
+              <li>1. Paramètres → <strong style={{ color: C.text }}>Appareils liés</strong></li>
+              <li>2. <strong style={{ color: C.text }}>+ Lier un appareil</strong></li>
+              <li>3. Scannez le QR code ci-dessus</li>
+            </ol>
+            <p className="text-xs" style={{ color: '#6b7280' }}>Le QR code expire après 60 secondes</p>
+          </div>
+        )}
+
       </div>
     </div>
   );
@@ -234,9 +286,9 @@ function ConnectScreen({
 
 export function Inbox() {
   const {
-    connected, phone, pairingCode, pairingError, loading, contacts, messages, sync,
+    connected, phone, qr, pairingCode, pairingError, loading, contacts, messages, sync,
     loadContacts, loadMessages, sendMessage, updateContact,
-    initConnectPairing, initDisconnect, setContacts,
+    initConnect, initConnectPairing, initDisconnect, setContacts,
   } = useWhatsApp();
 
   const { businesses, currentBusinessId } = useStore();
@@ -340,7 +392,7 @@ export function Inbox() {
   const syncPct = sync.total > 0 ? Math.round((sync.imported / sync.total) * 100) : 0;
 
   if (!connected) {
-    return <ConnectScreen pairingCode={pairingCode} pairingError={pairingError} loading={loading} onConnectPairing={initConnectPairing} businessPhone={currentBusiness?.whatsappPhone} />;
+    return <ConnectScreen qr={qr} pairingCode={pairingCode} pairingError={pairingError} loading={loading} onConnect={initConnect} onConnectPairing={initConnectPairing} businessPhone={currentBusiness?.whatsappPhone} />;
   }
 
   return (

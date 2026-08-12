@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, Trash2, MapPin, Truck, ShoppingBag, ChevronRight, X, Package, AlertCircle, MessageCircle, BarChart2, Link, Printer, Edit2, Check, Calendar, DollarSign, FileText } from 'lucide-react';
+import { Plus, Trash2, MapPin, Truck, ShoppingBag, ChevronRight, X, Package, AlertCircle, MessageCircle, BarChart2, Link, Printer, Edit2, Check, Calendar, DollarSign, FileText, Bell, RefreshCw } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useStore } from '../store/useStore';
-import { logisticsApi, type StockLocation, type DeliveryPartner, type ManualOrder, type PartnerReport, type PartnerPayment } from '../api/logistics';
+import { logisticsApi, type StockLocation, type DeliveryPartner, type ManualOrder, type PartnerReport, type PartnerPayment, type FollowUpConfig, type FollowUpEntry } from '../api/logistics';
 import { ScrollLock } from '../components/ui/ScrollLock';
 import { CitySelect } from '../components/CitySelect';
 
@@ -56,7 +56,7 @@ export function Logistics() {
   const { products } = useStore();
   const isAdmin = !!user?.email && ADMIN_EMAILS.includes(user.email.toLowerCase());
 
-  const [tab, setTab] = useState<'locations' | 'partners' | 'orders' | 'payments'>('locations');
+  const [tab, setTab] = useState<'locations' | 'partners' | 'orders' | 'payments' | 'relance'>('locations');
   const [locations, setLocations] = useState<StockLocation[]>([]);
   const [partners, setPartners] = useState<DeliveryPartner[]>([]);
   const [orders, setOrders] = useState<ManualOrder[]>([]);
@@ -117,6 +117,16 @@ export function Logistics() {
   const [stockAllocations, setStockAllocations] = useState<Record<string, string>>({});
   const [stockLoading, setStockLoading] = useState(false);
 
+  // Follow-up
+  const [followUpConfig, setFollowUpConfig] = useState<FollowUpConfig | null>(null);
+  const [followUpHistory, setFollowUpHistory] = useState<FollowUpEntry[]>([]);
+  const [followUpLoading, setFollowUpLoading] = useState(false);
+  const [followUpSaving, setFollowUpSaving] = useState(false);
+  const [followUpTriggerLoading, setFollowUpTriggerLoading] = useState<'relance' | 'loyalty' | null>(null);
+  const [followUpConfigDraft, setFollowUpConfigDraft] = useState<Partial<FollowUpConfig>>({});
+  const [followUpPreview, setFollowUpPreview] = useState<{ type: 'relance' | 'loyalty'; orders: ManualOrder[] } | null>(null);
+  const [followUpPreviewLoading, setFollowUpPreviewLoading] = useState<'relance' | 'loyalty' | null>(null);
+
   // Daily report
   const [dailyReportModal, setDailyReportModal] = useState<DeliveryPartner | null>(null);
   const [dailyReportDate, setDailyReportDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -175,6 +185,58 @@ export function Logistics() {
       setPayments(pays);
     } catch { /* ignore */ }
     finally { setLoading(false); }
+  }
+
+  // ── Follow-up ────────────────────────────────────────────────────
+
+  async function loadFollowUp() {
+    setFollowUpLoading(true);
+    try {
+      const [cfg, hist] = await Promise.all([
+        logisticsApi.getFollowUpConfig(),
+        logisticsApi.getFollowUpHistory(100),
+      ]);
+      setFollowUpConfig(cfg);
+      setFollowUpConfigDraft(cfg);
+      setFollowUpHistory(hist);
+    } catch { /* ignore */ }
+    finally { setFollowUpLoading(false); }
+  }
+
+  async function saveFollowUpConfig() {
+    setFollowUpSaving(true);
+    try {
+      const updated = await logisticsApi.updateFollowUpConfig(followUpConfigDraft);
+      setFollowUpConfig(updated);
+      setFollowUpConfigDraft(updated);
+    } catch { /* ignore */ }
+    finally { setFollowUpSaving(false); }
+  }
+
+  async function openFollowUpPreview(type: 'relance' | 'loyalty') {
+    setFollowUpPreviewLoading(type);
+    try {
+      const orders = type === 'relance'
+        ? await logisticsApi.previewRelance()
+        : await logisticsApi.previewLoyalty();
+      setFollowUpPreview({ type, orders });
+    } catch { /* ignore */ }
+    finally { setFollowUpPreviewLoading(null); }
+  }
+
+  async function triggerFollowUp(type: 'relance' | 'loyalty') {
+    setFollowUpTriggerLoading(type);
+    setFollowUpPreview(null);
+    try {
+      const res = type === 'relance'
+        ? await logisticsApi.triggerRelance()
+        : await logisticsApi.triggerLoyalty();
+      alert(`${res.sent} message${res.sent !== 1 ? 's' : ''} envoyé${res.sent !== 1 ? 's' : ''}.`);
+      setFollowUpHistory(await logisticsApi.getFollowUpHistory(100));
+    } catch (e: any) {
+      alert(e?.message ?? 'Erreur lors de l\'envoi');
+    }
+    finally { setFollowUpTriggerLoading(null); }
   }
 
   // ── Locations ────────────────────────────────────────────────────
@@ -474,6 +536,7 @@ export function Logistics() {
     { id: 'partners',  label: 'Partenaires',  icon: Truck },
     { id: 'orders',    label: 'Commandes',    icon: ShoppingBag },
     { id: 'payments',  label: 'Versements',   icon: DollarSign, badge: pendingPaymentsCount },
+    { id: 'relance',   label: 'Relance',      icon: Bell },
   ] as const;
 
   return (
@@ -986,6 +1049,243 @@ export function Logistics() {
             )}
           </div>
         )}
+        {/* ── RELANCE ── */}
+        {tab === 'relance' && (() => {
+          if (!followUpConfig && !followUpLoading) {
+            loadFollowUp();
+            return <div className="text-center py-12 text-gray-400 text-sm">Chargement...</div>;
+          }
+          if (followUpLoading) return <div className="text-center py-12 text-gray-400 text-sm">Chargement...</div>;
+
+          const cfg = followUpConfigDraft;
+          return (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-gray-500">Envois automatiques WhatsApp aux clients</p>
+                <button onClick={loadFollowUp} className="p-2 text-gray-400 hover:text-gray-600 transition-colors" title="Actualiser">
+                  <RefreshCw size={15} />
+                </button>
+              </div>
+
+              {/* ── Relance non-livrées ── */}
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="font-bold text-gray-900">Relance commandes non livrées</h3>
+                    <p className="text-xs text-gray-400 mt-0.5">Envoyé aux clients dont la commande est encore en attente ou assignée</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" checked={!!cfg.relanceEnabled}
+                      onChange={e => setFollowUpConfigDraft(d => ({ ...d, relanceEnabled: e.target.checked }))}
+                      className="sr-only peer" />
+                    <div className="w-10 h-5 bg-gray-200 peer-focus:ring-2 peer-focus:ring-indigo-300 rounded-full peer peer-checked:bg-indigo-600 transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-5" />
+                  </label>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Délai avant relance</label>
+                  <div className="flex items-center gap-2">
+                    <input type="number" min="1" max="168" value={cfg.relanceDelayH ?? 24}
+                      onChange={e => setFollowUpConfigDraft(d => ({ ...d, relanceDelayH: parseInt(e.target.value) || 24 }))}
+                      className="w-24 border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-400 text-center" />
+                    <span className="text-sm text-gray-500">heure(s) après la création de la commande</span>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">
+                    Message de relance
+                    <span className="ml-2 font-normal text-gray-400">Variables : {'{{nom}}'} {'{{numero_commande}}'} {'{{produit}}'}</span>
+                  </label>
+                  <textarea rows={4} value={cfg.relanceTemplate ?? ''}
+                    onChange={e => setFollowUpConfigDraft(d => ({ ...d, relanceTemplate: e.target.value }))}
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-400 resize-none font-mono" />
+                </div>
+
+                <div className="flex gap-2">
+                  <button onClick={saveFollowUpConfig} disabled={followUpSaving}
+                    className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 transition-colors">
+                    {followUpSaving ? 'Enregistrement...' : 'Enregistrer'}
+                  </button>
+                  <button onClick={() => openFollowUpPreview('relance')} disabled={!!followUpPreviewLoading || !cfg.relanceEnabled}
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-50 text-amber-700 text-sm font-semibold hover:bg-amber-100 disabled:opacity-50 transition-colors border border-amber-200">
+                    {followUpPreviewLoading === 'relance'
+                      ? <span className="w-4 h-4 border-2 border-amber-400/30 border-t-amber-600 rounded-full animate-spin" />
+                      : <Bell size={14} />}
+                    Voir les destinataires
+                  </button>
+                </div>
+
+                {/* Preview relance */}
+                {followUpPreview?.type === 'relance' && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <p className="text-sm font-bold text-amber-800">
+                        {followUpPreview.orders.length === 0
+                          ? 'Aucune commande éligible'
+                          : `${followUpPreview.orders.length} commande${followUpPreview.orders.length > 1 ? 's' : ''} à relancer`}
+                      </p>
+                      <button onClick={() => setFollowUpPreview(null)} className="text-amber-500 hover:text-amber-700">
+                        <X size={14} />
+                      </button>
+                    </div>
+                    {followUpPreview.orders.length > 0 && (
+                      <>
+                        <div className="space-y-2 max-h-52 overflow-y-auto mb-3">
+                          {followUpPreview.orders.map(o => {
+                            const st = STATUS_LABELS[o.status] ?? STATUS_LABELS.pending;
+                            return (
+                              <div key={o.id} className="flex items-center gap-3 bg-white rounded-lg px-3 py-2 border border-amber-100">
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="font-bold text-xs text-indigo-600">{orderNum(o.orderNumber)}</span>
+                                    <span className="font-medium text-sm text-gray-800 truncate">{o.customerName}</span>
+                                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${st.color}`}>{st.label}</span>
+                                  </div>
+                                  <p className="text-xs text-gray-400 truncate">{o.customerPhone} · {o.city}</p>
+                                  <p className="text-xs text-gray-400">
+                                    Créée le {new Date(o.createdAt).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                  </p>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <button onClick={() => triggerFollowUp('relance')} disabled={!!followUpTriggerLoading}
+                          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-amber-600 text-white text-sm font-semibold hover:bg-amber-700 disabled:opacity-50 transition-colors">
+                          {followUpTriggerLoading === 'relance'
+                            ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                            : <Bell size={14} />}
+                          Envoyer à tous ({followUpPreview.orders.length})
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* ── Fidélisation livrées ── */}
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="font-bold text-gray-900">Message de fidélisation (après livraison)</h3>
+                    <p className="text-xs text-gray-400 mt-0.5">Envoyé aux clients après la livraison pour recueillir des avis</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" checked={!!cfg.loyaltyEnabled}
+                      onChange={e => setFollowUpConfigDraft(d => ({ ...d, loyaltyEnabled: e.target.checked }))}
+                      className="sr-only peer" />
+                    <div className="w-10 h-5 bg-gray-200 peer-focus:ring-2 peer-focus:ring-indigo-300 rounded-full peer peer-checked:bg-indigo-600 transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-5" />
+                  </label>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Délai après livraison</label>
+                  <div className="flex items-center gap-2">
+                    <input type="number" min="1" max="168" value={cfg.loyaltyDelayH ?? 24}
+                      onChange={e => setFollowUpConfigDraft(d => ({ ...d, loyaltyDelayH: parseInt(e.target.value) || 24 }))}
+                      className="w-24 border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-400 text-center" />
+                    <span className="text-sm text-gray-500">heure(s) après la livraison</span>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">
+                    Message de fidélisation
+                    <span className="ml-2 font-normal text-gray-400">Variables : {'{{nom}}'} {'{{numero_commande}}'} {'{{produit}}'}</span>
+                  </label>
+                  <textarea rows={4} value={cfg.loyaltyTemplate ?? ''}
+                    onChange={e => setFollowUpConfigDraft(d => ({ ...d, loyaltyTemplate: e.target.value }))}
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-400 resize-none font-mono" />
+                </div>
+
+                <div className="flex gap-2">
+                  <button onClick={saveFollowUpConfig} disabled={followUpSaving}
+                    className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 transition-colors">
+                    {followUpSaving ? 'Enregistrement...' : 'Enregistrer'}
+                  </button>
+                  <button onClick={() => openFollowUpPreview('loyalty')} disabled={!!followUpPreviewLoading || !cfg.loyaltyEnabled}
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-green-50 text-green-700 text-sm font-semibold hover:bg-green-100 disabled:opacity-50 transition-colors border border-green-200">
+                    {followUpPreviewLoading === 'loyalty'
+                      ? <span className="w-4 h-4 border-2 border-green-400/30 border-t-green-600 rounded-full animate-spin" />
+                      : <Bell size={14} />}
+                    Voir les destinataires
+                  </button>
+                </div>
+
+                {/* Preview loyalty */}
+                {followUpPreview?.type === 'loyalty' && (
+                  <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <p className="text-sm font-bold text-green-800">
+                        {followUpPreview.orders.length === 0
+                          ? 'Aucune commande éligible'
+                          : `${followUpPreview.orders.length} client${followUpPreview.orders.length > 1 ? 's' : ''} à contacter`}
+                      </p>
+                      <button onClick={() => setFollowUpPreview(null)} className="text-green-500 hover:text-green-700">
+                        <X size={14} />
+                      </button>
+                    </div>
+                    {followUpPreview.orders.length > 0 && (
+                      <>
+                        <div className="space-y-2 max-h-52 overflow-y-auto mb-3">
+                          {followUpPreview.orders.map(o => (
+                            <div key={o.id} className="flex items-center gap-3 bg-white rounded-lg px-3 py-2 border border-green-100">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-bold text-xs text-indigo-600">{orderNum(o.orderNumber)}</span>
+                                  <span className="font-medium text-sm text-gray-800 truncate">{o.customerName}</span>
+                                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-green-100 text-green-700">Livré</span>
+                                </div>
+                                <p className="text-xs text-gray-400 truncate">{o.customerPhone} · {o.city}</p>
+                                <p className="text-xs text-gray-400">
+                                  Livré le {new Date(o.updatedAt).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                </p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        <button onClick={() => triggerFollowUp('loyalty')} disabled={!!followUpTriggerLoading}
+                          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-green-600 text-white text-sm font-semibold hover:bg-green-700 disabled:opacity-50 transition-colors">
+                          {followUpTriggerLoading === 'loyalty'
+                            ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                            : <Bell size={14} />}
+                          Envoyer à tous ({followUpPreview.orders.length})
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* ── Historique ── */}
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+                <h3 className="font-bold text-gray-900 mb-3">Historique des envois ({followUpHistory.length})</h3>
+                {followUpHistory.length === 0 ? (
+                  <p className="text-sm text-gray-400 text-center py-6">Aucun envoi pour l'instant.</p>
+                ) : (
+                  <div className="space-y-2 max-h-72 overflow-y-auto">
+                    {followUpHistory.map(entry => (
+                      <div key={entry.id} className="flex items-start gap-3 py-2 border-b border-gray-50 last:border-0">
+                        <span className={`mt-0.5 shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full
+                          ${entry.type === 'relance' ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>
+                          {entry.type === 'relance' ? 'Relance' : 'Fidélisation'}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs text-gray-500 truncate">{entry.phone}</p>
+                          <p className="text-xs text-gray-700 mt-0.5 line-clamp-2">{entry.message}</p>
+                        </div>
+                        <p className="text-xs text-gray-400 shrink-0">
+                          {new Date(entry.sentAt).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       {/* ── MODAL EMPLACEMENT ── */}

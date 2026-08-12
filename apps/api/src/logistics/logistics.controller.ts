@@ -2,6 +2,7 @@ import { Controller, Get, Post, Patch, Delete, Body, Param, Query, Logger } from
 import { PrismaService } from '../prisma/prisma.service';
 import { CurrentUser, AuthUser } from '../auth/current-user.decorator';
 import { WhatsAppService } from '../whatsapp/whatsapp.service';
+import { FollowUpService } from './followup.service';
 import { join } from 'path';
 
 @Controller()
@@ -11,6 +12,7 @@ export class LogisticsController {
   constructor(
     private prisma: PrismaService,
     private whatsapp: WhatsAppService,
+    private followUp: FollowUpService,
   ) {}
 
   private where(user: AuthUser) {
@@ -481,6 +483,52 @@ export class LogisticsController {
   @Delete('my/logistics/orders/:id')
   deleteOrder(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.prisma.manualOrder.deleteMany({ where: { id, ...this.where(user) } });
+  }
+
+  // ── Follow-up automatique ──────────────────────────────────────────────────
+
+  @Get('my/logistics/followup/config')
+  getFollowUpConfig(@CurrentUser() user: AuthUser) {
+    return this.followUp.getConfig(user.id);
+  }
+
+  @Patch('my/logistics/followup/config')
+  updateFollowUpConfig(@CurrentUser() user: AuthUser, @Body() body: {
+    relanceEnabled?: boolean;
+    relanceDelayH?: number;
+    relanceTemplate?: string;
+    loyaltyEnabled?: boolean;
+    loyaltyDelayH?: number;
+    loyaltyTemplate?: string;
+  }) {
+    return this.followUp.updateConfig(user.id, body);
+  }
+
+  @Get('my/logistics/followup/history')
+  getFollowUpHistory(@CurrentUser() user: AuthUser, @Query('limit') limit?: string) {
+    return this.followUp.getHistory(user.id, limit ? parseInt(limit, 10) : 50);
+  }
+
+  @Get('my/logistics/followup/preview-relance')
+  previewRelance(@CurrentUser() user: AuthUser) {
+    return this.followUp.previewRelance(user.id);
+  }
+
+  @Get('my/logistics/followup/preview-loyalty')
+  previewLoyalty(@CurrentUser() user: AuthUser) {
+    return this.followUp.previewLoyalty(user.id);
+  }
+
+  @Post('my/logistics/followup/trigger-relance')
+  async triggerRelance(@CurrentUser() user: AuthUser) {
+    const sent = await this.followUp.triggerRelance(user.id);
+    return { sent };
+  }
+
+  @Post('my/logistics/followup/trigger-loyalty')
+  async triggerLoyalty(@CurrentUser() user: AuthUser) {
+    const sent = await this.followUp.triggerLoyalty(user.id);
+    return { sent };
   }
 
   // ── Brouillons (drafts) ────────────────────────────────────────────────────────

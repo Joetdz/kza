@@ -100,6 +100,7 @@ export interface ManualOrder {
   location: StockLocation | null;
   items: ManualOrderItem[];
   createdAt: string;
+  updatedAt: string;
 }
 
 export interface DailyReportOrder {
@@ -322,4 +323,40 @@ export const logisticsApi = {
 
   resetPartnerPin: (id: string) =>
     req<unknown>(`/my/logistics/partners/${id}/reset-pin`, { method: 'PATCH' }),
+
+  // Follow-up automatique
+  getFollowUpConfig: () => req<FollowUpConfig>('/my/logistics/followup/config'),
+  updateFollowUpConfig: (body: Partial<FollowUpConfig>) =>
+    req<FollowUpConfig>('/my/logistics/followup/config', { method: 'PATCH', body: JSON.stringify(body) }),
+  getFollowUpHistory: (limit?: number) =>
+    req<FollowUpEntry[]>(`/my/logistics/followup/history${limit ? `?limit=${limit}` : ''}`),
+  previewRelance: () => req<ManualOrder[]>('/my/logistics/followup/preview-relance'),
+  previewLoyalty: () => req<ManualOrder[]>('/my/logistics/followup/preview-loyalty'),
+  triggerRelance: () =>
+    req<{ sent: number }>('/my/logistics/followup/trigger-relance', { method: 'POST' }),
+  triggerLoyalty: () =>
+    req<{ sent: number }>('/my/logistics/followup/trigger-loyalty', { method: 'POST' }),
 };
+
+export interface FollowUpConfig {
+  id: string;
+  userId: string;
+  relanceEnabled: boolean;
+  relanceDelayH: number;
+  relanceTemplate: string;
+  loyaltyEnabled: boolean;
+  loyaltyDelayH: number;
+  loyaltyTemplate: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FollowUpEntry {
+  id: string;
+  userId: string;
+  orderId: string;
+  type: 'relance' | 'loyalty';
+  phone: string;
+  message: string;
+  sentAt: string;
+}
