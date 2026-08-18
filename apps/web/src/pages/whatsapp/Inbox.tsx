@@ -33,13 +33,20 @@ const C = {
 const AVATAR_COLORS = ['#d9696d','#b36fff','#2c9c8a','#f0a052','#5aa5d8','#e87d9a','#4db06a','#e06c3b'];
 const avatarColor = (phone: string) => AVATAR_COLORS[phone.charCodeAt(0) % AVATAR_COLORS.length];
 
+function formatPhone(phone: string): string {
+  const digits = phone.replace(/@.*$/, '');
+  return digits.startsWith('+') ? digits : '+' + digits;
+}
+
 function initials(c: WaContact): string {
-  const name = c.displayName || c.leadName || c.phone.replace('@s.whatsapp.net', '').replace('@c.us', '');
-  return name.slice(0, 2).toUpperCase();
+  if (c.displayName) return c.displayName.slice(0, 2).toUpperCase();
+  if (c.leadName) return c.leadName.slice(0, 2).toUpperCase();
+  const digits = c.phone.replace(/@.*$/, '');
+  return digits.slice(-2);
 }
 
 function displayName(c: WaContact): string {
-  return c.displayName || c.leadName || c.phone.replace('@s.whatsapp.net', '').replace('@c.us', '');
+  return c.displayName || c.leadName || formatPhone(c.phone);
 }
 
 function formatTime(iso?: string): string {
@@ -286,7 +293,7 @@ function ConnectScreen({
 
 export function Inbox() {
   const {
-    connected, phone, qr, pairingCode, pairingError, loading, contacts, messages, sync,
+    statusLoaded, connected, phone, qr, pairingCode, pairingError, loading, contacts, messages, sync,
     loadContacts, loadMessages, sendMessage, updateContact,
     initConnect, initConnectPairing, initDisconnect, setContacts,
   } = useWhatsApp();
@@ -390,6 +397,14 @@ export function Inbox() {
   }, []);
 
   const syncPct = sync.total > 0 ? Math.round((sync.imported / sync.total) * 100) : 0;
+
+  if (!statusLoaded) {
+    return (
+      <div className="flex items-center justify-center h-[calc(100vh-64px)]" style={{ background: C.chatBg }}>
+        <span className="w-6 h-6 border-2 border-[#00a884] border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   if (!connected) {
     return <ConnectScreen qr={qr} pairingCode={pairingCode} pairingError={pairingError} loading={loading} onConnect={initConnect} onConnectPairing={initConnectPairing} businessPhone={currentBusiness?.whatsappPhone} />;
@@ -577,7 +592,7 @@ export function Inbox() {
                   {displayName(selectedContact)}
                 </p>
                 <p className="text-xs" style={{ color: C.textSub }}>
-                  {selectedContact.phone.replace('@s.whatsapp.net', '').replace('@c.us', '')}
+                  {formatPhone(selectedContact.phone)}
                 </p>
               </div>
               <div className="flex items-center gap-1.5">
@@ -759,7 +774,7 @@ export function Inbox() {
             </div>
             <p className="font-semibold text-base" style={{ color: C.text }}>{displayName(selectedContact)}</p>
             <p className="text-sm" style={{ color: C.textSub }}>
-              {selectedContact.phone.replace('@s.whatsapp.net', '').replace('@c.us', '')}
+              {formatPhone(selectedContact.phone)}
             </p>
           </div>
 

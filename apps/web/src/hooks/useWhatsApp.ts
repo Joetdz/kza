@@ -58,6 +58,7 @@ export function useWhatsApp() {
   const loadedRef = useRef<Set<string>>(new Set()); // tracks which contactIds are fetched
   const pairingDoneRef = useRef(false); // true once pairing code received — ignore subsequent QR events
 
+  const [statusLoaded, setStatusLoaded] = useState(false);
   const [connected, setConnected] = useState(false);
   const [phone, setPhone] = useState<string | null>(null);
   const [qr, setQr] = useState<string | null>(null);
@@ -280,17 +281,17 @@ export function useWhatsApp() {
     return updated;
   }, []);
 
-  // Load initial status on mount
+  // Load initial status on mount — statusLoaded prevents flicker
   useEffect(() => {
     waApi.getStatus().then(({ connected: c, phone: p }) => {
       setConnected(c);
       setPhone(p);
       if (c) loadContacts();
-    }).catch(() => {});
+    }).catch(() => {}).finally(() => setStatusLoaded(true));
   }, [loadContacts]);
 
   return {
-    connected, phone, qr, pairingCode, pairingError, loading, contacts, messages, socketReady, sync, audienceSync,
+    statusLoaded, connected, phone, qr, pairingCode, pairingError, loading, contacts, messages, socketReady, sync, audienceSync,
     loadContacts, loadMessages, sendMessage, updateContact,
     initConnect, initConnectPairing, initDisconnect,
     setContacts, setMessages,

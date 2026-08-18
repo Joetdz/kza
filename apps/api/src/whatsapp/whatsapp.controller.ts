@@ -87,7 +87,7 @@ export class WhatsAppController {
 
   @Post('connect')
   async connect(@CurrentUser() user: AuthUser) {
-    await this.wa.connect(user.id);
+    await this.wa.connectFresh(user.id);
     return { message: 'Connexion initialisée' };
   }
 

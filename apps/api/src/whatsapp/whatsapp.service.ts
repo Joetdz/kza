@@ -598,12 +598,21 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
           labelName = this.labelNames.get(`${userId}:${labelId}`) ?? '';
         }
 
-        this.logger.log(`Label association: id=${labelId} name="${labelName}" chat=${chatId}`);
+        this.logger.log(`Label association: id=${labelId} name="${labelName}" chat=${chatId} (cached labels: ${this.labelNames.size})`);
 
-        const normalized = (labelName || labelId).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+        // Normalize both label name and label ID — some WA accounts use human-readable IDs
+        const normalizeStr = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+        const normalizedName = normalizeStr(labelName);
+        const normalizedId   = normalizeStr(labelId);
 
-        const isTrigger = WhatsAppService.DRAFT_TRIGGER_LABELS.some(t => normalized.includes(t));
-        if (!isTrigger) return;
+        const isTrigger =
+          WhatsAppService.DRAFT_TRIGGER_LABELS.some(t => normalizedName.includes(t)) ||
+          WhatsAppService.DRAFT_TRIGGER_LABELS.some(t => normalizedId.includes(t));
+
+        if (!isTrigger) {
+          this.logger.log(`Label "${labelName}" (id: ${labelId}) is not a draft trigger — ignoring`);
+          return;
+        }
 
         // Resolve LID to real phone number (WhatsApp v7 multi-device uses LIDs in label events)
         let phone = this.resolvePhone(userId, chatId);
@@ -644,10 +653,15 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
         }
         this.logger.log(`History for ${phone}: ${history.length} msgs — preview: ${history.slice(0, 2).map(m => m.content.substring(0, 60)).join(' | ')}`);
 
-        // Upsert contact — may not exist if conversation was never opened in CRM
+        // Upsert contact — also try the raw chatId (LID stored as @c.us) if not found by resolved phone
         let contact = await this.prisma.whatsAppContact.findUnique({
           where: { userId_phone: { userId, phone } },
         });
+        if (!contact && phone !== jidToDb(chatId)) {
+          contact = await this.prisma.whatsAppContact.findUnique({
+            where: { userId_phone: { userId, phone: jidToDb(chatId) } },
+          });
+        }
         if (!contact) {
           contact = await this.upsertContact(userId, phone);
         }
@@ -662,7 +676,22 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
         }
 
         // ── Name + phone come from WhatsApp, not from AI ─────────────────────────
-        const resolvedCustomerPhone = normalizeDrcPhone(phone) ?? null;
+        // Priority: normalizeDrcPhone(resolved phone) > contact.phone from DB > raw LID stripped
+        let resolvedCustomerPhone = normalizeDrcPhone(phone) ?? null;
+        if (!resolvedCustomerPhone) {
+          // Fallback 1: contact.phone may have been stored as a real number from a previous sync
+          resolvedCustomerPhone = normalizeDrcPhone(contact.phone) ?? null;
+        }
+        if (!resolvedCustomerPhone) {
+          // Fallback 2: use the stripped digits of whatever we have — create draft with imperfect phone
+          // rather than silently dropping it. User can edit the draft.
+          const stripped = phone.replace(/@.*$/, '');
+          if (stripped && stripped.length > 0) {
+            resolvedCustomerPhone = stripped;
+            this.logger.warn(`LID unresolved — using raw stripped phone "${stripped}" for draft. Needs manual review.`);
+          }
+        }
+
         const resolvedCustomerName  =
           this.contactNames.get(`${userId}:${toJid(phone)}`)
           ?? this.contactNames.get(`${userId}:${chatId}`)
@@ -680,9 +709,8 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
         const details = await this.aiService.extractOrderDetails(history, products);
         this.logger.log(`AI extracted: product=${details.productName} price=${details.agreedPriceUsd} delivery=${details.deliveryFeeCdf} address=${details.address}`);
 
-        // ── Validation gate — only phone is strictly required ────────────────────
         if (!resolvedCustomerPhone) {
-          this.logger.warn(`Draft skipped — numéro client introuvable (LID: ${chatId})`);
+          this.logger.warn(`Draft skipped — impossible de résoudre un numéro quelconque pour (LID: ${chatId})`);
           return;
         }
 
@@ -761,6 +789,25 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
         this.logger.error('labels.association draft error:', err?.message);
       }
     });
+  }
+
+  // Called from the HTTP endpoint (user clicks "Générer le QR Code" or "Connecter").
+  // Always starts fresh: kills any stale socket and wipes the stored auth so Baileys
+  // emits a new QR / pairing code instead of silently trying to reuse an old session.
+  async connectFresh(userId: string): Promise<void> {
+    this.loggedOut.delete(userId);
+
+    if (this.sockets.has(userId)) {
+      const sock = this.sockets.get(userId)!;
+      this.sockets.delete(userId);
+      this.connectedUsers.delete(userId);
+      (sock.ev as any).removeAllListeners();
+      sock.end(new Error('reset'));
+    }
+
+    await clearDbAuth(userId, this.prisma);
+    this.logger.log(`Cleared stale auth for ${userId} — fresh QR connect`);
+    await this.connect(userId);
   }
 
   async connectWithPairingCode(userId: string, phone: string): Promise<void> {
