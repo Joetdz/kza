@@ -5,6 +5,7 @@ import { waApi } from '../api/whatsapp';
 
 const WS_URL = (import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api').replace('/api', '');
 
+
 export interface WaContact {
   id: string;
   phone: string;
@@ -243,10 +244,7 @@ export function useWhatsApp() {
         setContacts(prev => prev.map(c => (c.id === data.contactId ? { ...c, ...data } : c)));
       });
 
-      // Draft order created from WhatsApp label → notify Logistics page
-      sock.on('draft-order-created', (data: any) => {
-        window.dispatchEvent(new CustomEvent('wa:draft-order-created', { detail: data }));
-      });
+      // draft-order-created is handled globally by GlobalWaNotifier (sound + event dispatch)
 
       socketRef.current = sock;
     });

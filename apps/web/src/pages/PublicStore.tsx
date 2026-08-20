@@ -1,5 +1,26 @@
 import { useState, useEffect, useRef } from 'react';
-import { ShoppingCart, Plus, Minus, Trash2, Loader2, ArrowLeft, Package, CheckCircle, Play, Pause, Film, LayoutGrid, ShoppingBag, Volume2, VolumeX, Share2 } from 'lucide-react';
+import { ShoppingCart, Plus, Minus, Trash2, Loader2, ArrowLeft, Package, CheckCircle, Play, Pause, Film, LayoutGrid, ShoppingBag, Volume2, VolumeX, Share2, Flame, Clock } from 'lucide-react';
+
+// Meta Pixel helper — no-op if pixel not loaded
+const fbq = (...args: any[]) => { (window as any).fbq?.(...args); };
+
+function injectMetaPixel(pixelId: string) {
+  if ((window as any).fbqLoaded) return;
+  (window as any).fbqLoaded = true;
+  const f = window as any, b = document, e = 'script';
+  if (f.fbq) return;
+  const n = f.fbq = function (...a: any[]) {
+    (n as any).callMethod ? (n as any).callMethod.apply(n, a) : (n as any).queue.push(a);
+  };
+  if (!f._fbq) f._fbq = n;
+  n.push = n; n.loaded = true; n.version = '2.0'; n.queue = [];
+  const t = b.createElement(e) as HTMLScriptElement;
+  t.async = true;
+  t.src = 'https://connect.facebook.net/en_US/fbevents.js';
+  b.head.appendChild(t);
+  fbq('init', pixelId);
+  fbq('track', 'PageView');
+}
 
 const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api';
 const IMG_BASE = BASE.replace('/api', '');
@@ -9,7 +30,24 @@ interface OrderForm {
   customerName: string;
   customerPhone: string;
   deliveryZone: string;
+  commune: string;
+  avenue: string;
+  reference: string;
   notes: string;
+}
+
+// ── CartItem ──────────────────────────────────────────────────────────────────
+interface CartItem { product: Product; qty: number }
+
+function calcLineTotal(product: Product, qty: number): number {
+  const sp = Number(product.sellingPrice);
+  if (product.bundleQty && product.bundlePrice) {
+    const bp = Number(product.bundlePrice);
+    const bundles = Math.floor(qty / product.bundleQty);
+    const remainder = qty % product.bundleQty;
+    return bundles * bp + remainder * sp;
+  }
+  return qty * sp;
 }
 
 interface CartDrawerProps {
@@ -27,79 +65,138 @@ interface CartDrawerProps {
 }
 
 function CartDrawer({ cart, store, color, form, ordering, total, totalItems, onClose, onUpdateQty, onFormChange, onOrder }: CartDrawerProps) {
+  const cur = store?.currency ?? 'CDF';
+  const zones = store?.deliveryZones ?? [];
+  const selectedZone = zones.find(z => z.city === form.deliveryZone);
+  const deliveryFee = selectedZone?.fee ?? 0;
+  const grandTotal = total + deliveryFee;
+
+  const canOrder = !ordering && form.customerName.trim() && form.customerPhone.trim() && form.deliveryZone && form.commune.trim() && form.avenue.trim();
+
   return (
     <div className="fixed inset-0 z-50 flex">
       <div className="flex-1 bg-black/40" onClick={onClose} />
       <div className="w-full max-w-md bg-white flex flex-col shadow-2xl">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+
+        {/* Header fixe */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
           <h2 className="font-bold text-gray-900">Mon panier ({totalItems} article{totalItems > 1 ? 's' : ''})</h2>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors">
             <ArrowLeft size={18} className="text-gray-500" />
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
-          {cart.length === 0 && <p className="text-sm text-gray-400 text-center py-8">Votre panier est vide</p>}
-          {cart.map(({ product, qty }) => (
-            <div key={product.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-2xl">
-              <div className="w-12 h-12 rounded-xl bg-white border border-gray-100 overflow-hidden shrink-0">
-                {product.imageUrl
-                  ? <img src={resolveImg(product.imageUrl)!} alt={product.name} className="w-full h-full object-cover" />
-                  : <Package size={18} className="text-gray-200 m-auto mt-3" />}
+        {/* Zone scrollable : articles + récap + formulaire */}
+        <div className="flex-1 overflow-y-auto">
+          {/* Articles */}
+          <div className="p-4 space-y-3">
+            {cart.length === 0 && <p className="text-sm text-gray-400 text-center py-8">Votre panier est vide</p>}
+            {cart.map(({ product, qty }) => (
+              <div key={product.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-2xl">
+                <div className="w-12 h-12 rounded-xl bg-white border border-gray-100 overflow-hidden shrink-0">
+                  {product.imageUrl
+                    ? <img src={resolveImg(product.imageUrl)!} alt={product.name} className="w-full h-full object-cover" />
+                    : <Package size={18} className="text-gray-200 m-auto mt-3" />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-900 truncate">{product.name}</p>
+                  <p className="text-xs font-semibold" style={{ color }}>
+                    {calcLineTotal(product, qty).toLocaleString('fr-FR')} {cur}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button onClick={() => onUpdateQty(product.id, -1)}
+                    className="w-7 h-7 rounded-lg border border-gray-200 flex items-center justify-center hover:bg-gray-100 transition-colors">
+                    {qty === 1 ? <Trash2 size={12} className="text-red-400" /> : <Minus size={12} />}
+                  </button>
+                  <span className="w-6 text-center font-bold text-sm">{qty}</span>
+                  <button onClick={() => onUpdateQty(product.id, 1)}
+                    className="w-7 h-7 rounded-lg text-white flex items-center justify-center transition-colors"
+                    style={{ background: color }}>
+                    <Plus size={12} />
+                  </button>
+                </div>
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-gray-900 truncate">{product.name}</p>
-                <p className="text-xs text-gray-400">{product.sellingPrice.toLocaleString('fr-FR')} {store?.currency ?? 'CDF'} / unité</p>
+            ))}
+          </div>
+
+          {cart.length > 0 && (
+            <div className="px-4 pb-4 space-y-3 border-t border-gray-100 pt-4">
+              {/* Récapitulatif */}
+              <div className="bg-gray-50 rounded-2xl p-3 space-y-1.5">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-gray-500">Produits</span>
+                  <span className="font-semibold text-gray-800">{total.toLocaleString('fr-FR')} {cur}</span>
+                </div>
+                {form.deliveryZone && (
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-500">Livraison — {form.deliveryZone}</span>
+                    <span className="font-semibold text-orange-600">{deliveryFee.toLocaleString('fr-FR')} FC</span>
+                  </div>
+                )}
+                <div className="border-t border-gray-200 pt-1.5 flex items-center justify-between">
+                  <span className="text-xs text-gray-400 font-medium">À PAYER</span>
+                  <div className="text-right">
+                    <span className="text-lg font-black text-gray-900">{total.toLocaleString('fr-FR')} {cur}</span>
+                    {form.deliveryZone && <span className="text-sm font-bold text-orange-600"> + {deliveryFee.toLocaleString('fr-FR')} FC</span>}
+                  </div>
+                </div>
+                <p className="text-[10px] text-gray-400 text-right">Paiement à la livraison</p>
               </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <button onClick={() => onUpdateQty(product.id, -1)}
-                  className="w-7 h-7 rounded-lg border border-gray-200 flex items-center justify-center hover:bg-gray-100 transition-colors">
-                  {qty === 1 ? <Trash2 size={12} className="text-red-400" /> : <Minus size={12} />}
-                </button>
-                <span className="w-6 text-center font-bold text-sm">{qty}</span>
-                <button onClick={() => onUpdateQty(product.id, 1)}
-                  className="w-7 h-7 rounded-lg text-white flex items-center justify-center transition-colors"
-                  style={{ background: color }}>
-                  <Plus size={12} />
-                </button>
-              </div>
+
+              {/* Formulaire */}
+              <p className="text-xs text-gray-500 font-medium pt-1">Vos coordonnées</p>
+              <input value={form.customerName} onChange={e => onFormChange('customerName', e.target.value)}
+                placeholder="Votre nom complet *"
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-green-400" />
+              <input value={form.customerPhone} onChange={e => onFormChange('customerPhone', e.target.value)}
+                placeholder="Votre numéro de téléphone *"
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-green-400" />
+              <select value={form.deliveryZone} onChange={e => { onFormChange('deliveryZone', e.target.value); onFormChange('commune', ''); }}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-green-400 bg-white">
+                <option value="">Ville de livraison *</option>
+                {zones.map(z => (
+                  <option key={z.city} value={z.city}>{z.city} — {z.fee.toLocaleString('fr-FR')} FC</option>
+                ))}
+              </select>
+              {form.deliveryZone && (() => {
+                const communes = CITY_COMMUNES[form.deliveryZone];
+                return (
+                  <>
+                    {communes ? (
+                      <select value={form.commune} onChange={e => onFormChange('commune', e.target.value)}
+                        className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-green-400 bg-white">
+                        <option value="">Commune *</option>
+                        {communes.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    ) : (
+                      <input value={form.commune} onChange={e => onFormChange('commune', e.target.value)}
+                        placeholder="Commune / Quartier *"
+                        className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-green-400" />
+                    )}
+                    <input value={form.avenue} onChange={e => onFormChange('avenue', e.target.value)}
+                      placeholder="Avenue / Rue *"
+                      className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-green-400" />
+                    <input value={form.reference} onChange={e => onFormChange('reference', e.target.value)}
+                      placeholder="Référence (ex: près de l'église rouge)"
+                      className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-green-400" />
+                  </>
+                );
+              })()}
+              <textarea value={form.notes} onChange={e => onFormChange('notes', e.target.value)}
+                placeholder="Instructions supplémentaires (optionnel)"
+                rows={2}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-green-400 resize-none" />
             </div>
-          ))}
+          )}
         </div>
 
+        {/* Bouton commander fixe en bas */}
         {cart.length > 0 && (
-          <div className="border-t border-gray-100 p-4 space-y-3">
-            <div className="bg-gray-50 rounded-2xl p-3 flex items-center justify-between">
-              <div>
-                <p className="text-xs text-gray-400">Total à payer</p>
-                <p className="text-xl font-black text-gray-900">{total.toLocaleString('fr-FR')} {store?.currency ?? 'CDF'}</p>
-              </div>
-              <div className="text-right">
-                <p className="text-xs text-gray-400">Paiement</p>
-                <p className="text-sm font-semibold text-gray-600">A la livraison</p>
-              </div>
-            </div>
-
-            <p className="text-xs text-gray-500 font-medium pt-1">Vos coordonnées</p>
-            <input value={form.customerName} onChange={e => onFormChange('customerName', e.target.value)}
-              placeholder="Votre nom complet *"
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-green-400" />
-            <input value={form.customerPhone} onChange={e => onFormChange('customerPhone', e.target.value)}
-              placeholder="Votre numéro de téléphone *"
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-green-400" />
-            <select value={form.deliveryZone} onChange={e => onFormChange('deliveryZone', e.target.value)}
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-green-400 bg-white">
-              <option value="">Zone de livraison *</option>
-              {DELIVERY_ZONES.map(z => <option key={z} value={z}>{z}</option>)}
-            </select>
-            <textarea value={form.notes} onChange={e => onFormChange('notes', e.target.value)}
-              placeholder="Adresse précise, instructions..."
-              rows={2}
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-green-400 resize-none" />
-
+          <div className="px-4 py-3 border-t border-gray-100 shrink-0 bg-white">
             <button
               onClick={onOrder}
-              disabled={ordering || !form.customerName.trim() || !form.customerPhone.trim() || !form.deliveryZone}
+              disabled={!canOrder}
               className="w-full flex items-center justify-center gap-3 py-4 rounded-2xl font-bold text-white transition-all shadow-lg disabled:opacity-40 disabled:shadow-none"
               style={{
                 background: ordering ? '#25d366' : 'linear-gradient(135deg, #25d366, #128c54)',
@@ -113,7 +210,9 @@ function CartDrawer({ cart, store, color, form, ordering, total, totalItems, onC
                   <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
                 </svg>
               )}
-              {ordering ? 'Envoi en cours...' : `Commander — ${total.toLocaleString('fr-FR')} ${store?.currency ?? 'CDF'}`}
+              {ordering ? 'Envoi en cours...' : form.deliveryZone
+                ? `Commander — ${total.toLocaleString('fr-FR')} ${cur} + ${deliveryFee.toLocaleString('fr-FR')} FC`
+                : `Commander — ${total.toLocaleString('fr-FR')} ${cur}`}
             </button>
           </div>
         )}
@@ -122,33 +221,47 @@ function CartDrawer({ cart, store, color, form, ordering, total, totalItems, onC
   );
 }
 
-// ── CartItem type (used by CartDrawer above) ───────────────────────────────────
-interface CartItem { product: Product; qty: number }
+interface ProductMedia { id: string; url: string; type: string }
 
-const DELIVERY_ZONES = [
-  'Kinshasa — Bandalungwa', 'Kinshasa — Barumbu', 'Kinshasa — Bumbu',
-  'Kinshasa — Gombe', 'Kinshasa — Kalamu', 'Kinshasa — Kasa-Vubu',
-  'Kinshasa — Kimbanseke', 'Kinshasa — Kinshasa', 'Kinshasa — Kisenso',
-  'Kinshasa — Lemba', 'Kinshasa — Limete', 'Kinshasa — Lingwala',
-  'Kinshasa — Makala', 'Kinshasa — Maluku', 'Kinshasa — Masina',
-  'Kinshasa — Matete', 'Kinshasa — Mont-Ngafula', 'Kinshasa — Ndjili',
-  'Kinshasa — Ngaba', 'Kinshasa — Ngaliema', 'Kinshasa — Ngiri-Ngiri',
-  'Kinshasa — Nsele', 'Kinshasa — Selembao', 'Kinshasa — Kintambo',
-  'Lubumbashi', 'Mbuji-Mayi', 'Kananga', 'Kisangani', 'Bukavu',
-  'Goma', 'Kolwezi', 'Likasi', 'Boma', 'Matadi', 'Mbandaka',
-  'Butembo', 'Uvira', 'Kalemie', 'Mwene-Ditu', 'Gandajika',
-  'Kikwit', 'Tshikapa', 'Ilebo', 'Bandundu', 'Gemena',
-  'Lisala', 'Bumba', 'Zongo', 'Autre ville',
-];
+const CITY_COMMUNES: Record<string, string[]> = {
+  'Kinshasa': [
+    'Bandalungwa', 'Barumbu', 'Bumbu', 'Gombe', 'Kalamu', 'Kasa-Vubu',
+    'Kimbanseke', 'Kinshasa', 'Kintambo', 'Kisenso', 'Lemba', 'Limete',
+    'Lingwala', 'Makala', 'Maluku', 'Masina', 'Matete', 'Mont-Ngafula',
+    'Ndjili', 'Ngaba', 'Ngaliema', 'Ngiri-Ngiri', 'Nsele', 'Selembao',
+  ],
+  'Lubumbashi': [
+    'Annexe', 'Kampemba', 'Kamalondo', 'Katuba', 'Kenya', 'Lubumbashi', 'Ruashi', 'Rwashi',
+  ],
+  'Kolwezi': [
+    'Dilala', 'Kanina', 'Manika', 'Musonoï', 'Ravin', 'Nguba',
+  ],
+  'Matadi': [
+    'Matadi', 'Mvuzi', 'Nzanza',
+  ],
+  'Boma': [
+    'Boma-Bungu', 'Kalamu', 'Nzadi',
+  ],
+  'Muanda': [
+    'Muanda',
+  ],
+};
 
 interface Product {
   id: string;
   name: string;
   category: string;
   sellingPrice: number;
+  comparePrice: number | null;
+  bundleQty: number | null;
+  bundlePrice: number | null;
   quantity: number;
   imageUrl: string | null;
+  description: string | null;
+  media: ProductMedia[];
 }
+
+interface DeliveryZone { city: string; fee: number }
 
 interface FeedItem {
   id: string;
@@ -166,6 +279,8 @@ interface StoreData {
   description: string | null;
   primaryColor: string;
   currency: string;
+  metaPixelId: string | null;
+  deliveryZones: DeliveryZone[];
   products: Product[];
 }
 
@@ -334,7 +449,7 @@ function FeedCard({
           <p className="text-white/75 text-sm mb-1 leading-snug line-clamp-2">{item.caption}</p>
         )}
         <p className="text-white font-bold text-xl drop-shadow mb-3">
-          {item.product.sellingPrice.toLocaleString('fr-FR')} {currency}
+          {Number(item.product.sellingPrice).toLocaleString('fr-FR')} {currency}
         </p>
         <div className="flex gap-2">
           <button
@@ -366,7 +481,12 @@ export function PublicStore({ slug, initialReelId }: Props) {
   const [store, setStore] = useState<StoreData | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
-  const [cart, setCart] = useState<CartItem[]>([]);
+  const [cart, setCart] = useState<CartItem[]>(() => {
+    try {
+      const saved: any[] = JSON.parse(localStorage.getItem(`cart_${slug}`) ?? '[]');
+      return saved.map(i => ({ product: i.product, qty: i.qty }));
+    } catch { return []; }
+  });
   const [showCart, setShowCart] = useState(false);
   const [ordering, setOrdering] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
@@ -376,18 +496,58 @@ export function PublicStore({ slug, initialReelId }: Props) {
   const [feedLoading, setFeedLoading] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const feedRef = useRef<HTMLDivElement>(null);
+  const [detailProduct, setDetailProduct] = useState<Product | null>(null);
 
-  const [form, setForm] = useState({
-    customerName: '',
-    customerPhone: '',
-    deliveryZone: '',
-    notes: '',
+  const [form, setForm] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(`form_${slug}`) ?? '{}');
+      return {
+        customerName: saved.customerName ?? '',
+        customerPhone: saved.customerPhone ?? '',
+        deliveryZone: saved.deliveryZone ?? '',
+        commune: saved.commune ?? '',
+        avenue: saved.avenue ?? '',
+        reference: saved.reference ?? '',
+        notes: saved.notes ?? '',
+      };
+    } catch {
+      return { customerName: '', customerPhone: '', deliveryZone: '', commune: '', avenue: '', reference: '', notes: '' };
+    }
   });
+
+  // Persist cart + form to localStorage
+  useEffect(() => {
+    localStorage.setItem(`cart_${slug}`, JSON.stringify(cart));
+  }, [cart, slug]);
+
+  useEffect(() => {
+    localStorage.setItem(`form_${slug}`, JSON.stringify(form));
+  }, [form, slug]);
+
+  // Capture UTM params from URL (FB Ads link tracking)
+  const utmRef = useRef<Record<string, string>>({});
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search);
+    const utm: Record<string, string> = {};
+    ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content'].forEach(k => {
+      const v = p.get(k); if (v) utm[k] = v;
+    });
+    utmRef.current = utm;
+  }, []);
 
   useEffect(() => {
     fetch(`${BASE}/store/${slug}`)
       .then(r => r.ok ? r.json() : Promise.reject())
-      .then(data => setStore(data))
+      .then((data: StoreData) => {
+        setStore(data);
+        if (data.metaPixelId) {
+          injectMetaPixel(data.metaPixelId);
+          fbq('track', 'ViewContent', {
+            content_name: data.name,
+            content_type: 'product_group',
+          });
+        }
+      })
       .catch(() => setNotFound(true))
       .finally(() => setLoading(false));
   }, [slug]);
@@ -433,6 +593,13 @@ export function PublicStore({ slug, initialReelId }: Props) {
       if (existing) return prev.map(i => i.product.id === product.id ? { ...i, qty: i.qty + 1 } : i);
       return [...prev, { product, qty: 1 }];
     });
+    fbq('track', 'AddToCart', {
+      content_name: product.name,
+      content_ids: [product.id],
+      content_type: 'product',
+      value: product.sellingPrice,
+      currency: store?.currency ?? 'CDF',
+    });
   };
 
   const updateQty = (productId: string, delta: number) => {
@@ -442,13 +609,17 @@ export function PublicStore({ slug, initialReelId }: Props) {
     );
   };
 
-  const total = cart.reduce((sum, i) => sum + i.qty * i.product.sellingPrice, 0);
+  const total = cart.reduce((sum, i) => sum + calcLineTotal(i.product, i.qty), 0);
   const totalItems = cart.reduce((sum, i) => sum + i.qty, 0);
+  const selectedZone = store?.deliveryZones?.find(z => z.city === form.deliveryZone);
+  const deliveryFee = selectedZone?.fee ?? 0;
+  const grandTotal = total + deliveryFee;
 
   const handleOrder = async () => {
-    if (!form.customerName.trim() || !form.customerPhone.trim() || !form.deliveryZone || cart.length === 0) return;
+    if (!form.customerName.trim() || !form.customerPhone.trim() || !form.deliveryZone || !form.commune.trim() || !form.avenue.trim() || cart.length === 0) return;
     setOrdering(true);
     try {
+      const utm = utmRef.current;
       const res = await fetch(`${BASE}/store/${slug}/order`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -456,19 +627,37 @@ export function PublicStore({ slug, initialReelId }: Props) {
           customerName: form.customerName,
           customerPhone: form.customerPhone,
           deliveryZone: form.deliveryZone,
-          notes: form.notes,
+          commune: form.commune || undefined,
+          avenue: form.avenue || undefined,
+          reference: form.reference || undefined,
+          deliveryFee,
+          notes: form.notes || undefined,
+          utmSource: utm.utm_source,
+          utmMedium: utm.utm_medium,
+          utmCampaign: utm.utm_campaign,
+          utmContent: utm.utm_content,
           items: cart.map(i => ({
             productId: i.product.id,
             name: i.product.name,
             qty: i.qty,
-            unitPrice: i.product.sellingPrice,
+            unitPrice: calcLineTotal(i.product, i.qty) / i.qty,
           })),
         }),
       });
-      const { waUrl, directSent } = await res.json();
-      if (!directSent) window.open(waUrl, '_blank');
+      const { waUrl } = await res.json();
+      // Client envoie depuis son propre numéro vers le business
+      window.open(waUrl, '_blank');
+      fbq('track', 'Purchase', {
+        value: grandTotal,
+        currency: store?.currency ?? 'CDF',
+        content_ids: cart.map(i => i.product.id),
+        content_type: 'product',
+        num_items: totalItems,
+      });
       setConfirmed(true);
       setCart([]);
+      localStorage.removeItem(`cart_${slug}`);
+      localStorage.removeItem(`form_${slug}`);
     } catch { /* ignore */ }
     finally { setOrdering(false); }
   };
@@ -624,7 +813,16 @@ export function PublicStore({ slug, initialReelId }: Props) {
 
             {/* Cart */}
             <button
-              onClick={() => setShowCart(true)}
+              onClick={() => {
+                setShowCart(true);
+                if (totalItems > 0) {
+                  fbq('track', 'InitiateCheckout', {
+                    value: total,
+                    currency: store?.currency ?? 'CDF',
+                    num_items: totalItems,
+                  });
+                }
+              }}
               className="relative flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all"
               style={{ background: totalItems > 0 ? color : '#e5e7eb', color: totalItems > 0 ? 'white' : '#9ca3af' }}>
               <ShoppingCart size={16} />
@@ -636,24 +834,49 @@ export function PublicStore({ slug, initialReelId }: Props) {
       </header>
 
       {/* Products grid */}
-      <main className="max-w-4xl mx-auto px-4 py-6">
+      <main className="max-w-4xl mx-auto px-4 py-6 pb-[25vh]">
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
           {store!.products.map(p => {
             const inCart = cart.find(i => i.product.id === p.id);
             const imgUrl = resolveImg(p.imageUrl);
             return (
               <div key={p.id} className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 hover:shadow-md transition-all">
-                <div className="aspect-square bg-gray-50 flex items-center justify-center overflow-hidden">
+                <div className="aspect-square bg-gray-50 flex items-center justify-center overflow-hidden relative">
                   {imgUrl
                     ? <img src={imgUrl} alt={p.name} className="w-full h-full object-cover" />
                     : <Package size={32} className="text-gray-200" />}
+                  {p.quantity > 0 && p.quantity <= 5 && (
+                    <div className="absolute bottom-2 left-2 flex items-center gap-1 bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+                      <Flame size={9} />
+                      Dernier{p.quantity > 1 ? 's' : ''} {p.quantity}
+                    </div>
+                  )}
+                  {p.quantity > 5 && p.quantity <= 15 && (
+                    <div className="absolute bottom-2 left-2 flex items-center gap-1 bg-orange-400 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+                      <Clock size={9} />
+                      Stock limité
+                    </div>
+                  )}
                 </div>
-                <div className="p-3">
+                <div className="p-3" onClick={() => setDetailProduct(p)} style={{ cursor: 'pointer' }}>
                   <p className="font-semibold text-gray-900 text-sm leading-tight mb-0.5 line-clamp-2">{p.name}</p>
-                  {p.category && <p className="text-xs text-gray-400 mb-2">{p.category}</p>}
-                  <p className="font-black text-sm mb-3" style={{ color }}>{p.sellingPrice.toLocaleString('fr-FR')} {store?.currency ?? 'CDF'}</p>
+                  {p.category && <p className="text-xs text-gray-400 mb-1">{p.category}</p>}
+                  {p.description && <p className="text-xs text-gray-500 leading-relaxed mb-1.5 line-clamp-2">{p.description}</p>}
+                  {/* Bundle badge */}
+                  {p.bundleQty && p.bundlePrice && (
+                    <div className="inline-flex items-center gap-1 bg-violet-50 text-violet-600 text-[10px] font-bold px-2 py-0.5 rounded-full mb-1.5 border border-violet-100">
+                      🎁 {p.bundleQty} pcs → {p.bundlePrice.toLocaleString('fr-FR')} {store?.currency ?? 'CDF'}
+                    </div>
+                  )}
+                  {/* Prix */}
+                  <div className="flex items-baseline gap-1.5 mb-3">
+                    <p className="font-black text-sm" style={{ color }}>{Number(p.sellingPrice).toLocaleString('fr-FR')} {store?.currency ?? 'CDF'}</p>
+                    {p.comparePrice && Number(p.comparePrice) > Number(p.sellingPrice) && (
+                      <p className="text-xs text-gray-400 line-through">{Number(p.comparePrice).toLocaleString('fr-FR')} {store?.currency ?? 'CDF'}</p>
+                    )}
+                  </div>
                   {inCart ? (
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between" onClick={e => e.stopPropagation()}>
                       <button onClick={() => updateQty(p.id, -1)}
                         className="w-7 h-7 rounded-lg flex items-center justify-center border border-gray-200 hover:bg-gray-50 transition-colors">
                         <Minus size={13} />
@@ -666,7 +889,7 @@ export function PublicStore({ slug, initialReelId }: Props) {
                       </button>
                     </div>
                   ) : (
-                    <div className="flex flex-col gap-1.5">
+                    <div className="flex flex-col gap-1.5" onClick={e => e.stopPropagation()}>
                       <button onClick={() => { addToCart(p); setShowCart(true); }}
                         className="w-full py-2 rounded-xl text-xs font-bold text-white flex items-center justify-center gap-1"
                         style={{ background: color }}>
@@ -709,6 +932,179 @@ export function PublicStore({ slug, initialReelId }: Props) {
           onOrder={handleOrder}
         />
       )}
+
+      {/* ── Product Detail Sheet ── */}
+      {detailProduct && (() => {
+        const p = detailProduct;
+        const cur = store?.currency ?? 'CDF';
+        const inCart = cart.find(i => i.product.id === p.id);
+        const videoMedia = p.media?.find(m => m.type === 'video');
+        const imgMedia = p.media?.filter(m => m.type !== 'video') ?? [];
+        return (
+          <div className="fixed inset-0 z-50 flex items-end">
+            <div className="absolute inset-0 bg-black/50" onClick={() => setDetailProduct(null)} />
+            <div className="relative w-full bg-white rounded-t-3xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
+              {/* Close bar */}
+              <div className="flex items-center justify-between px-5 pt-4 pb-2 shrink-0">
+                <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto absolute left-1/2 -translate-x-1/2 top-3" />
+                <button onClick={() => setDetailProduct(null)} className="ml-auto p-1.5 rounded-xl hover:bg-gray-100 transition-colors">
+                  <ArrowLeft size={18} className="text-gray-500" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto">
+                {/* Video reel */}
+                {videoMedia && (
+                  <div className="relative w-full bg-black" style={{ height: '42vw', maxHeight: 260 }}>
+                    <video
+                      src={resolveImg(videoMedia.url) ?? undefined}
+                      autoPlay muted loop playsInline
+                      className="w-full h-full object-cover"
+                    />
+                    <div className="absolute bottom-2 left-2 flex items-center gap-1 bg-black/50 text-white text-[10px] px-2 py-0.5 rounded-full">
+                      <Film size={9} /> Vidéo produit
+                    </div>
+                  </div>
+                )}
+                {/* Image fallback if no video */}
+                {!videoMedia && (p.imageUrl || imgMedia.length > 0) && (
+                  <div className="w-full bg-gray-50" style={{ height: '42vw', maxHeight: 260 }}>
+                    <img
+                      src={resolveImg(imgMedia[0]?.url ?? p.imageUrl) ?? ''}
+                      alt={p.name}
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                )}
+
+                <div className="p-5 space-y-4">
+                  {/* Header */}
+                  <div>
+                    {p.category && <p className="text-xs text-gray-400 mb-1 uppercase tracking-wide">{p.category}</p>}
+                    <h2 className="text-xl font-black text-gray-900 leading-tight">{p.name}</h2>
+                  </div>
+
+                  {/* Prix */}
+                  <div className="flex items-baseline gap-3">
+                    <p className="text-2xl font-black" style={{ color }}>{Number(p.sellingPrice).toLocaleString('fr-FR')} {cur}</p>
+                    {p.comparePrice && Number(p.comparePrice) > Number(p.sellingPrice) && (
+                      <p className="text-base text-gray-400 line-through">{Number(p.comparePrice).toLocaleString('fr-FR')} {cur}</p>
+                    )}
+                    {p.comparePrice && Number(p.comparePrice) > Number(p.sellingPrice) && (
+                      <span className="bg-red-100 text-red-600 text-xs font-bold px-2 py-0.5 rounded-full">
+                        -{Math.round((1 - Number(p.sellingPrice) / Number(p.comparePrice)) * 100)}%
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Bundle offer */}
+                  {p.bundleQty && p.bundlePrice && (
+                    <div className="bg-violet-50 border border-violet-100 rounded-2xl p-3">
+                      <p className="text-xs text-violet-500 font-semibold uppercase tracking-wide mb-1">Offre groupée</p>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm text-gray-700">1 pièce</p>
+                          <p className="text-sm font-bold text-gray-900">{Number(p.sellingPrice).toLocaleString('fr-FR')} {cur}</p>
+                        </div>
+                        <div className="w-px h-8 bg-violet-100" />
+                        <div className="text-right">
+                          <p className="text-sm text-violet-700 font-semibold">{p.bundleQty} pièces 🎁</p>
+                          <p className="text-sm font-black text-violet-700">{p.bundlePrice.toLocaleString('fr-FR')} {cur}</p>
+                          <p className="text-[10px] text-violet-500">({(p.bundlePrice / p.bundleQty).toLocaleString('fr-FR', { maximumFractionDigits: 0 })} {cur}/pcs)</p>
+                        </div>
+                      </div>
+                      <button
+                        className="w-full mt-3 py-2 rounded-xl text-xs font-bold text-white text-center"
+                        style={{ background: color }}
+                        onClick={() => {
+                          setCart(prev => {
+                            const existing = prev.find(i => i.product.id === p.id);
+                            if (existing) return prev.map(i => i.product.id === p.id ? { ...i, qty: i.qty + p.bundleQty! } : i);
+                            return [...prev, { product: p, qty: p.bundleQty! }];
+                          });
+                          setDetailProduct(null);
+                          setShowCart(true);
+                        }}>
+                        🎁 Prendre {p.bundleQty} pièces — {p.bundlePrice.toLocaleString('fr-FR')} {cur}
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Description */}
+                  {p.description && (
+                    <div>
+                      <p className="text-xs text-gray-400 font-semibold uppercase tracking-wide mb-1">Description</p>
+                      <p className="text-sm text-gray-700 leading-relaxed">{p.description}</p>
+                    </div>
+                  )}
+
+                  {/* Stock */}
+                  {p.quantity > 0 && p.quantity <= 10 && (
+                    <div className="flex items-center gap-1.5 text-orange-500 text-sm font-semibold">
+                      <Flame size={14} />
+                      Plus que {Math.floor(p.quantity)} en stock
+                    </div>
+                  )}
+
+                  {/* Zones de livraison */}
+                  {store?.deliveryZones && store.deliveryZones.length > 0 && (
+                    <div>
+                      <p className="text-xs text-gray-400 font-semibold uppercase tracking-wide mb-2">Livraison disponible</p>
+                      <div className="flex flex-wrap gap-2">
+                        {store.deliveryZones.map(z => (
+                          <div key={z.city} className="bg-gray-50 border border-gray-100 rounded-xl px-3 py-1.5 text-center">
+                            <p className="text-xs font-semibold text-gray-800">{z.city}</p>
+                            <p className="text-[10px] text-gray-500">{z.fee.toLocaleString('fr-FR')} FC</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* CTA bas */}
+              <div className="px-5 py-4 border-t border-gray-100 shrink-0 bg-white">
+                {inCart ? (
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-3 flex-1">
+                      <button onClick={() => updateQty(p.id, -1)}
+                        className="w-10 h-10 rounded-xl border border-gray-200 flex items-center justify-center hover:bg-gray-50">
+                        {inCart.qty === 1 ? <Trash2 size={15} className="text-red-400" /> : <Minus size={15} />}
+                      </button>
+                      <span className="font-black text-lg flex-1 text-center">{inCart.qty}</span>
+                      <button onClick={() => updateQty(p.id, 1)}
+                        className="w-10 h-10 rounded-xl text-white flex items-center justify-center"
+                        style={{ background: color }}>
+                        <Plus size={15} />
+                      </button>
+                    </div>
+                    <button onClick={() => { setDetailProduct(null); setShowCart(true); }}
+                      className="flex-1 py-3 rounded-xl font-bold text-white"
+                      style={{ background: color }}>
+                      Voir panier ({inCart.qty})
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex gap-3">
+                    <button onClick={() => { addToCart(p); setDetailProduct(null); setShowCart(true); }}
+                      className="flex-1 py-3 rounded-xl font-bold text-white flex items-center justify-center gap-2"
+                      style={{ background: color }}>
+                      <ShoppingBag size={16} />
+                      Commander maintenant
+                    </button>
+                    <button onClick={() => { addToCart(p); setDetailProduct(null); }}
+                      className="px-4 py-3 rounded-xl font-bold border flex items-center justify-center"
+                      style={{ borderColor: color, color }}>
+                      <Plus size={16} />
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

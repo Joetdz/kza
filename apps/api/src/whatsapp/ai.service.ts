@@ -549,4 +549,70 @@ ${conversation}
       return null;
     }
   }
+
+  async generateClosingScript(product: {
+    name: string;
+    price?: string | number;
+    category?: string;
+    quantity?: number;
+  }): Promise<string | null> {
+    const priceClause = product.price ? `Prix : ${product.price}` : null;
+    const catClause = product.category ? `Catégorie : ${product.category}` : null;
+    const stockClause = product.quantity !== undefined ? `Stock : ${product.quantity} unité(s)` : null;
+    const productInfo = [product.name, priceClause, catClause, stockClause].filter(Boolean).join(' | ');
+
+    const prompt = `Tu es un closer WhatsApp expert en vente e-commerce en Afrique francophone (Congo, Sénégal, Côte d'Ivoire).
+
+Génère un script de vente WhatsApp COMPLET pour ce produit : ${productInfo}
+
+STRUCTURE OBLIGATOIRE — génère exactement ces 5 sections avec les titres markdown :
+
+## 🟢 PREMIER MESSAGE (lead froid)
+[Message d'accroche : salutation + bénéfices en bullets ✔️ + prix + pack si applicable + question fermée "Je vous mets 1 ou 2 ?" ou "Je vous en mets 1 ?"]
+
+## 🔵 CLOSE (après accord)
+[Demande commune/adresse pour livraison]
+
+## 💣 OBJECTIONS
+### ❌ "Ça marche vraiment ?"
+[Réponse rassurante + question fermée]
+### ❌ "Je réfléchis"
+[Urgence douce + réservation + question fermée]
+### ❌ "C'est cher"
+[Justification valeur + question fermée]
+### ❌ "Livraison ?"
+[Réponse sur la livraison + demande de commune]
+
+## 🔁 RELANCE
+### ⏱️ 2-3h après
+[Message de relance court]
+### ⏱️ Lendemain
+[Rappel stock + close]
+
+## 🧠 RÈGLE CLÉ
+[La question assumptive principale du produit — ex: "je vous mets 1 ou 2 ?" pas "vous voulez combien ?"]
+
+RÈGLES ABSOLUES :
+- Ton chaleureux, humain, direct — pas corporate
+- Question FERMÉE assumptive (suppose déjà la vente)
+- Emojis stratégiques : ✔️ 💰 🔥 👉 👌 😊 ⏱️
+- N'invente aucun prix si non fourni
+- Français naturel, pas traduit
+- Messages courts — WhatsApp, pas email
+
+Écris uniquement le script formaté, rien d'autre.`;
+
+    try {
+      const response = await this.openai.chat.completions.create({
+        model: 'gpt-4o',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.7,
+        max_tokens: 900,
+      });
+      return response.choices[0]?.message?.content?.trim() ?? null;
+    } catch (err) {
+      this.logger.error('generateClosingScript error:', err);
+      return null;
+    }
+  }
 }

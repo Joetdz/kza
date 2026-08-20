@@ -378,7 +378,9 @@ model OnlineStore {
   whatsappPhone String   @map("whatsapp_phone")
   primaryColor  String   @default("#6366f1") @map("primary_color")
   currency      String   @default("CDF") @map("currency")
-  active        Boolean  @default(true)
+  metaPixelId     String?  @map("meta_pixel_id")
+  deliveryZones   Json?    @map("delivery_zones")
+  active          Boolean  @default(true)
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
@@ -392,7 +394,11 @@ model StoreProduct {
   id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   storeId    String   @map("store_id") @db.Uuid
   productId  String   @map("product_id") @db.Uuid
-  storePrice Decimal? @map("store_price") @db.Decimal(10, 2)
+  storePrice       Decimal? @map("store_price") @db.Decimal(10, 2)
+  comparePrice     Decimal? @map("compare_price") @db.Decimal(10, 2)
+  bundleQty        Int?     @map("bundle_qty")
+  bundlePrice      Decimal? @map("bundle_price") @db.Decimal(10, 2)
+  storeDescription String?  @map("store_description")
 
   store   OnlineStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
   product Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
@@ -409,7 +415,12 @@ model StoreOrder {
   deliveryZone  String   @map("delivery_zone")
   items         Json
   totalAmount   Float    @map("total_amount")
+  deliveryFee   Float    @default(0) @map("delivery_fee")
   notes         String?
+  utmSource     String?  @map("utm_source")
+  utmMedium     String?  @map("utm_medium")
+  utmCampaign   String?  @map("utm_campaign")
+  utmContent    String?  @map("utm_content")
   status        String   @default("pending")
   createdAt     DateTime @default(now()) @map("created_at")
 
@@ -681,4 +692,18 @@ model WaFollowUp {
   @@unique([orderId, type])
   @@index([userId])
   @@map("wa_followups")
+}
+
+// ─── Push Notifications ───────────────────────────────────────────────────────
+
+model PushSubscription {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @map("user_id")
+  endpoint  String   @unique
+  p256dh    String   @map("p256dh")
+  auth      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("push_subscriptions")
 }

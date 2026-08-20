@@ -1090,6 +1090,14 @@ export function StorePage() {
 
   // Per-product store price override (productId → price string)
   const [storePriceMap, setStorePriceMap] = useState<Record<string, string>>({});
+  const [storeComparePriceMap, setStoreComparePriceMap] = useState<Record<string, string>>({});
+  const [storeBundleQtyMap, setStoreBundleQtyMap] = useState<Record<string, string>>({});
+  const [storeBundlePriceMap, setStoreBundlePriceMap] = useState<Record<string, string>>({});
+  // Per-product store description
+  const [storeDescMap, setStoreDescMap] = useState<Record<string, string>>({});
+  const [generatingDescId, setGeneratingDescId] = useState<string | null>(null);
+  // Delivery zones
+  const [deliveryZones, setDeliveryZones] = useState<Array<{ city: string; fee: string }>>([]);
 
   const [form, setForm] = useState({
     name: '',
@@ -1097,6 +1105,7 @@ export function StorePage() {
     whatsappPhone: '',
     primaryColor: '#6366f1',
     currency: 'CDF',
+    metaPixelId: '',
     active: true,
   });
 
@@ -1114,6 +1123,7 @@ export function StorePage() {
           whatsappPhone: s.whatsappPhone,
           primaryColor: s.primaryColor,
           currency: s.currency ?? 'CDF',
+          metaPixelId: s.metaPixelId ?? '',
           active: s.active,
         });
         setVisibleIds(new Set(s.visibleProductIds ?? []));
@@ -1123,6 +1133,48 @@ export function StorePage() {
             priceMap[pid] = String(price);
           }
           setStorePriceMap(priceMap);
+        }
+        if (s.storeDescriptions) {
+          setStoreDescMap(s.storeDescriptions as Record<string, string>);
+        }
+        if (s.storeBundles) {
+          const qtyMap: Record<string, string> = {};
+          const priceMap: Record<string, string> = {};
+          for (const [pid, b] of Object.entries(s.storeBundles as Record<string, { qty: number; price: number }>)) {
+            qtyMap[pid] = String(b.qty);
+            priceMap[pid] = String(b.price);
+          }
+          setStoreBundleQtyMap(qtyMap);
+          setStoreBundlePriceMap(priceMap);
+        }
+        if (s.storeComparePrices) {
+          const m: Record<string, string> = {};
+          for (const [pid, p] of Object.entries(s.storeComparePrices as Record<string, number>)) {
+            m[pid] = String(p);
+          }
+          setStoreComparePriceMap(m);
+        }
+        const zones = s.deliveryZones as Array<{ city: string; fee: number }> | null;
+        if (zones && zones.length > 0) {
+          setDeliveryZones(zones.map(z => ({ city: z.city, fee: String(z.fee) })));
+        } else {
+          const defaultZones = [
+            { city: 'Kinshasa', fee: '8000' },
+            { city: 'Lubumbashi', fee: '7500' },
+            { city: 'Kolwezi', fee: '7000' },
+            { city: 'Matadi', fee: '5500' },
+            { city: 'Boma', fee: '7000' },
+            { city: 'Muanda', fee: '7500' },
+          ];
+          setDeliveryZones(defaultZones);
+          // Persist immediately so the boutique publique les reçoit
+          api('/store/my', {
+            method: 'PUT',
+            body: JSON.stringify({
+              name: s.name, whatsappPhone: s.whatsappPhone,
+              deliveryZones: defaultZones.map(z => ({ city: z.city, fee: parseFloat(z.fee) })),
+            }),
+          }).catch(() => {});
         }
         if (s.suggestedPhone && !s.whatsappPhone) {
           setForm(f => ({ ...f, whatsappPhone: s.suggestedPhone }));
@@ -1145,7 +1197,13 @@ export function StorePage() {
     setSaving(true);
     setSaveError(null);
     try {
-      const s = await api<any>('/store/my', { method: 'PUT', body: JSON.stringify(form) });
+      const zones = deliveryZones
+        .filter(z => z.city.trim())
+        .map(z => ({ city: z.city.trim(), fee: parseFloat(z.fee) || 0 }));
+      const s = await api<any>('/store/my', {
+        method: 'PUT',
+        body: JSON.stringify({ ...form, deliveryZones: zones }),
+      });
       setStore(s);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
@@ -1239,6 +1297,16 @@ export function StorePage() {
     setJingleOpenId(null);
   };
 
+  const saveDeliveryZones = async () => {
+    const zones = deliveryZones
+      .filter(z => z.city.trim())
+      .map(z => ({ city: z.city.trim(), fee: parseFloat(z.fee) || 0 }));
+    await api('/store/my', {
+      method: 'PUT',
+      body: JSON.stringify({ ...form, deliveryZones: zones }),
+    }).catch(() => {});
+  };
+
   const saveProductStorePrice = async (productId: string) => {
     const val = storePriceMap[productId];
     const storePrice = val && val.trim() !== '' ? parseFloat(val) : null;
@@ -1247,6 +1315,51 @@ export function StorePage() {
       method: 'PATCH',
       body: JSON.stringify({ storePrice }),
     }).catch(() => {});
+  };
+
+  const saveProductBundle = async (productId: string) => {
+    const qty = storeBundleQtyMap[productId];
+    const price = storeBundlePriceMap[productId];
+    const bundleQty = qty && qty.trim() ? parseInt(qty) : null;
+    const bundlePrice = price && price.trim() ? parseFloat(price) : null;
+    await api(`/store/my/products/${productId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ bundleQty, bundlePrice }),
+    }).catch(() => {});
+  };
+
+  const saveProductComparePrice = async (productId: string) => {
+    const val = storeComparePriceMap[productId];
+    const comparePrice = val && val.trim() ? parseFloat(val) : null;
+    await api(`/store/my/products/${productId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ comparePrice }),
+    }).catch(() => {});
+  };
+
+  const saveProductStoreDesc = async (productId: string) => {
+    const storeDescription = storeDescMap[productId]?.trim() || null;
+    await api(`/store/my/products/${productId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ storeDescription }),
+    }).catch(() => {});
+  };
+
+  const generateProductDesc = async (productId: string, productName: string, category?: string) => {
+    setGeneratingDescId(productId);
+    try {
+      const res = await api<{ description: string }>(`/store/my/products/${productId}/description`, {
+        method: 'POST',
+        body: JSON.stringify({ productName, category }),
+      });
+      setStoreDescMap(m => ({ ...m, [productId]: res.description }));
+      await api(`/store/my/products/${productId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ storeDescription: res.description }),
+      }).catch(() => {});
+    } finally {
+      setGeneratingDescId(null);
+    }
   };
 
   const storeUrl = store ? `${window.location.origin}${window.location.pathname}#/boutique/${store.slug}` : '';
@@ -1336,6 +1449,53 @@ export function StorePage() {
               ))}
             </div>
           </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Meta Pixel ID</label>
+            <p className="text-xs text-gray-400 mb-1.5">Suivi des conversions pour Facebook Ads — trouve ton ID dans Meta Events Manager</p>
+            <input value={form.metaPixelId} onChange={e => setForm(f => ({ ...f, metaPixelId: e.target.value }))}
+              placeholder="Ex: 1234567890123456"
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-mono" />
+          </div>
+          {/* Zones de livraison */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Zones de livraison</label>
+                <p className="text-xs text-gray-400">Frais affichés au client à la commande</p>
+              </div>
+              <button onClick={() => setDeliveryZones(z => [...z, { city: '', fee: '0' }])}
+                className="text-xs bg-indigo-50 text-indigo-600 border border-indigo-200 px-2.5 py-1 rounded-lg font-semibold">
+                + Zone
+              </button>
+            </div>
+            <div className="space-y-2">
+              {deliveryZones.map((z, i) => (
+                <div key={i} className="flex gap-2 items-center">
+                  <input
+                    placeholder="Ville (ex: Kinshasa)"
+                    value={z.city}
+                    onChange={e => setDeliveryZones(zones => zones.map((z2, j) => j === i ? { ...z2, city: e.target.value } : z2))}
+                    className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-400"
+                  />
+                  <div className="relative w-28">
+                    <input
+                      type="number" min={0}
+                      placeholder="Frais"
+                      value={z.fee}
+                      onChange={e => setDeliveryZones(zones => zones.map((z2, j) => j === i ? { ...z2, fee: e.target.value } : z2))}
+                      className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-400 pr-10"
+                    />
+                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] text-gray-400 pointer-events-none">FC</span>
+                  </div>
+                  <button onClick={() => setDeliveryZones(zones => zones.filter((_, j) => j !== i))}
+                    className="text-red-400 hover:text-red-600 p-1">×</button>
+                </div>
+              ))}
+              {deliveryZones.length === 0 && (
+                <p className="text-xs text-amber-500">⚠ Aucune zone configurée — ajoutez vos villes de livraison</p>
+              )}
+            </div>
+          </div>
           <div className="flex items-center justify-between pt-2">
             <div>
               <p className="text-sm font-medium text-gray-700">Boutique active</p>
@@ -1391,30 +1551,103 @@ export function StorePage() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-gray-900 text-sm truncate">{p.name}</p>
-                      <p className="text-xs text-gray-400">{p.sellingPrice.toLocaleString('fr-FR')} {store?.currency ?? 'CDF'} · Stock : {p.quantity}</p>
+                      <p className="text-xs text-gray-400">Stock : {p.quantity} · {storePriceMap[p.id] ? <span className="text-indigo-600 font-medium">{parseFloat(storePriceMap[p.id]).toLocaleString('fr-FR')} {form.currency}</span> : <span className="text-amber-500">Prix non configuré</span>}</p>
                     </div>
                     <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${selected ? 'bg-indigo-600 border-indigo-600' : 'border-gray-300'}`}>
                       {selected && <Check size={11} color="white" strokeWidth={3} />}
                     </div>
                   </div>
                   {selected && (
-                    <div className="mt-2 ml-15 pl-[60px]">
-                      <div className="relative">
-                        <input
-                          type="number"
-                          min={0}
-                          placeholder={`Prix boutique (stock: ${p.sellingPrice.toLocaleString('fr-FR')})`}
-                          value={storePriceMap[p.id] ?? ''}
-                          onChange={e => setStorePriceMap(m => ({ ...m, [p.id]: e.target.value }))}
-                          onBlur={() => saveProductStorePrice(p.id)}
-                          onClick={e => e.stopPropagation()}
-                          className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-400 text-gray-700 pr-16"
-                        />
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{form.currency}</span>
+                    <div className="mt-2 ml-15 pl-[60px] space-y-3" onClick={e => e.stopPropagation()}>
+                      {/* Prix */}
+                      <div>
+                        <p className="text-[10px] text-gray-400 mb-1 font-medium uppercase tracking-wide">Prix de vente boutique</p>
+                        <div className="relative">
+                          <input
+                            type="number"
+                            min={0}
+                            placeholder="Ex : 15 000"
+                            value={storePriceMap[p.id] ?? ''}
+                            onChange={e => setStorePriceMap(m => ({ ...m, [p.id]: e.target.value }))}
+                            onBlur={() => saveProductStorePrice(p.id)}
+                            className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-400 text-gray-700 pr-16"
+                          />
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{form.currency}</span>
+                        </div>
+                        {!storePriceMap[p.id] && (
+                          <p className="text-[10px] text-amber-500 mt-0.5 ml-1">⚠ Définissez un prix pour ce produit</p>
+                        )}
                       </div>
-                      {storePriceMap[p.id] && (
-                        <p className="text-[10px] text-indigo-600 mt-0.5 ml-1">Prix affiché : {parseFloat(storePriceMap[p.id]).toLocaleString('fr-FR')} {form.currency}</p>
-                      )}
+                      {/* Prix barré */}
+                      <div>
+                        <p className="text-[10px] text-gray-400 mb-1 font-medium uppercase tracking-wide">Prix barré (ancien prix affiché rayé)</p>
+                        <div className="relative">
+                          <input
+                            type="number" min={0}
+                            placeholder="Ex : 25 000"
+                            value={storeComparePriceMap[p.id] ?? ''}
+                            onChange={e => setStoreComparePriceMap(m => ({ ...m, [p.id]: e.target.value }))}
+                            onBlur={() => saveProductComparePrice(p.id)}
+                            className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-red-300 text-gray-700 pr-16"
+                          />
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{form.currency}</span>
+                        </div>
+                      </div>
+                      {/* Bundle */}
+                      <div>
+                        <p className="text-[10px] text-gray-400 mb-1 font-medium uppercase tracking-wide">Offre bundle (ex: 2 pièces pour X FC)</p>
+                        <div className="flex gap-2">
+                          <div className="relative flex-1">
+                            <input
+                              type="number" min={2}
+                              placeholder="Qté (ex: 2)"
+                              value={storeBundleQtyMap[p.id] ?? ''}
+                              onChange={e => setStoreBundleQtyMap(m => ({ ...m, [p.id]: e.target.value }))}
+                              onBlur={() => saveProductBundle(p.id)}
+                              className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-violet-300 text-gray-700"
+                            />
+                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-gray-400 pointer-events-none">pcs</span>
+                          </div>
+                          <div className="relative flex-1">
+                            <input
+                              type="number" min={0}
+                              placeholder="Prix bundle"
+                              value={storeBundlePriceMap[p.id] ?? ''}
+                              onChange={e => setStoreBundlePriceMap(m => ({ ...m, [p.id]: e.target.value }))}
+                              onBlur={() => saveProductBundle(p.id)}
+                              className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-violet-300 text-gray-700 pr-10"
+                            />
+                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-gray-400 pointer-events-none">{form.currency}</span>
+                          </div>
+                        </div>
+                        {storeBundleQtyMap[p.id] && storeBundlePriceMap[p.id] && (
+                          <p className="text-[10px] text-violet-600 mt-0.5 ml-1">{storeBundleQtyMap[p.id]} pièces → {parseFloat(storeBundlePriceMap[p.id]).toLocaleString('fr-FR')} {form.currency}</p>
+                        )}
+                      </div>
+                      {/* Description */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <p className="text-[10px] text-gray-400 font-medium uppercase tracking-wide">Description boutique</p>
+                          <button
+                            onClick={() => generateProductDesc(p.id, p.name, p.category)}
+                            disabled={generatingDescId === p.id}
+                            className="flex items-center gap-1 text-[10px] bg-violet-50 hover:bg-violet-100 text-violet-600 border border-violet-200 px-2 py-0.5 rounded-lg font-semibold transition-all disabled:opacity-50"
+                          >
+                            {generatingDescId === p.id
+                              ? <Loader2 size={9} className="animate-spin" />
+                              : <span>✨</span>}
+                            {generatingDescId === p.id ? 'Génération…' : 'Générer avec IA'}
+                          </button>
+                        </div>
+                        <textarea
+                          rows={3}
+                          placeholder="Ex : Fini les pannes d'électricité qui te stressent. Cette lampe solaire tient 12h, s'allume automatiquement et résiste à la pluie."
+                          value={storeDescMap[p.id] ?? ''}
+                          onChange={e => setStoreDescMap(m => ({ ...m, [p.id]: e.target.value }))}
+                          onBlur={() => saveProductStoreDesc(p.id)}
+                          className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-400 text-gray-700 resize-none"
+                        />
+                      </div>
                     </div>
                   )}
                 </div>

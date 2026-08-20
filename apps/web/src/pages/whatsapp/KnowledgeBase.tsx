@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Plus, Trash2, Edit2, X, Check, BookOpen, Search, Package, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, Trash2, Edit2, X, Check, BookOpen, Search, Package, ChevronDown, ChevronUp, Sparkles, Loader2 } from 'lucide-react';
 import { waApi } from '../../api/whatsapp';
 import { productsApi, resolveImageUrl } from '../../api';
 
@@ -33,6 +33,8 @@ export function KnowledgeBase() {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [scriptDraft, setScriptDraft] = useState<Record<string, string>>({});
   const [savingScript, setSavingScript] = useState<Record<string, boolean>>({});
+  const [generatingScript, setGeneratingScript] = useState<Record<string, boolean>>({});
+  const [generatingForm, setGeneratingForm] = useState(false);
 
   useEffect(() => {
     waApi.getKb().then(setEntries).catch(() => {});
@@ -153,6 +155,35 @@ export function KnowledgeBase() {
     }
   };
 
+  const generateProductScript = async (product: any) => {
+    setGeneratingScript(prev => ({ ...prev, [product.id]: true }));
+    try {
+      const { script } = await waApi.generateScript({
+        name: product.name,
+        price: product.sellingPrice ?? product.price,
+        category: product.category,
+        quantity: product.quantity,
+      });
+      setScriptDraft(prev => ({ ...prev, [product.id]: script }));
+    } catch {
+      // silently fail — user still has the textarea
+    } finally {
+      setGeneratingScript(prev => ({ ...prev, [product.id]: false }));
+    }
+  };
+
+  const generateFormScript = async () => {
+    setGeneratingForm(true);
+    try {
+      const { script } = await waApi.generateScript({ name: form.title || 'ce produit' });
+      setForm(f => ({ ...f, closingScript: script }));
+    } catch {
+      // silently fail
+    } finally {
+      setGeneratingForm(false);
+    }
+  };
+
   const removeProductKb = async (productId: string) => {
     const existing = kbForProduct(productId);
     if (!existing) return;
@@ -266,16 +297,28 @@ export function KnowledgeBase() {
                 {isExpanded && (
                   <div className="px-4 pb-4 border-t border-gray-50 pt-3 space-y-3">
                     <div>
-                      <label className="block text-xs font-medium text-gray-500 mb-1">
-                        Script de closing
-                        <span className="ml-1 font-normal text-gray-400">(utilisé par l'IA pour closer la vente)</span>
-                      </label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-xs font-medium text-gray-500">
+                          Script de closing
+                          <span className="ml-1 font-normal text-gray-400">(utilisé par l'IA pour closer la vente)</span>
+                        </label>
+                        <button
+                          onClick={() => generateProductScript(product)}
+                          disabled={generatingScript[product.id]}
+                          className="flex items-center gap-1.5 text-xs font-medium text-indigo-600 hover:text-indigo-800 disabled:opacity-50 transition-colors"
+                        >
+                          {generatingScript[product.id]
+                            ? <><Loader2 size={12} className="animate-spin" /> Génération...</>
+                            : <><Sparkles size={12} /> Générer avec l'IA</>
+                          }
+                        </button>
+                      </div>
                       <textarea
-                        rows={4}
+                        rows={14}
                         value={scriptDraft[product.id] ?? kb?.closingScript ?? ''}
                         onChange={e => setScriptDraft(prev => ({ ...prev, [product.id]: e.target.value }))}
-                        placeholder={`Ex: "Super choix ! Le ${product.name} est disponible maintenant. Je vous réserve un exemplaire ?\nPour confirmer, j'ai juste besoin de votre adresse de livraison 📦"`}
-                        className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-400 resize-none"
+                        placeholder={`Ex:\nBonjour 👋\nOui, c'est bien le ${product.name}.\n\n✔️ Bénéfice 1\n✔️ Bénéfice 2\n\n💰 Prix\n\n👉 Je vous en mets 1 ?\n\n...`}
+                        className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-400 resize-y font-mono leading-relaxed"
                       />
                     </div>
                     <button
@@ -368,16 +411,29 @@ export function KnowledgeBase() {
               </div>
 
               <div>
-                <label className="block text-xs text-gray-500 mb-1">
-                  Script de closing
-                  <span className="ml-1 font-normal text-gray-400">(optionnel — utilisé pour closer la vente)</span>
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs text-gray-500">
+                    Script de closing
+                    <span className="ml-1 font-normal text-gray-400">(optionnel — utilisé pour closer la vente)</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={generateFormScript}
+                    disabled={generatingForm}
+                    className="flex items-center gap-1.5 text-xs font-medium text-indigo-600 hover:text-indigo-800 disabled:opacity-50 transition-colors"
+                  >
+                    {generatingForm
+                      ? <><Loader2 size={12} className="animate-spin" /> Génération...</>
+                      : <><Sparkles size={12} /> Générer avec l'IA</>
+                    }
+                  </button>
+                </div>
                 <textarea
-                  rows={3}
+                  rows={12}
                   value={form.closingScript}
                   onChange={e => setForm({ ...form, closingScript: e.target.value })}
-                  placeholder={`Ex: "Ce produit est parfait pour votre besoin ! On peut vous le préparer aujourd'hui. Vous préférez livraison ou retrait ?"`}
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-400 resize-none"
+                  placeholder={`Ex:\nBonjour 👋\nOui, c'est bien le [produit].\n\n✔️ Bénéfice 1\n✔️ Bénéfice 2\n\n💰 Prix\n\n👉 Je vous en mets 1 ?\n\n---\n❌ "Je réfléchis"\nJe comprends 👍 Le stock tourne vite...\n👉 Je vous réserve 1 ?`}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-400 resize-y font-mono leading-relaxed"
                 />
               </div>
 

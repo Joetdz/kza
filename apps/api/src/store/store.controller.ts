@@ -12,6 +12,8 @@ interface StoreConfigDto {
   whatsappPhone: string;
   primaryColor?: string;
   currency?: string;
+  metaPixelId?: string;
+  deliveryZones?: Array<{ city: string; fee: number }>;
   active?: boolean;
 }
 
@@ -19,8 +21,16 @@ interface OrderDto {
   customerName: string;
   customerPhone: string;
   deliveryZone: string;
+  commune?: string;
+  avenue?: string;
+  reference?: string;
+  deliveryFee?: number;
   items: { productId: string; name: string; qty: number; unitPrice: number }[];
   notes?: string;
+  utmSource?: string;
+  utmMedium?: string;
+  utmCampaign?: string;
+  utmContent?: string;
 }
 
 function buildSlug(name: string): string {
@@ -58,7 +68,7 @@ export class StoreController {
   async getMyStore(@CurrentUser() user: AuthUser) {
     const store = await this.prisma.onlineStore.findUnique({
       where: { userId: user.id },
-      include: { products: { select: { productId: true, storePrice: true } } },
+      include: { products: { select: { productId: true, storePrice: true, comparePrice: true, bundleQty: true, bundlePrice: true, storeDescription: true } } },
     });
 
     if (!store) return null;
@@ -75,6 +85,22 @@ export class StoreController {
           .filter(p => p.storePrice != null)
           .map(p => [p.productId, Number(p.storePrice)])
       ),
+      storeDescriptions: Object.fromEntries(
+        store.products
+          .filter(p => p.storeDescription != null)
+          .map(p => [p.productId, p.storeDescription!])
+      ),
+      storeBundles: Object.fromEntries(
+        store.products
+          .filter(p => p.bundleQty != null && p.bundlePrice != null)
+          .map(p => [p.productId, { qty: p.bundleQty!, price: Number(p.bundlePrice!) }])
+      ),
+      storeComparePrices: Object.fromEntries(
+        store.products
+          .filter(p => p.comparePrice != null)
+          .map(p => [p.productId, Number(p.comparePrice!)])
+      ),
+      deliveryZones: store.deliveryZones ?? [],
       suggestedPhone: waSession?.phone ?? null,
     };
   }
@@ -97,6 +123,8 @@ export class StoreController {
           whatsappPhone: dto.whatsappPhone.trim(),
           primaryColor: dto.primaryColor ?? existing.primaryColor,
           currency: dto.currency ?? existing.currency,
+          metaPixelId: dto.metaPixelId !== undefined ? (dto.metaPixelId.trim() || null) : existing.metaPixelId,
+          deliveryZones: dto.deliveryZones !== undefined ? dto.deliveryZones : existing.deliveryZones ?? undefined,
           active: dto.active ?? existing.active,
         },
       });
@@ -112,6 +140,15 @@ export class StoreController {
         whatsappPhone: dto.whatsappPhone.trim(),
         primaryColor: dto.primaryColor ?? '#6366f1',
         currency: dto.currency ?? 'CDF',
+        metaPixelId: dto.metaPixelId?.trim() || null,
+        deliveryZones: dto.deliveryZones ?? [
+          { city: 'Kinshasa', fee: 8000 },
+          { city: 'Lubumbashi', fee: 7500 },
+          { city: 'Kolwezi', fee: 7000 },
+          { city: 'Matadi', fee: 5500 },
+          { city: 'Boma', fee: 7000 },
+          { city: 'Muanda', fee: 7500 },
+        ],
         active: dto.active ?? true,
       },
     });
@@ -124,12 +161,26 @@ export class StoreController {
     const store = await this.prisma.onlineStore.findUnique({ where: { userId: user.id } });
     if (!store) throw new NotFoundException('Créez votre boutique d\'abord');
 
-    // Replace all visible products
+    // Preserve existing store prices before replacing
+    const existing = await this.prisma.storeProduct.findMany({
+      where: { storeId: store.id },
+      select: { productId: true, storePrice: true, comparePrice: true, bundleQty: true, bundlePrice: true, storeDescription: true },
+    });
+    const configMap = Object.fromEntries(existing.map(p => [p.productId, p]));
+
     await this.prisma.storeProduct.deleteMany({ where: { storeId: store.id } });
 
     if (body.productIds?.length) {
       await this.prisma.storeProduct.createMany({
-        data: body.productIds.map(productId => ({ storeId: store.id, productId })),
+        data: body.productIds.map(productId => ({
+          storeId: store.id,
+          productId,
+          storePrice: configMap[productId]?.storePrice ?? null,
+          comparePrice: configMap[productId]?.comparePrice ?? null,
+          bundleQty: configMap[productId]?.bundleQty ?? null,
+          bundlePrice: configMap[productId]?.bundlePrice ?? null,
+          storeDescription: configMap[productId]?.storeDescription ?? null,
+        })),
         skipDuplicates: true,
       });
     }
@@ -137,21 +188,58 @@ export class StoreController {
     return { ok: true };
   }
 
-  // ── SET store price per product (auth) ───────────────────────────────────────
+  // ── SET store price / description per product (auth) ────────────────────────
 
   @Patch('my/products/:productId')
-  async setProductStorePrice(
+  async setProductStoreConfig(
     @CurrentUser() user: AuthUser,
     @Param('productId') productId: string,
-    @Body() body: { storePrice: number | null },
+    @Body() body: { storePrice?: number | null; comparePrice?: number | null; bundleQty?: number | null; bundlePrice?: number | null; storeDescription?: string | null },
   ) {
     const store = await this.prisma.onlineStore.findUnique({ where: { userId: user.id } });
     if (!store) throw new NotFoundException('Boutique introuvable');
-    await this.prisma.storeProduct.updateMany({
-      where: { storeId: store.id, productId },
-      data: { storePrice: body.storePrice ?? null },
-    });
+    const data: any = {};
+    if ('storePrice' in body) data.storePrice = body.storePrice ?? null;
+    if ('comparePrice' in body) data.comparePrice = body.comparePrice ?? null;
+    if ('bundleQty' in body) data.bundleQty = body.bundleQty ?? null;
+    if ('bundlePrice' in body) data.bundlePrice = body.bundlePrice ?? null;
+    if ('storeDescription' in body) data.storeDescription = body.storeDescription?.trim() || null;
+    await this.prisma.storeProduct.updateMany({ where: { storeId: store.id, productId }, data });
     return { ok: true };
+  }
+
+  // ── GENERATE product description via AI (auth) ───────────────────────────
+
+  @Post('my/products/:productId/description')
+  async generateProductDescription(
+    @CurrentUser() user: AuthUser,
+    @Param('productId') productId: string,
+    @Body() body: { productName: string; category?: string },
+  ) {
+    if (!body.productName?.trim()) throw new BadRequestException('Nom requis');
+
+    const completion = await this.openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [{
+        role: 'user',
+        content: `Rédige une description produit courte (2-3 phrases maximum, 40 mots max) pour une boutique en ligne ciblant le marché congolais (RDC/Congo).
+
+Produit : ${body.productName.trim()}${body.category ? ` (catégorie : ${body.category})` : ''}
+
+Règles :
+- Commence directement par un bénéfice client ou une douleur résolue
+- Mets en avant ce que le client GAGNE (résultat, transformation, sentiment)
+- Réponds à une douleur ou frustration réelle du client
+- Ton direct, chaleureux, vendeur — pas de jargon
+- Pas de titre, pas de bullet points, texte continu uniquement
+- Maximum 40 mots`,
+      }],
+      max_tokens: 100,
+      temperature: 0.8,
+    });
+
+    const description = completion.choices[0]?.message?.content?.trim() ?? '';
+    return { description };
   }
 
   // ── GET store orders (auth) ───────────────────────────────────────────────
@@ -337,6 +425,7 @@ Règles:
                 quantity: true,
                 imageUrl: true,
                 trackStock: true,
+                media: { orderBy: { sortOrder: 'asc' }, select: { id: true, url: true, type: true } },
               },
             },
           },
@@ -354,13 +443,20 @@ Règles:
       logoUrl: store.logoUrl,
       primaryColor: store.primaryColor,
       currency: store.currency ?? 'CDF',
+      metaPixelId: store.metaPixelId ?? null,
+      deliveryZones: store.deliveryZones ?? [],
       products: store.products
         .filter(sp => !sp.product.trackStock || sp.product.quantity > 0)
         .map(sp => {
-          const { trackStock: _, ...pub } = sp.product;
+          const { trackStock: _, media, ...pub } = sp.product as any;
           return {
             ...pub,
-            sellingPrice: sp.storePrice ? Number(sp.storePrice) : pub.sellingPrice,
+            sellingPrice: Number(sp.storePrice ?? pub.sellingPrice),
+            comparePrice: sp.comparePrice ? Number(sp.comparePrice) : null,
+            bundleQty: sp.bundleQty ?? null,
+            bundlePrice: sp.bundlePrice ? Number(sp.bundlePrice) : null,
+            description: sp.storeDescription ?? null,
+            media: (media ?? []).map((m: any) => ({ id: m.id, url: m.url, type: m.type })),
           };
         }),
     };
@@ -397,7 +493,7 @@ Règles:
     return store.products.flatMap(sp => {
       const p = sp.product;
       if (p.trackStock && p.quantity <= 0) return [];
-      const displayPrice = sp.storePrice ? Number(sp.storePrice) : p.sellingPrice;
+      const displayPrice = Number(sp.storePrice ?? p.sellingPrice);
       return p.media.map(m => ({
         id: m.id,
         url: m.url,
@@ -431,6 +527,8 @@ Règles:
     if (!dto.items?.length) throw new BadRequestException('Panier vide');
 
     const total = dto.items.reduce((sum, i) => sum + i.qty * i.unitPrice, 0);
+    const deliveryFee = dto.deliveryFee ?? 0;
+    const grandTotal = total + deliveryFee;
 
     const order = await this.prisma.storeOrder.create({
       data: {
@@ -440,37 +538,90 @@ Règles:
         deliveryZone: dto.deliveryZone,
         items: dto.items as any,
         totalAmount: total,
+        deliveryFee,
         notes: dto.notes ?? null,
+        utmSource: dto.utmSource ?? null,
+        utmMedium: dto.utmMedium ?? null,
+        utmCampaign: dto.utmCampaign ?? null,
+        utmContent: dto.utmContent ?? null,
         status: 'pending',
       },
     });
 
+    // Create draft order in logistics
+    let businessWaPhone: string | null = null;
+    try {
+      const business = await this.prisma.business.findFirst({
+        where: { userId: store.userId },
+        orderBy: { isDefault: 'desc' },
+        select: { id: true, whatsappPhone: true },
+      });
+      if (business?.whatsappPhone) businessWaPhone = business.whatsappPhone;
+      if (business) {
+        const addressParts = [dto.commune, dto.avenue, dto.reference].filter(Boolean);
+        const address = addressParts.join(', ') || dto.deliveryZone;
+        const orderCount = await this.prisma.manualOrder.count({
+          where: { userId: store.userId, businessId: business.id },
+        });
+        const draft = await this.prisma.manualOrder.create({
+          data: {
+            userId: store.userId,
+            businessId: business.id,
+            orderNumber: orderCount + 1,
+            customerName: dto.customerName.trim(),
+            customerPhone: dto.customerPhone.trim(),
+            city: dto.deliveryZone,
+            address,
+            deliveryFee,
+            totalAmount: total,
+            isDraft: true,
+            notes: dto.notes ?? null,
+            items: {
+              create: dto.items
+                .filter(i => i.productId)
+                .map(i => ({ productId: i.productId, quantity: i.qty, unitPrice: i.unitPrice })),
+            },
+          },
+          select: { id: true, orderNumber: true },
+        });
+        // Notify logistics dashboard via socket
+        this.whatsapp.testEmitDraftEvent(store.userId);
+      }
+    } catch { /* non-blocking */ }
+
     // Build order message text
     const ref = order.id.slice(0, 8).toUpperCase();
+    const cur = store.currency ?? 'CDF';
     const lines = [
       `*Nouvelle commande — ${store.name}*`,
       '',
       '*Produits :*',
-      ...dto.items.map(i => `  • ${i.name}  x${i.qty}  —  ${i.unitPrice.toLocaleString('fr-FR')} ${store.currency ?? 'CDF'}`),
+      ...dto.items.map(i => `  • ${i.name}  x${i.qty}  —  ${i.unitPrice.toLocaleString('fr-FR')} ${cur}`),
       '',
-      `*Total : ${total.toLocaleString('fr-FR')} ${store.currency ?? 'CDF'}*`,
-      `Paiement : A la livraison`,
+      `Sous-total : ${total.toLocaleString('fr-FR')} ${cur}`,
+      `Frais de livraison : ${deliveryFee.toLocaleString('fr-FR')} FC`,
+      `*Total à payer : ${total.toLocaleString('fr-FR')} ${cur} + ${deliveryFee.toLocaleString('fr-FR')} FC*`,
+      `Paiement : À la livraison`,
       '',
       `*Client :* ${dto.customerName}`,
-      `*Telephone :* ${dto.customerPhone}`,
-      `*Livraison :* ${dto.deliveryZone}`,
+      `*Téléphone :* ${dto.customerPhone}`,
+      `*Ville :* ${dto.deliveryZone}`,
+      ...(dto.commune ? [`*Commune :* ${dto.commune}`] : []),
+      ...(dto.avenue ? [`*Avenue :* ${dto.avenue}`] : []),
+      ...(dto.reference ? [`*Référence :* ${dto.reference}`] : []),
       ...(dto.notes ? [`*Notes :* ${dto.notes}`] : []),
       '',
-      `Ref : ${ref}`,
+      `Réf : ${ref}`,
     ];
 
     const messageText = lines.join('\n');
-    const phone = store.whatsappPhone.replace(/\D/g, '');
-    const waUrl = `https://wa.me/${phone}?text=${encodeURIComponent(messageText)}`;
+    const destPhone = (businessWaPhone ?? store.whatsappPhone).replace(/\D/g, '');
+    const waUrl = `https://wa.me/${destPhone}?text=${encodeURIComponent(messageText)}`;
 
-    // Try direct send via connected WhatsApp session
-    const directSent = await this.whatsapp.notifyOrder(store.userId, store.whatsappPhone, messageText);
+    // Notify business internally (best-effort, non-blocking)
+    this.whatsapp.notifyOrder(store.userId, destPhone, messageText).catch(() => {});
 
-    return { orderId: order.id, ref, waUrl, directSent };
+    // Always return waUrl so the client sends from their own number
+    return { orderId: order.id, ref, waUrl };
   }
 }

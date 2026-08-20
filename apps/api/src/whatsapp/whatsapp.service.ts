@@ -1,7 +1,8 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit, HttpException, HttpStatus } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit, HttpException, HttpStatus, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AiService } from './ai.service';
 import { AutomationService } from './automation.service';
+import { PushService } from '../push/push.service';
 import makeWASocket, {
   DisconnectReason,
   fetchLatestBaileysVersion,
@@ -118,6 +119,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
     private prisma: PrismaService,
     private aiService: AiService,
     private automationService: AutomationService,
+    @Optional() private pushService: PushService,
   ) {}
 
   // ── Auto-reconnect on server startup ─────────────────────────────────────────
@@ -144,7 +146,14 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
     this.gatewayEmit = fn;
   }
 
+  testEmitDraftEvent(userId: string) {
+    this.emit('draft-order-created', userId, { orderId: 'test', orderNumber: 9999, contactId: 'test' });
+  }
+
   private emit(event: string, userId: string, data: any) {
+    if (event === 'draft-order-created') {
+      this.logger.log(`[emit] draft-order-created → userId=${userId} hasGateway=${!!this.gatewayEmit}`);
+    }
     if (this.gatewayEmit) this.gatewayEmit(event, userId, data);
   }
 
@@ -666,25 +675,18 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
           contact = await this.upsertContact(userId, phone);
         }
 
-        // Check no draft already exists for this contact
+        // Check if a draft already exists for this contact
         const existing = await this.prisma.manualOrder.findFirst({
           where: { userId, sourceContactId: contact.id, isDraft: true },
         });
-        if (existing) {
-          this.logger.log(`Draft already exists for contact ${contact.id}, skipping`);
-          return;
-        }
 
         // ── Name + phone come from WhatsApp, not from AI ─────────────────────────
         // Priority: normalizeDrcPhone(resolved phone) > contact.phone from DB > raw LID stripped
         let resolvedCustomerPhone = normalizeDrcPhone(phone) ?? null;
         if (!resolvedCustomerPhone) {
-          // Fallback 1: contact.phone may have been stored as a real number from a previous sync
           resolvedCustomerPhone = normalizeDrcPhone(contact.phone) ?? null;
         }
         if (!resolvedCustomerPhone) {
-          // Fallback 2: use the stripped digits of whatever we have — create draft with imperfect phone
-          // rather than silently dropping it. User can edit the draft.
           const stripped = phone.replace(/@.*$/, '');
           if (stripped && stripped.length > 0) {
             resolvedCustomerPhone = stripped;
@@ -751,29 +753,56 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
           });
           bizId = biz?.id ?? userId;
         }
-        const orderCount = await this.prisma.manualOrder.count({ where: { userId, businessId: bizId } });
         const qty = details.productQuantity ?? 1;
 
-        const order = await this.prisma.manualOrder.create({
-          data: {
-            userId,
-            businessId: bizId,
-            orderNumber: orderCount + 1,
-            customerName: resolvedCustomerName ?? resolvedCustomerPhone ?? 'Client WhatsApp',
-            customerPhone: resolvedCustomerPhone,
-            city: details.city ?? contact.leadCity ?? '',
-            address: details.address ?? '',
-            deliveryFee: details.deliveryFeeCdf ?? 0,
-            totalAmount: matchedProductId ? qty * unitPrice : unitPrice,
-            isDraft: true,
-            sourceContactId: contact.id,
-            scheduledAt: details.expectedDeliveryDate ? new Date(details.expectedDeliveryDate) : null,
-            notes: details.notes ?? null,
-            items: matchedProductId ? {
-              create: [{ productId: matchedProductId, quantity: qty, unitPrice }],
-            } : undefined,
-          },
-        });
+        let order: { id: string; orderNumber: number };
+
+        if (existing) {
+          // Re-label = refresh the existing draft with updated AI extraction
+          this.logger.log(`Updating existing draft ${existing.id} for contact ${contact.id}`);
+          await this.prisma.manualOrderItem.deleteMany({ where: { orderId: existing.id } });
+          order = await this.prisma.manualOrder.update({
+            where: { id: existing.id },
+            data: {
+              customerName: resolvedCustomerName ?? resolvedCustomerPhone ?? 'Client WhatsApp',
+              customerPhone: resolvedCustomerPhone,
+              city: details.city ?? contact.leadCity ?? existing.city ?? '',
+              address: details.address ?? existing.address ?? '',
+              deliveryFee: details.deliveryFeeCdf ?? existing.deliveryFee ?? 0,
+              totalAmount: matchedProductId ? qty * unitPrice : (unitPrice || existing.totalAmount),
+              scheduledAt: details.expectedDeliveryDate ? new Date(details.expectedDeliveryDate) : existing.scheduledAt,
+              notes: details.notes ?? existing.notes ?? null,
+              updatedAt: new Date(),
+              items: matchedProductId ? {
+                create: [{ productId: matchedProductId, quantity: qty, unitPrice }],
+              } : undefined,
+            },
+            select: { id: true, orderNumber: true },
+          });
+        } else {
+          const orderCount = await this.prisma.manualOrder.count({ where: { userId, businessId: bizId } });
+          order = await this.prisma.manualOrder.create({
+            data: {
+              userId,
+              businessId: bizId,
+              orderNumber: orderCount + 1,
+              customerName: resolvedCustomerName ?? resolvedCustomerPhone ?? 'Client WhatsApp',
+              customerPhone: resolvedCustomerPhone,
+              city: details.city ?? contact.leadCity ?? '',
+              address: details.address ?? '',
+              deliveryFee: details.deliveryFeeCdf ?? 0,
+              totalAmount: matchedProductId ? qty * unitPrice : unitPrice,
+              isDraft: true,
+              sourceContactId: contact.id,
+              scheduledAt: details.expectedDeliveryDate ? new Date(details.expectedDeliveryDate) : null,
+              notes: details.notes ?? null,
+              items: matchedProductId ? {
+                create: [{ productId: matchedProductId, quantity: qty, unitPrice }],
+              } : undefined,
+            },
+            select: { id: true, orderNumber: true },
+          });
+        }
 
         // Mark mentions as converted
         await this.prisma.whatsAppProductMention.updateMany({
@@ -783,8 +812,16 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
 
         this.logger.log(`Auto-draft order #${order.orderNumber} created for contact ${contact.phone} (label: ${labelName})`);
 
-        // Notify frontend
+        // Notify frontend via WebSocket
         this.emit('draft-order-created', userId, { orderId: order.id, orderNumber: order.orderNumber, contactId: contact.id });
+
+        // Push notification pour les utilisateurs hors de l'app
+        this.pushService?.sendToUser(userId, {
+          title: '🛒 Nouveau brouillon de commande',
+          body: `Commande #${order.orderNumber} créée depuis WhatsApp — ${contact.phone}`,
+          url: '/#/logistique',
+          tag: 'draft-order',
+        }).catch(() => {});
       } catch (err: any) {
         this.logger.error('labels.association draft error:', err?.message);
       }
@@ -942,7 +979,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
       if (!hasAgentConfig || kbCount === 0) return;
 
       const aiConfig = await this.prisma.whatsAppAIConfig.findUnique({ where: { userId } });
-      const delay = aiConfig?.simulatedDelayMs ?? 2000;
+      const delay = Math.floor(Math.random() * 7000) + 3000; // 3–10s random
 
       await sock.sendPresenceUpdate('composing', jid).catch(() => {});
       await new Promise(r => setTimeout(r, delay));

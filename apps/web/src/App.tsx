@@ -21,6 +21,7 @@ import { AdminDashboard } from './pages/AdminDashboard';
 import { Logistics } from './pages/Logistics';
 import { Clients } from './pages/Clients';
 import { PartnerPortal } from './pages/PartnerPortal';
+import { Pricing } from './pages/Pricing';
 import { Inbox } from './pages/whatsapp/Inbox';
 import { AIConfig } from './pages/whatsapp/AIConfig';
 import { Automations } from './pages/whatsapp/Automations';
@@ -28,6 +29,8 @@ import { KnowledgeBase } from './pages/whatsapp/KnowledgeBase';
 import { Audience } from './pages/whatsapp/Audience';
 import { BusinessAdvisor } from './components/BusinessAdvisor';
 import PwaInstallBanner from './components/PwaInstallBanner';
+import { PushPermissionBanner } from './components/PushPermissionBanner';
+import { GlobalWaNotifier } from './components/GlobalWaNotifier';
 import { useStore } from './store/useStore';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 
@@ -79,6 +82,10 @@ function AppInner() {
     const slug = parts[2];
     const reelId = parts[3] === 'reel' && parts[4] ? parts[4] : undefined;
     if (slug && slug !== 'undefined') return <PublicStore slug={slug} initialReelId={reelId} />;
+  }
+
+  if (hash.startsWith('#/pricing')) {
+    return <Pricing />;
   }
 
   // Non authentifié → landing page
@@ -160,8 +167,10 @@ function AppInner() {
         <OnboardingTour userId={userId} onClose={() => setShowTour(false)} />
       )}
     <HashRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <GlobalWaNotifier />
       <BusinessAdvisor />
       <PwaInstallBanner />
+      <PushPermissionBanner />
       <Routes>
         <Route element={<AppShell />}>
           <Route path="/" element={<Dashboard />} />

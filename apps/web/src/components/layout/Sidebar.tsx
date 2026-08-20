@@ -20,6 +20,8 @@ const nav = [
   { to: '/boutique',   icon: Store,           label: 'Ma Boutique' },
   { to: '/export',     icon: Download,        label: 'Export' },
   { to: '/whatsapp',   icon: MessageCircle,   label: 'WhatsApp CRM' },
+  { to: '/logistique', icon: Truck,           label: 'Logistique' },
+  { to: '/clients',    icon: Users,           label: 'Clients' },
 ];
 
 export function Sidebar() {
@@ -94,36 +96,6 @@ export function Sidebar() {
               >
                 <Shield size={18} />
                 Admin SaaS
-              </NavLink>
-              <NavLink
-                to="/logistique"
-                end
-                onClick={() => sidebarOpen && toggleSidebar()}
-                className={({ isActive }) =>
-                  `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all
-                  ${isActive
-                    ? 'bg-amber-600 text-white shadow-lg shadow-amber-900/30'
-                    : 'text-amber-400 hover:text-white hover:bg-gray-800'
-                  }`
-                }
-              >
-                <Truck size={18} />
-                Logistique
-              </NavLink>
-              <NavLink
-                to="/clients"
-                end
-                onClick={() => sidebarOpen && toggleSidebar()}
-                className={({ isActive }) =>
-                  `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all
-                  ${isActive
-                    ? 'bg-amber-600 text-white shadow-lg shadow-amber-900/30'
-                    : 'text-amber-400 hover:text-white hover:bg-gray-800'
-                  }`
-                }
-              >
-                <Users size={18} />
-                Clients
               </NavLink>
             </>
           )}

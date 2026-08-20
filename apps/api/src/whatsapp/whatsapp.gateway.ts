@@ -77,6 +77,10 @@ export class WhatsAppGateway
 
   private emitToUser(userId: string, event: string, data: any) {
     const sockets = this.userSockets.get(userId);
+    if (event === 'draft-order-created') {
+      const allKeys = [...this.userSockets.keys()].join(', ') || '(aucun)';
+      this.logger.log(`[emitToUser] draft-order-created → userId=${userId} sockets=${sockets?.size ?? 0} | connected users: ${allKeys}`);
+    }
     if (!sockets || sockets.size === 0) return;
     for (const socketId of sockets) {
       this.server.to(socketId).emit(event, data);

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
@@ -17,10 +18,12 @@ import { StoreModule } from './store/store.module';
 import { CategoriesModule } from './categories/categories.module';
 import { BusinessModule } from './business/business.module';
 import { LogisticsModule } from './logistics/logistics.module';
+import { PushModule } from './push/push.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    ScheduleModule.forRoot(),
     PrismaModule,
     AuthModule,
     ProductsModule,
@@ -36,6 +39,7 @@ import { LogisticsModule } from './logistics/logistics.module';
     CategoriesModule,
     BusinessModule,
     LogisticsModule,
+    PushModule,
   ],
   providers: [
     {
