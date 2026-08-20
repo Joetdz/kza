@@ -2,6 +2,7 @@ import { Controller, Get, Put, Post, Patch, Delete, Body, Param, NotFoundExcepti
 import { Response } from 'express';
 import { PrismaService } from '../prisma/prisma.service';
 import { WhatsAppService } from '../whatsapp/whatsapp.service';
+import { PushService } from '../push/push.service';
 import { CurrentUser, AuthUser } from '../auth/current-user.decorator';
 import { Public } from '../auth/public.decorator';
 import OpenAI from 'openai';
@@ -60,6 +61,7 @@ export class StoreController {
   constructor(
     private prisma: PrismaService,
     private whatsapp: WhatsAppService,
+    private push: PushService,
   ) {}
 
   // ── GET my store config (auth) ────────────────────────────────────────────
@@ -584,8 +586,14 @@ Règles:
           },
           select: { id: true, orderNumber: true },
         });
-        // Notify logistics dashboard via socket
+        // Notify logistics dashboard via socket + push
         this.whatsapp.testEmitDraftEvent(store.userId);
+        this.push.sendToUser(store.userId, {
+          title: '🛒 Nouvelle commande !',
+          body: `${dto.customerName} vient de commander sur ${store.name}`,
+          url: '/#/logistics',
+          tag: 'draft-order',
+        }).catch(() => {});
       }
     } catch { /* non-blocking */ }
 
