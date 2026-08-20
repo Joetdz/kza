@@ -9,8 +9,8 @@ function injectMetaPixel(pixelId: string) {
   (window as any).fbqLoaded = true;
   const f = window as any, b = document, e = 'script';
   if (f.fbq) return;
-  const n = f.fbq = function (...a: any[]) {
-    (n as any).callMethod ? (n as any).callMethod.apply(n, a) : (n as any).queue.push(a);
+  const n: any = f.fbq = function (...a: any[]) {
+    n.callMethod ? n.callMethod.apply(n, a) : n.queue.push(a);
   };
   if (!f._fbq) f._fbq = n;
   n.push = n; n.loaded = true; n.version = '2.0'; n.queue = [];
