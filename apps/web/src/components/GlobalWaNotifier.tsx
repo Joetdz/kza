@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { useAuth } from '../contexts/AuthContext';
+import type { Session } from '@supabase/supabase-js';
 
 const WS_URL = (import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api').replace('/api', '');
 
@@ -98,6 +99,9 @@ let lastFired = 0;
 export function GlobalWaNotifier() {
   const { session } = useAuth();
   const socketRef = useRef<Socket | null>(null);
+  // Keep a ref to the current session so the socket handler always sees the latest userId
+  const sessionRef = useRef<Session | null>(null);
+  sessionRef.current = session ?? null;
 
   // Ask notification permission on mount (after user is logged in)
   useEffect(() => {
@@ -125,6 +129,13 @@ export function GlobalWaNotifier() {
     });
 
     sock.on('draft-order-created', (data: any) => {
+      // Guard: only react if this event belongs to the currently authenticated user
+      const currentUserId = sessionRef.current?.user?.id;
+      if (data?.userId && currentUserId && data.userId !== currentUserId) {
+        console.warn('[GlobalWaNotifier] draft-order-created ignored — userId mismatch', data.userId, currentUserId);
+        return;
+      }
+
       console.debug('[GlobalWaNotifier] draft-order-created', data);
       const now = Date.now();
       if (now - lastFired < 1500) return;

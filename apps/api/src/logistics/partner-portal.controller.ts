@@ -282,26 +282,40 @@ export class PartnerPortalController {
     const partner = await this.prisma.deliveryPartner.findUnique({ where: { token } });
     if (!partner) return null;
 
-    // Total collected from delivered orders (product money partner owes us)
+    // Amounts collected from customers by the partner
     const deliveredOrders = await this.prisma.manualOrder.findMany({
       where: { partnerId: partner.id, status: 'delivered' },
-      select: { id: true, orderNumber: true, customerName: true, totalAmount: true, createdAt: true },
+      select: { id: true, orderNumber: true, customerName: true, totalAmount: true, deliveryFee: true, collectedUsd: true, collectedCdf: true, createdAt: true },
     });
-    const totalOwed = deliveredOrders.reduce((s, o) => s + Number(o.totalAmount), 0);
+    // USD = produits encaissés en $
+    // FC  = montant FC encaissé MOINS frais de livraison (frais restent au partenaire)
+    const owedUsd = deliveredOrders.reduce((s, o) => s + Number((o as any).collectedUsd ?? o.totalAmount), 0);
+    const owedCdf = deliveredOrders.reduce((s, o) => s + Number((o as any).collectedCdf ?? 0) - Number(o.deliveryFee ?? 0), 0);
 
-    // Confirmed payments made by partner
+    // Confirmed payments, strictly split by currency stored in DB
     const payments = await this.prisma.partnerPayment.findMany({
       where: { partnerId: partner.id },
       orderBy: { createdAt: 'desc' },
     });
-    const totalPaid = payments
-      .filter(p => p.status === 'confirmed')
+    const confirmed = payments.filter(p => p.status === 'confirmed');
+    const paidUsd = confirmed
+      .filter(p => (p.currency ?? '').toUpperCase() === 'USD')
+      .reduce((s, p) => s + Number(p.amount), 0);
+    const paidCdf = confirmed
+      .filter(p => (p.currency ?? '').toUpperCase() !== 'USD')
       .reduce((s, p) => s + Number(p.amount), 0);
 
     return {
-      totalOwed,
-      totalPaid,
-      balance: totalOwed - totalPaid,
+      owedUsd,
+      owedCdf,
+      paidUsd,
+      paidCdf,
+      balanceUsd: owedUsd - paidUsd,
+      balanceCdf: owedCdf - paidCdf,
+      // legacy
+      totalOwed: owedUsd,
+      totalPaid: paidUsd,
+      balance: owedUsd - paidUsd,
       deliveredOrders,
       payments,
     };
@@ -354,8 +368,18 @@ export class PartnerPortalController {
       },
       select: { totalAmount: true, deliveryFee: true, collectedUsd: true, collectedCdf: true },
     });
-    const cumulUsd = allDelivered.reduce((s, o) => s + Number((o as any).collectedUsd ?? o.totalAmount), 0);
-    const cumulCdf = allDelivered.reduce((s, o) => s + Number((o as any).collectedCdf ?? 0) - Number(o.deliveryFee), 0);
+    const grossUsd = allDelivered.reduce((s, o) => s + Number((o as any).collectedUsd ?? o.totalAmount), 0);
+    const grossCdf = allDelivered.reduce((s, o) => s + Number((o as any).collectedCdf ?? 0) - Number(o.deliveryFee), 0);
+
+    const confirmedPayments = await (this.prisma as any).partnerPayment.findMany({
+      where: { partnerId: partner.id, status: 'confirmed', createdAt: { lte: end } },
+      select: { amount: true, currency: true },
+    });
+    const paidUsd = confirmedPayments.filter((p: any) => p.currency?.toUpperCase() === 'USD').reduce((s: number, p: any) => s + Number(p.amount), 0);
+    const paidCdf = confirmedPayments.filter((p: any) => p.currency?.toUpperCase() !== 'USD').reduce((s: number, p: any) => s + Number(p.amount), 0);
+
+    const cumulUsd = grossUsd - paidUsd;
+    const cumulCdf = grossCdf - paidCdf;
 
     const locationStocks = (partner as any).location?.stocks ?? [];
     const deliveredItemsMap: Record<string, number> = {};

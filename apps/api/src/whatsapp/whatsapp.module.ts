@@ -11,6 +11,6 @@ import { PushModule } from '../push/push.module';
   imports: [PrismaModule, PushModule],
   controllers: [WhatsAppController],
   providers: [WhatsAppService, WhatsAppGateway, AiService, AutomationService],
-  exports: [WhatsAppService],
+  exports: [WhatsAppService, AiService],
 })
 export class WhatsAppModule {}

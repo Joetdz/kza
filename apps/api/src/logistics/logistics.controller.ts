@@ -579,6 +579,63 @@ export class LogisticsController {
     return updated;
   }
 
+  // Edit any non-delivered order (draft or not)
+  @Patch('my/logistics/orders/:id/edit')
+  async editOrder(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() body: {
+      customerName?: string;
+      customerPhone?: string;
+      city?: string;
+      address?: string;
+      deliveryFee?: number;
+      notes?: string;
+      items?: { productId: string; quantity: number; unitPrice: number }[];
+    },
+  ) {
+    const order = await this.prisma.manualOrder.findFirst({
+      where: { id, ...this.where(user), status: { not: 'delivered' } },
+    });
+    if (!order) throw new Error('Commande introuvable ou déjà livrée');
+
+    const totalAmount = body.items
+      ? body.items.reduce((s, i) => s + i.quantity * i.unitPrice, 0)
+      : Number(order.totalAmount);
+
+    return this.prisma.manualOrder.update({
+      where: { id },
+      data: {
+        ...(body.customerName !== undefined && { customerName: body.customerName }),
+        ...(body.customerPhone !== undefined && { customerPhone: body.customerPhone }),
+        ...(body.city !== undefined && { city: body.city }),
+        ...(body.address !== undefined && { address: body.address }),
+        ...(body.deliveryFee !== undefined && { deliveryFee: body.deliveryFee }),
+        ...(body.notes !== undefined && { notes: body.notes }),
+        totalAmount,
+        ...(body.items && {
+          items: {
+            deleteMany: {},
+            create: body.items.map(i => ({ productId: i.productId, quantity: i.quantity, unitPrice: i.unitPrice })),
+          },
+        }),
+      },
+      include: { items: { include: { product: true } }, partner: true, location: true },
+    });
+  }
+
+  // Toggle exclude from relance
+  @Patch('my/logistics/orders/:id/relance-toggle')
+  async toggleRelance(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    const order = await this.prisma.manualOrder.findFirst({ where: { id, ...this.where(user) } });
+    if (!order) throw new Error('Commande introuvable');
+    return this.prisma.manualOrder.update({
+      where: { id },
+      data: { excludeFromRelance: !(order as any).excludeFromRelance },
+      include: { items: { include: { product: true } }, partner: true, location: true },
+    });
+  }
+
   @Post('my/logistics/orders/:id/confirm-draft')
   async confirmDraft(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     const order = await this.prisma.manualOrder.findFirst({
@@ -684,7 +741,7 @@ export class LogisticsController {
     const totalCollectedCdf  = delivered.reduce((s, o) => s + Number((o as any).collectedCdf ?? 0), 0);
     const totalDeliveryFees  = delivered.reduce((s, o) => s + Number(o.deliveryFee), 0);
 
-    // Cumulative solde (all delivered orders up to end of this day for this partner)
+    // Cumulative solde = all collected up to end of day, minus confirmed payments (= unpaid balance)
     const allDelivered = await this.prisma.manualOrder.findMany({
       where: {
         partnerId,
@@ -697,8 +754,18 @@ export class LogisticsController {
       },
       select: { totalAmount: true, deliveryFee: true, collectedUsd: true, collectedCdf: true },
     });
-    const cumulUsd = allDelivered.reduce((s, o) => s + Number((o as any).collectedUsd ?? o.totalAmount), 0);
-    const cumulCdf = allDelivered.reduce((s, o) => s + Number((o as any).collectedCdf ?? 0) - Number(o.deliveryFee), 0);
+    const grossUsd = allDelivered.reduce((s, o) => s + Number((o as any).collectedUsd ?? o.totalAmount), 0);
+    const grossCdf = allDelivered.reduce((s, o) => s + Number((o as any).collectedCdf ?? 0) - Number(o.deliveryFee), 0);
+
+    const confirmedPayments = await (this.prisma as any).partnerPayment.findMany({
+      where: { partnerId, status: 'confirmed', createdAt: { lte: end } },
+      select: { amount: true, currency: true },
+    });
+    const paidUsd = confirmedPayments.filter((p: any) => p.currency?.toUpperCase() === 'USD').reduce((s: number, p: any) => s + Number(p.amount), 0);
+    const paidCdf = confirmedPayments.filter((p: any) => p.currency?.toUpperCase() !== 'USD').reduce((s: number, p: any) => s + Number(p.amount), 0);
+
+    const cumulUsd = grossUsd - paidUsd;
+    const cumulCdf = grossCdf - paidCdf;
 
     // Stock report
     const locationStocks = (partner as any).location?.stocks ?? [];

@@ -147,7 +147,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
   }
 
   testEmitDraftEvent(userId: string) {
-    this.emit('draft-order-created', userId, { orderId: 'test', orderNumber: 9999, contactId: 'test' });
+    this.emit('draft-order-created', userId, { orderId: 'test', orderNumber: 9999, contactId: 'test', userId });
   }
 
   private emit(event: string, userId: string, data: any) {
@@ -813,7 +813,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
         this.logger.log(`Auto-draft order #${order.orderNumber} created for contact ${contact.phone} (label: ${labelName})`);
 
         // Notify frontend via WebSocket
-        this.emit('draft-order-created', userId, { orderId: order.id, orderNumber: order.orderNumber, contactId: contact.id });
+        this.emit('draft-order-created', userId, { orderId: order.id, orderNumber: order.orderNumber, contactId: contact.id, userId });
 
         // Push notification pour les utilisateurs hors de l'app
         this.pushService?.sendToUser(userId, {
@@ -942,6 +942,9 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
 
     // Silent product mention classification (always runs, regardless of AI being enabled)
     if (text) this.classifyAndSaveMention(userId, contact.businessId, contact.id, text).catch(() => {});
+
+    // Detect return promise → schedule relance
+    if (text) this.detectAndScheduleRelance(userId, contact.id, text).catch(() => {});
 
     const quotedMsgId: string | null =
       (msg.message?.extendedTextMessage?.contextInfo?.stanzaId) ?? null;
@@ -1528,5 +1531,29 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
     }
     this.sockets.clear();
     this.connectedUsers.clear();
+  }
+
+  // ── Détection de promesse de retour → planification de relance ───────────────
+
+  private async detectAndScheduleRelance(userId: string, contactId: string, text: string): Promise<void> {
+    const order = await this.prisma.manualOrder.findFirst({
+      where: {
+        userId,
+        sourceContactId: contactId,
+        status: { in: ['pending', 'dispatched', 'postponed'] },
+        isDraft: false,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!order) return;
+
+    const returnDate = await this.aiService.detectReturnDate(text);
+    if (!returnDate) return;
+
+    await this.prisma.manualOrder.update({
+      where: { id: order.id },
+      data: { relanceScheduledAt: returnDate } as any,
+    });
+    this.logger.log(`[relance] Scheduled order #${order.orderNumber} at ${returnDate.toISOString().split('T')[0]}`);
   }
 }

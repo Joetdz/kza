@@ -1305,26 +1305,53 @@ function FinancesTab({ token }: { token: string }) {
     return <p className="text-center text-sm text-gray-400 py-12">Impossible de charger les données.</p>;
   }
 
+  const owedUsd = finances.owedUsd ?? finances.totalOwed ?? 0;
+  const owedCdf = finances.owedCdf ?? 0;
+  const paidUsd = finances.paidUsd ?? 0;
+  const paidCdf = finances.paidCdf ?? 0;
+  const balanceUsd = finances.balanceUsd ?? (owedUsd - paidUsd);
+  const balanceCdf = finances.balanceCdf ?? (owedCdf - paidCdf);
+
   return (
     <div className="space-y-5">
-      {/* Balance summary */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm text-center">
-          <p className="text-[10px] font-semibold text-gray-400 mb-1">Total dû</p>
-          <p className="text-base font-black text-gray-900">{Number(finances.totalOwed).toLocaleString('fr-FR')}</p>
-          <p className="text-[10px] text-gray-400">FC</p>
+      {/* USD — produits encaissés */}
+      <div>
+        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2">Montants encaissés — USD</p>
+        <div className="grid grid-cols-3 gap-2">
+          <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm text-center">
+            <p className="text-[10px] font-semibold text-gray-400 mb-1">Collecté</p>
+            <p className="text-base font-black text-gray-900">${Number(owedUsd).toLocaleString('fr-FR')}</p>
+          </div>
+          <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm text-center">
+            <p className="text-[10px] font-semibold text-gray-400 mb-1">Versé</p>
+            <p className="text-base font-black text-green-700">${Number(paidUsd).toLocaleString('fr-FR')}</p>
+          </div>
+          <div className={`rounded-2xl p-4 border shadow-sm text-center ${balanceUsd > 0 ? 'bg-amber-50 border-amber-200' : 'bg-green-50 border-green-200'}`}>
+            <p className="text-[10px] font-semibold text-gray-500 mb-1">Solde dû</p>
+            <p className={`text-base font-black ${balanceUsd > 0 ? 'text-amber-700' : 'text-green-700'}`}>
+              ${Number(balanceUsd).toLocaleString('fr-FR')}
+            </p>
+          </div>
         </div>
-        <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm text-center">
-          <p className="text-[10px] font-semibold text-gray-400 mb-1">Total payé</p>
-          <p className="text-base font-black text-green-700">{Number(finances.totalPaid).toLocaleString('fr-FR')}</p>
-          <p className="text-[10px] text-gray-400">FC</p>
-        </div>
-        <div className={`rounded-2xl p-4 border shadow-sm text-center ${finances.balance > 0 ? 'bg-amber-50 border-amber-200' : 'bg-green-50 border-green-200'}`}>
-          <p className="text-[10px] font-semibold text-gray-500 mb-1">Solde</p>
-          <p className={`text-base font-black ${finances.balance > 0 ? 'text-amber-700' : 'text-green-700'}`}>
-            {Number(finances.balance).toLocaleString('fr-FR')}
-          </p>
-          <p className="text-[10px] text-gray-400">FC</p>
+      </div>
+      {/* FC — net encaissé (collectedCdf - deliveryFee) */}
+      <div>
+        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2">Montants encaissés — FC</p>
+        <div className="grid grid-cols-3 gap-2">
+          <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm text-center">
+            <p className="text-[10px] font-semibold text-gray-400 mb-1">Collecté</p>
+            <p className="text-base font-black text-gray-900">{Number(owedCdf).toLocaleString('fr-FR')} FC</p>
+          </div>
+          <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm text-center">
+            <p className="text-[10px] font-semibold text-gray-400 mb-1">Versé</p>
+            <p className="text-base font-black text-green-700">{Number(paidCdf).toLocaleString('fr-FR')} FC</p>
+          </div>
+          <div className={`rounded-2xl p-4 border shadow-sm text-center ${balanceCdf > 0 ? 'bg-amber-50 border-amber-200' : 'bg-green-50 border-green-200'}`}>
+            <p className="text-[10px] font-semibold text-gray-500 mb-1">Solde dû</p>
+            <p className={`text-base font-black ${balanceCdf > 0 ? 'text-amber-700' : 'text-green-700'}`}>
+              {Number(balanceCdf).toLocaleString('fr-FR')} FC
+            </p>
+          </div>
         </div>
       </div>
 
@@ -1381,7 +1408,12 @@ function FinancesTab({ token }: { token: string }) {
                   <p className="text-sm font-semibold text-gray-900">#{String(o.orderNumber).padStart(4, '0')} — {o.customerName}</p>
                   <p className="text-xs text-gray-400">{new Date(o.createdAt).toLocaleDateString('fr-FR')}</p>
                 </div>
-                <span className="text-sm font-bold text-gray-700 shrink-0">{Number(o.totalAmount).toLocaleString('fr-FR')} FC</span>
+                <div className="text-right shrink-0">
+                  <p className="text-sm font-bold text-gray-700">${Number(o.collectedUsd ?? o.totalAmount).toLocaleString('fr-FR')}</p>
+                  {Number(o.deliveryFee) > 0 && (
+                    <p className="text-xs text-amber-600">{Number(o.deliveryFee).toLocaleString('fr-FR')} FC livraison</p>
+                  )}
+                </div>
               </div>
             ))}
           </div>

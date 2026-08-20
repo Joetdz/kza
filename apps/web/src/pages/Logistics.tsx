@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, Trash2, MapPin, Truck, ShoppingBag, ChevronRight, X, Package, AlertCircle, MessageCircle, BarChart2, Link, Printer, Edit2, Check, Calendar, DollarSign, FileText, Bell, RefreshCw } from 'lucide-react';
+import { Plus, Trash2, MapPin, Truck, ShoppingBag, ChevronRight, X, Package, AlertCircle, MessageCircle, BarChart2, Link, Printer, Edit2, Check, Calendar, DollarSign, FileText, Bell, RefreshCw, Phone, Search } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useStore } from '../store/useStore';
 import { logisticsApi, type StockLocation, type DeliveryPartner, type ManualOrder, type PartnerReport, type PartnerPayment, type FollowUpConfig, type FollowUpEntry } from '../api/logistics';
@@ -80,6 +80,14 @@ export function Logistics() {
   const [draftEditForm, setDraftEditForm] = useState<Partial<ManualOrder & { items: any[] }>>({});
   const [draftEditItems, setDraftEditItems] = useState<{ productId: string; quantity: string; unitPrice: string }[]>([]);
   const [confirmingDraft, setConfirmingDraft] = useState<string | null>(null);
+  // Orders filter & search
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  // Edit non-draft order
+  const [editOrderId, setEditOrderId] = useState<string | null>(null);
+  const [editOrderForm, setEditOrderForm] = useState<Partial<ManualOrder & { items: any[] }>>({});
+  const [editOrderItems, setEditOrderItems] = useState<{ productId: string; quantity: string; unitPrice: string }[]>([]);
+  const [relanceToggling, setRelanceToggling] = useState<string | null>(null);
 
   // Partner phone inline edit
   const [editPhoneId, setEditPhoneId] = useState<string | null>(null);
@@ -483,6 +491,36 @@ export function Logistics() {
     }
   }
 
+  async function handleSaveOrderEdit(id: string) {
+    try {
+      const validItems = editOrderItems
+        .filter(i => i.productId)
+        .map(i => ({ productId: i.productId, quantity: Number(i.quantity) || 1, unitPrice: Number(i.unitPrice) || 0 }));
+      const updated = await logisticsApi.editOrder(id, {
+        customerName: editOrderForm.customerName,
+        customerPhone: editOrderForm.customerPhone ?? undefined,
+        city: editOrderForm.city,
+        address: editOrderForm.address,
+        deliveryFee: editOrderForm.deliveryFee !== undefined ? Number(editOrderForm.deliveryFee) : undefined,
+        notes: editOrderForm.notes ?? undefined,
+        items: validItems.length > 0 ? validItems : undefined,
+      });
+      setOrders(prev => prev.map(o => o.id === id ? updated : o));
+      setEditOrderId(null);
+    } catch (e: any) {
+      alert('Erreur : ' + (e?.message ?? 'Impossible de sauvegarder'));
+    }
+  }
+
+  async function handleToggleRelance(id: string) {
+    setRelanceToggling(id);
+    try {
+      const updated = await logisticsApi.toggleRelance(id);
+      setOrders(prev => prev.map(o => o.id === id ? updated : o));
+    } catch { /* ignore */ }
+    finally { setRelanceToggling(null); }
+  }
+
   // ── Payments ─────────────────────────────────────────────────────
 
   async function handleConfirmPayment(id: string) {
@@ -743,15 +781,45 @@ export function Logistics() {
         {/* ── COMMANDES ── */}
         {!loading && tab === 'orders' && (
           <div>
-            <div className="flex justify-between items-center mb-4">
+            <div className="flex justify-between items-center mb-3">
               <p className="text-sm text-gray-500">{orders.filter(o => !o.isDraft).length} commande{orders.filter(o => !o.isDraft).length !== 1 ? 's' : ''}{orders.filter(o => o.isDraft).length > 0 && <span className="ml-2 px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full text-xs font-semibold">{orders.filter(o => o.isDraft).length} brouillon{orders.filter(o => o.isDraft).length !== 1 ? 's' : ''}</span>}</p>
               <button onClick={() => setShowOrderModal(true)}
                 className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 transition-colors">
                 <Plus size={15} /> Nouvelle commande
               </button>
             </div>
+            {/* Filter + Search */}
+            <div className="flex flex-wrap gap-2 mb-4">
+              {(['all', 'draft', 'pending', 'dispatched', 'delivered', 'returned', 'cancelled'] as const).map(s => (
+                <button key={s} onClick={() => setStatusFilter(s)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${statusFilter === s ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
+                  {s === 'all' ? 'Tous' : s === 'draft' ? 'Brouillons' : STATUS_LABELS[s]?.label ?? s}
+                </button>
+              ))}
+              <div className="flex items-center gap-1.5 flex-1 min-w-[180px] border border-gray-200 rounded-xl px-3 py-1.5 bg-white focus-within:ring-2 focus-within:ring-indigo-400">
+                <Search size={13} className="text-gray-400 shrink-0" />
+                <input type="text" placeholder="Nom, ville, #commande…" value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  className="flex-1 text-sm outline-none bg-transparent" />
+              </div>
+            </div>
             <div className="space-y-3">
-              {orders.map(o => {
+              {(() => {
+                const filteredOrders = orders.filter(o => {
+                  if (statusFilter !== 'all') {
+                    if (statusFilter === 'draft') { if (!o.isDraft) return false; }
+                    else if (o.isDraft || o.status !== statusFilter) return false;
+                  }
+                  if (searchQuery.trim()) {
+                    const q = searchQuery.toLowerCase();
+                    if (!orderNum(o.orderNumber).toLowerCase().includes(q) &&
+                        !o.customerName.toLowerCase().includes(q) &&
+                        !o.city.toLowerCase().includes(q) &&
+                        !(o.customerPhone?.toLowerCase().includes(q))) return false;
+                  }
+                  return true;
+                });
+                return filteredOrders.map(o => {
                 const st = STATUS_LABELS[o.status] ?? STATUS_LABELS.pending;
                 return (
                   <div key={o.id} className={`bg-white rounded-2xl p-4 border shadow-sm ${o.isDraft ? 'border-amber-200 bg-amber-50/30' : 'border-gray-100'}`}>
@@ -853,6 +921,86 @@ export function Logistics() {
                           {confirmingDraft === o.id ? <><span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />Confirmation…</> : '✓ Confirmer la commande'}
                         </button>
                       </div>
+                    ) : (!o.isDraft && editOrderId === o.id) ? (
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${st.color}`}>{st.label} — Édition</span>
+                        <span className="font-black text-indigo-600 text-sm">{orderNum(o.orderNumber)}</span>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-gray-400 mb-1.5 font-semibold">Produits</p>
+                        {editOrderItems.map((item, idx) => {
+                          const prod = products.find(p => p.id === item.productId);
+                          return (
+                            <div key={idx} className="flex gap-1.5 mb-1.5 items-center">
+                              {prod?.imageUrl
+                                ? <img src={prod.imageUrl} alt={prod.name} className="w-7 h-7 rounded-lg object-cover border border-gray-100 shrink-0" />
+                                : <div className="w-7 h-7 rounded-lg bg-gray-100 shrink-0" />}
+                              <select value={item.productId}
+                                onChange={e => {
+                                  const p = products.find(pr => pr.id === e.target.value);
+                                  setEditOrderItems(items => items.map((it, i) => i === idx
+                                    ? { ...it, productId: e.target.value, unitPrice: p ? String(p.sellingPrice) : it.unitPrice }
+                                    : it));
+                                }}
+                                className="flex-1 border border-gray-200 rounded-lg px-2 py-1.5 text-xs outline-none focus:ring-1 focus:ring-indigo-400 bg-white">
+                                <option value="">— Produit</option>
+                                {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                              </select>
+                              <input type="number" min="1" value={item.quantity} placeholder="Qté"
+                                onChange={e => setEditOrderItems(items => items.map((it, i) => i === idx ? { ...it, quantity: e.target.value } : it))}
+                                className="w-12 border border-gray-200 rounded-lg px-1.5 py-1.5 text-xs outline-none text-center" />
+                              <div className="relative">
+                                <input type="number" min="0" value={item.unitPrice} placeholder="Prix"
+                                  onChange={e => setEditOrderItems(items => items.map((it, i) => i === idx ? { ...it, unitPrice: e.target.value } : it))}
+                                  className="w-16 border border-gray-200 rounded-lg pl-1.5 pr-5 py-1.5 text-xs outline-none" />
+                                <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] text-gray-400 font-bold">$</span>
+                              </div>
+                              {editOrderItems.length > 1 && (
+                                <button onClick={() => setEditOrderItems(items => items.filter((_, i) => i !== idx))} className="text-red-400 hover:text-red-600">
+                                  <X size={13} />
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })}
+                        <button onClick={() => setEditOrderItems(items => [...items, { productId: '', quantity: '1', unitPrice: '' }])}
+                          className="flex items-center gap-1 text-[11px] text-indigo-600 font-semibold mt-0.5 hover:text-indigo-700">
+                          <Plus size={11} /> Ajouter un produit
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        {([
+                          { label: 'Nom client', key: 'customerName' },
+                          { label: 'Téléphone', key: 'customerPhone' },
+                          { label: 'Ville', key: 'city' },
+                          { label: 'Adresse complète', key: 'address' },
+                        ] as { label: string; key: keyof typeof editOrderForm }[]).map(({ label, key }) => (
+                          <div key={key} className={key === 'address' ? 'col-span-2' : ''}>
+                            <p className="text-[10px] text-gray-400 mb-1">{label}</p>
+                            <input value={(editOrderForm[key] as string) ?? ''}
+                              onChange={e => setEditOrderForm(f => ({ ...f, [key]: e.target.value }))}
+                              className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm outline-none focus:ring-1 focus:ring-indigo-400" />
+                          </div>
+                        ))}
+                        <div>
+                          <p className="text-[10px] text-gray-400 mb-1">Livraison (FC)</p>
+                          <input type="number" value={(editOrderForm.deliveryFee as number) ?? 0}
+                            onChange={e => setEditOrderForm(f => ({ ...f, deliveryFee: Number(e.target.value) }))}
+                            className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm outline-none focus:ring-1 focus:ring-indigo-400" />
+                        </div>
+                        <div>
+                          <p className="text-[10px] text-gray-400 mb-1">Notes</p>
+                          <input value={(editOrderForm.notes as string) ?? ''}
+                            onChange={e => setEditOrderForm(f => ({ ...f, notes: e.target.value }))}
+                            className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm outline-none focus:ring-1 focus:ring-indigo-400" />
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <button onClick={() => handleSaveOrderEdit(o.id)} className="flex-1 py-2 bg-indigo-600 text-white rounded-xl text-xs font-semibold hover:bg-indigo-700">Sauvegarder</button>
+                        <button onClick={() => setEditOrderId(null)} className="px-3 py-2 bg-gray-100 text-gray-600 rounded-xl text-xs font-semibold hover:bg-gray-200">Annuler</button>
+                      </div>
+                    </div>
                     ) : (
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex-1 min-w-0">
@@ -869,7 +1017,19 @@ export function Logistics() {
                           {new Date(o.createdAt).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })}
                         </p>
                         <p className="text-sm text-gray-600">{o.city} — {o.address}</p>
-                        {o.customerPhone && <p className="text-xs text-gray-400">{o.customerPhone}</p>}
+                        {o.customerPhone && (
+                          <div className="flex items-center gap-2 mt-1 flex-wrap">
+                            <p className="text-xs text-gray-400">{o.customerPhone}</p>
+                            <a href={`tel:${o.customerPhone}`}
+                              className="flex items-center gap-1 px-2 py-0.5 bg-green-50 text-green-700 rounded-lg text-[11px] font-semibold hover:bg-green-100">
+                              <Phone size={10} /> Appeler
+                            </a>
+                            <a href={`https://wa.me/${o.customerPhone.replace(/\D/g, '')}`} target="_blank" rel="noopener noreferrer"
+                              className="flex items-center gap-1 px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded-lg text-[11px] font-semibold hover:bg-emerald-100">
+                              <MessageCircle size={10} /> WhatsApp
+                            </a>
+                          </div>
+                        )}
 
                         {/* Scheduled delivery */}
                         {o.scheduledAt && (
@@ -967,6 +1127,33 @@ export function Logistics() {
                             </button>
                           </>
                         )}
+                        {/* Edit non-draft order */}
+                        {!o.isDraft && o.status !== 'delivered' && (
+                          <button
+                            onClick={() => {
+                              setEditOrderId(o.id);
+                              setEditOrderForm({ customerName: o.customerName, customerPhone: o.customerPhone ?? '', city: o.city, address: o.address, deliveryFee: Number(o.deliveryFee), notes: o.notes ?? '' });
+                              setEditOrderItems(o.items.length > 0
+                                ? o.items.map((i: any) => ({ productId: i.product?.id ?? i.productId ?? '', quantity: String(i.quantity), unitPrice: String(i.unitPrice) }))
+                                : [{ productId: '', quantity: '1', unitPrice: '' }]);
+                            }}
+                            className="flex items-center gap-1 px-2.5 py-1.5 bg-indigo-50 text-indigo-700 rounded-lg text-xs font-semibold hover:bg-indigo-100">
+                            <Edit2 size={12} /> Modifier
+                          </button>
+                        )}
+                        {/* Relance toggle */}
+                        {!o.isDraft && (
+                          <button
+                            onClick={() => handleToggleRelance(o.id)}
+                            disabled={relanceToggling === o.id}
+                            title={o.excludeFromRelance ? 'Réintégrer dans la relance' : 'Exclure de la relance'}
+                            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors disabled:opacity-60 ${o.excludeFromRelance ? 'bg-gray-100 text-gray-400 hover:bg-gray-200' : 'bg-amber-50 text-amber-700 hover:bg-amber-100'}`}>
+                            {relanceToggling === o.id
+                              ? <span className="w-3 h-3 border-2 border-gray-400/30 border-t-gray-400 rounded-full animate-spin" />
+                              : <Bell size={12} />}
+                            {o.excludeFromRelance ? 'Relance off' : 'Relance'}
+                          </button>
+                        )}
                         <button onClick={() => handleDeleteOrder(o.id)} className="p-1.5 text-gray-300 hover:text-red-400 self-end">
                           <Trash2 size={14} />
                         </button>
@@ -976,6 +1163,7 @@ export function Logistics() {
                   </div>
                 );
               })}
+            )()}
               {orders.length === 0 && (
                 <p className="text-center py-8 text-gray-400 text-sm">Aucune commande manuelle.</p>
               )}

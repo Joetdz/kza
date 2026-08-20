@@ -93,6 +93,7 @@ export interface ManualOrder {
   agentId: string | null;
   agent: DeliveryAgent | null;
   deliveryPersonName: string | null;
+  excludeFromRelance: boolean;
   scheduledAt: string | null;
   partnerId: string | null;
   locationId: string | null;
@@ -169,10 +170,17 @@ export interface PartnerPayment {
 }
 
 export interface PartnerFinances {
+  owedUsd: number;
+  owedCdf: number;
+  paidUsd: number;
+  paidCdf: number;
+  balanceUsd: number;
+  balanceCdf: number;
+  // legacy
   totalOwed: number;
   totalPaid: number;
   balance: number;
-  deliveredOrders: { id: string; orderNumber: number; customerName: string; totalAmount: number; createdAt: string }[];
+  deliveredOrders: { id: string; orderNumber: number; customerName: string; totalAmount: number; deliveryFee: number; collectedUsd?: number; collectedCdf?: number; createdAt: string }[];
   payments: PartnerPayment[];
 }
 
@@ -248,6 +256,13 @@ export const logisticsApi = {
   }) => req<ManualOrder>(`/my/logistics/orders/${id}/edit-draft`, { method: 'PATCH', body: JSON.stringify(body) }),
   confirmDraft: (id: string) =>
     req<ManualOrder>(`/my/logistics/orders/${id}/confirm-draft`, { method: 'POST' }),
+  editOrder: (id: string, body: {
+    customerName?: string; customerPhone?: string; city?: string; address?: string;
+    deliveryFee?: number; notes?: string;
+    items?: { productId: string; quantity: number; unitPrice: number }[];
+  }) => req<ManualOrder>(`/my/logistics/orders/${id}/edit`, { method: 'PATCH', body: JSON.stringify(body) }),
+  toggleRelance: (id: string) =>
+    req<ManualOrder>(`/my/logistics/orders/${id}/relance-toggle`, { method: 'PATCH' }),
 
   // Partner portal (public — no auth token)
   partnerPortal: {
