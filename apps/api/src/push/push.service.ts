@@ -17,15 +17,24 @@ export interface PushPayload {
 export class PushService {
   private readonly logger = new Logger(PushService.name);
 
+  private vapidReady = false;
+
   constructor(
     private prisma: PrismaService,
     private config: ConfigService,
   ) {
-    webpush.setVapidDetails(
-      `mailto:${this.config.get('VAPID_EMAIL', 'contact@kza.app')}`,
-      this.config.get<string>('VAPID_PUBLIC_KEY')!,
-      this.config.get<string>('VAPID_PRIVATE_KEY')!,
-    );
+    const pub = this.config.get<string>('VAPID_PUBLIC_KEY');
+    const priv = this.config.get<string>('VAPID_PRIVATE_KEY');
+    if (pub && priv) {
+      webpush.setVapidDetails(
+        `mailto:${this.config.get('VAPID_EMAIL', 'contact@kza.app')}`,
+        pub,
+        priv,
+      );
+      this.vapidReady = true;
+    } else {
+      this.logger.warn('VAPID keys not set — push notifications disabled');
+    }
   }
 
   async subscribe(userId: string, subscription: { endpoint: string; keys: { p256dh: string; auth: string } }) {
@@ -41,6 +50,7 @@ export class PushService {
   }
 
   async sendToUser(userId: string, payload: PushPayload): Promise<void> {
+    if (!this.vapidReady) return;
     const subs: any[] = await (this.prisma as any).pushSubscription.findMany({ where: { userId } });
     if (!subs.length) return;
 
@@ -64,6 +74,7 @@ export class PushService {
   }
 
   async sendToAll(payload: PushPayload): Promise<void> {
+    if (!this.vapidReady) return;
     const subs: any[] = await (this.prisma as any).pushSubscription.findMany();
     const userIds = [...new Set<string>(subs.map((s: any) => s.userId as string))];
     await Promise.allSettled(userIds.map(uid => this.sendToUser(uid, payload)));
