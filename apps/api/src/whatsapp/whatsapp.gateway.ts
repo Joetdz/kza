@@ -33,13 +33,11 @@ export class WhatsAppGateway
   }
 
   onModuleInit() {
-    // Register emit callback so WhatsAppService can push to clients
+    // Register emit callback so WhatsAppService can push to clients.
+    // Reconnects are handled by WhatsAppService.onModuleInit() with per-user stagger.
     this.waService.setGatewayEmit((event, userId, data) => {
       this.emitToUser(userId, event, data);
     });
-
-    // Reconnect sessions that were active before restart
-    this.waService.reconnectAll();
   }
 
   afterInit(server: Server) {

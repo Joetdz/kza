@@ -625,18 +625,7 @@ export class LogisticsController {
   }
 
   // Toggle exclude from relance
-  @Patch('my/logistics/orders/:id/relance-toggle')
-  async toggleRelance(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    const order = await this.prisma.manualOrder.findFirst({ where: { id, ...this.where(user) } });
-    if (!order) throw new Error('Commande introuvable');
-    return this.prisma.manualOrder.update({
-      where: { id },
-      data: { excludeFromRelance: !(order as any).excludeFromRelance },
-      include: { items: { include: { product: true } }, partner: true, location: true },
-    });
-  }
-
-  @Post('my/logistics/orders/:id/confirm-draft')
+@Post('my/logistics/orders/:id/confirm-draft')
   async confirmDraft(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     const order = await this.prisma.manualOrder.findFirst({
       where: { id, ...this.where(user), isDraft: true },

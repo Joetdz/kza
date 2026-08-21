@@ -629,8 +629,7 @@ model ManualOrder {
   agent              DeliveryAgent?  @relation(fields: [agentId], references: [id])
   collectedUsd          Decimal?        @map("collected_usd") @db.Decimal(10, 2)
   collectedCdf          Decimal?        @map("collected_cdf") @db.Decimal(10, 2)
-  excludeFromRelance    Boolean         @default(false) @map("exclude_from_relance")
-  relanceScheduledAt    DateTime?       @map("relance_scheduled_at")
+
   items              ManualOrderItem[]
   createdAt          DateTime        @default(now()) @map("created_at")
   updatedAt          DateTime        @default(now()) @updatedAt @map("updated_at")

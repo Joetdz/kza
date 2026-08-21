@@ -77,8 +77,6 @@ export const waApi = {
   deleteKb: (id: string) => req<void>(`/whatsapp/kb/${id}`, { method: 'DELETE' }),
   generateScript: (data: { name: string; price?: string | number; category?: string; quantity?: number }) =>
     req<{ script: string }>('/whatsapp/kb/generate-script', { method: 'POST', body: JSON.stringify(data) }),
-  testDraftEvent: () => req<{ ok: boolean }>('/whatsapp/test-draft-event', { method: 'POST' }),
-
   // Automatisations
   getAutomations: () => req<any[]>('/whatsapp/automations'),
   createAutomation: (data: any) =>

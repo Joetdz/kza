@@ -563,20 +563,6 @@ export function Logistics() {
       <div className="max-w-5xl mx-auto px-4 py-8">
         <div className="flex items-center gap-3 mb-6">
           <h1 className="text-2xl font-black text-gray-900">Logistique</h1>
-          {import.meta.env.DEV && (
-            <button
-              onClick={async () => {
-                try {
-                  await waApi.testDraftEvent();
-                  console.log('[TEST] draft-order-created event emis via API');
-                } catch (e) { console.error('[TEST]', e); }
-              }}
-              className="text-xs bg-amber-100 text-amber-700 border border-amber-300 px-2 py-1 rounded-lg font-mono"
-              title="Simule un draft-order-created via socket (DEV uniquement)"
-            >
-              🧪 Test socket
-            </button>
-          )}
         </div>
 
         <div className="flex gap-1 bg-gray-100 p-1 rounded-2xl mb-6 w-fit flex-wrap">

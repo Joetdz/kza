@@ -2,7 +2,6 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { WhatsAppService } from '../whatsapp/whatsapp.service';
-import { AiService } from '../whatsapp/ai.service';
 
 @Injectable()
 export class FollowUpService {
@@ -11,7 +10,6 @@ export class FollowUpService {
   constructor(
     private prisma: PrismaService,
     private whatsapp: WhatsAppService,
-    private ai: AiService,
   ) {}
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
@@ -21,8 +19,8 @@ export class FollowUpService {
   }
 
   private randomDelay() {
-    // 2–4 minutes between messages → stays well under 20/hour
-    return this.sleep(120_000 + Math.random() * 120_000);
+    // 45–90 seconds between messages — stays well under WA's spam threshold
+    return this.sleep(45_000 + Math.random() * 45_000);
   }
 
   private fillTemplate(template: string, vars: Record<string, string>): string {
@@ -53,61 +51,34 @@ export class FollowUpService {
 
   async sendRelanceForUser(userId: string, delayH: number, template: string): Promise<number> {
     const cutoff = new Date(Date.now() - delayH * 3600 * 1000);
-    const now = new Date();
-
-    const alreadySentIds = await this.sentOrderIds(userId, 'relance');
+    const DAILY_CAP = 20; // max messages per session to stay under WA limits
 
     const orders = await this.prisma.manualOrder.findMany({
       where: {
         userId,
         status: { in: ['pending', 'dispatched', 'postponed'] },
         isDraft: false,
-        excludeFromRelance: false,
         createdAt: { lte: cutoff },
         customerPhone: { not: null },
-        NOT: { id: { in: alreadySentIds } },
+        NOT: { id: { in: await this.sentOrderIds(userId, 'relance') } },
       },
       include: { items: { include: { product: true } } },
     });
 
-    // Filtre relance différée en JS (évite les conflits OR+NOT dans Prisma)
-    const eligible = orders.filter(o => {
-      const scheduled = (o as any).relanceScheduledAt as Date | null;
-      return !scheduled || scheduled <= now;
-    });
-
     let sent = 0;
-    for (let i = 0; i < eligible.length; i++) {
-      const order = eligible[i];
+    for (const order of orders) {
+      if (sent >= DAILY_CAP) {
+        this.logger.warn(`[followup] relance userId=${userId}: cap ${DAILY_CAP} atteint, arrêt`);
+        break;
+      }
       const phone = order.customerPhone!;
       const productName = this.firstProductName(order.items as any[]);
       const num = String(order.orderNumber).padStart(4, '0');
-
-      // Générer un message AI basé sur la conversation, sinon fallback template
-      let message: string | null = null;
-      if (order.sourceContactId) {
-        const history = await this.prisma.whatsAppMessage.findMany({
-          where: { contactId: order.sourceContactId },
-          orderBy: { sentAt: 'asc' },
-          take: 20,
-          select: { direction: true, content: true },
-        });
-        if (history.length > 0) {
-          message = await this.ai.generateRelanceMessage(history, {
-            customerName: order.customerName,
-            productName,
-            orderNumber: num,
-          });
-        }
-      }
-
-      if (!message) {
-        message = this.fillTemplate(template, {
-          nom: order.customerName,
-          numero_commande: num,
-          produit: productName,
-        });
-      }
+      const message = this.fillTemplate(template, {
+        nom: order.customerName,
+        numero_commande: num,
+        produit: productName,
+      });
 
       const ok = await this.whatsapp.notifyOrder(userId, phone, message).catch(() => false);
       if (ok) {
@@ -116,10 +87,10 @@ export class FollowUpService {
         }).catch(() => {});
         sent++;
       }
-      if (i < eligible.length - 1) await this.randomDelay();
+      if (orders.indexOf(order) < orders.length - 1) await this.randomDelay();
     }
 
-    this.logger.log(`[followup] relance userId=${userId}: ${sent}/${eligible.length} sent`);
+    this.logger.log(`[followup] relance userId=${userId}: ${sent}/${orders.length} sent (cap=${DAILY_CAP})`);
     return sent;
   }
 
@@ -141,6 +112,7 @@ export class FollowUpService {
 
   async sendLoyaltyForUser(userId: string, delayH: number, template: string): Promise<number> {
     const cutoff = new Date(Date.now() - delayH * 3600 * 1000);
+    const DAILY_CAP = 20;
 
     const orders = await this.prisma.manualOrder.findMany({
       where: {
@@ -156,6 +128,10 @@ export class FollowUpService {
 
     let sent = 0;
     for (const order of orders) {
+      if (sent >= DAILY_CAP) {
+        this.logger.warn(`[followup] loyalty userId=${userId}: cap ${DAILY_CAP} atteint, arrêt`);
+        break;
+      }
       const phone = order.customerPhone!;
       const productName = this.firstProductName(order.items as any[]);
       const num = String(order.orderNumber).padStart(4, '0');
@@ -175,7 +151,7 @@ export class FollowUpService {
       if (orders.indexOf(order) < orders.length - 1) await this.randomDelay();
     }
 
-    this.logger.log(`[followup] loyalty userId=${userId}: ${sent}/${orders.length} sent`);
+    this.logger.log(`[followup] loyalty userId=${userId}: ${sent}/${orders.length} sent (cap=${DAILY_CAP})`);
     return sent;
   }
 

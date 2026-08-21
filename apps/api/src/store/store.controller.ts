@@ -587,7 +587,7 @@ Règles:
           select: { id: true, orderNumber: true },
         });
         // Notify logistics dashboard via socket + push
-        this.whatsapp.testEmitDraftEvent(store.userId);
+        this.whatsapp.emitDraftOrderCreated(store.userId, order.id, order.orderNumber);
         this.push.sendToUser(store.userId, {
           title: '🛒 Nouvelle commande !',
           body: `${dto.customerName} vient de commander sur ${store.name}`,

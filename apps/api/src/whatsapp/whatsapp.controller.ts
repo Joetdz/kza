@@ -317,12 +317,6 @@ export class WhatsAppController {
     return { id };
   }
 
-  @Post('test-draft-event')
-  testDraftEvent(@CurrentUser() user: AuthUser) {
-    this.wa.testEmitDraftEvent(user.id);
-    return { ok: true };
-  }
-
   @Post('kb/generate-script')
   async generateKbScript(
     @Body() dto: { name: string; price?: string; category?: string; quantity?: number },

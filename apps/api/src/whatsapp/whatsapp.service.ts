@@ -107,13 +107,15 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
   private labelNames = new Map<string, string>();
   // Timestamp (ms) when WhatsApp connection opened — used to skip historical label events
   private connectionOpenAt = new Map<string, number>();
+  // Users who have already completed their initial label sync — grace window skipped on reconnects
+  private labelSyncDone = new Set<string>();
   // LID (Linked Device ID) → real phone (@c.us format): key = `userId:lid`
   private lidToPhone = new Map<string, string>();
   // Trigger label names (case/accent-insensitive) that auto-create a draft order.
   // Short prefixes — matching uses .includes() so "livraison programmée" still matches "livraison".
   private static DRAFT_TRIGGER_LABELS = ['livraison', 'new order', 'commande', 'nouvelle commande'];
   // Grace window after connection during which label events are treated as historical and ignored
-  private static LABEL_SYNC_GRACE_MS = 45_000; // 45 seconds
+  private static LABEL_SYNC_GRACE_MS = 20_000; // 20 s — WA Business can replay historical labels for up to 15-30 s on first connect
 
   constructor(
     private prisma: PrismaService,
@@ -146,8 +148,8 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
     this.gatewayEmit = fn;
   }
 
-  testEmitDraftEvent(userId: string) {
-    this.emit('draft-order-created', userId, { orderId: 'test', orderNumber: 9999, contactId: 'test', userId });
+  emitDraftOrderCreated(userId: string, orderId: string, orderNumber: number, contactId?: string) {
+    this.emit('draft-order-created', userId, { orderId, orderNumber, contactId: contactId ?? null, userId });
   }
 
   private emit(event: string, userId: string, data: any) {
@@ -369,7 +371,13 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
           })
         );
 
-        this.connectionOpenAt.set(userId, Date.now());
+        // Grace window only on the very first connection — reconnects don't reset it
+        if (!this.labelSyncDone.has(userId)) {
+          this.connectionOpenAt.set(userId, Date.now());
+          setTimeout(() => this.labelSyncDone.add(userId), WhatsAppService.LABEL_SYNC_GRACE_MS);
+        } else {
+          this.connectionOpenAt.set(userId, 0); // epoch = always outside grace window
+        }
         this.emit('connected', userId, { phone });
         this.logger.log(`WhatsApp connected for ${userId} (${phone}) — label sync window: ${WhatsAppService.LABEL_SYNC_GRACE_MS / 1000}s`);
 
@@ -407,6 +415,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
 
         if (isLogout) {
           await clearDbAuth(userId, this.prisma);
+          this.labelSyncDone.delete(userId); // force fresh sync on next login
           this.logger.log(`WhatsApp logged out for ${userId}`);
 
           if (this.pairingPhones.has(userId)) {
@@ -942,9 +951,6 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
 
     // Silent product mention classification (always runs, regardless of AI being enabled)
     if (text) this.classifyAndSaveMention(userId, contact.businessId, contact.id, text).catch(() => {});
-
-    // Detect return promise → schedule relance
-    if (text) this.detectAndScheduleRelance(userId, contact.id, text).catch(() => {});
 
     const quotedMsgId: string | null =
       (msg.message?.extendedTextMessage?.contextInfo?.stanzaId) ?? null;
@@ -1533,27 +1539,4 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
     this.connectedUsers.clear();
   }
 
-  // ── Détection de promesse de retour → planification de relance ───────────────
-
-  private async detectAndScheduleRelance(userId: string, contactId: string, text: string): Promise<void> {
-    const order = await this.prisma.manualOrder.findFirst({
-      where: {
-        userId,
-        sourceContactId: contactId,
-        status: { in: ['pending', 'dispatched', 'postponed'] },
-        isDraft: false,
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-    if (!order) return;
-
-    const returnDate = await this.aiService.detectReturnDate(text);
-    if (!returnDate) return;
-
-    await this.prisma.manualOrder.update({
-      where: { id: order.id },
-      data: { relanceScheduledAt: returnDate } as any,
-    });
-    this.logger.log(`[relance] Scheduled order #${order.orderNumber} at ${returnDate.toISOString().split('T')[0]}`);
-  }
 }
