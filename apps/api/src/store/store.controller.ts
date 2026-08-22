@@ -562,14 +562,15 @@ Règles:
       if (business) {
         const addressParts = [dto.commune, dto.avenue, dto.reference].filter(Boolean);
         const address = addressParts.join(', ') || dto.deliveryZone;
-        const orderCount = await this.prisma.manualOrder.count({
-          where: { userId: store.userId, businessId: business.id },
+        const maxResult = await this.prisma.manualOrder.aggregate({
+          where: { userId: store.userId },
+          _max: { orderNumber: true },
         });
         const draft = await this.prisma.manualOrder.create({
           data: {
             userId: store.userId,
             businessId: business.id,
-            orderNumber: orderCount + 1,
+            orderNumber: (maxResult._max.orderNumber ?? 0) + 1,
             customerName: dto.customerName.trim(),
             customerPhone: dto.customerPhone.trim(),
             city: dto.deliveryZone,
@@ -587,7 +588,7 @@ Règles:
           select: { id: true, orderNumber: true },
         });
         // Notify logistics dashboard via socket + push
-        this.whatsapp.emitDraftOrderCreated(store.userId, order.id, order.orderNumber);
+        this.whatsapp.emitDraftOrderCreated(store.userId, draft.id, draft.orderNumber);
         this.push.sendToUser(store.userId, {
           title: '🛒 Nouvelle commande !',
           body: `${dto.customerName} vient de commander sur ${store.name}`,

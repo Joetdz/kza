@@ -229,8 +229,8 @@ export class LogisticsController {
     const totalAmount = body.items.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
 
     const bizWhere = this.where(user);
-    const orderCount = await this.prisma.manualOrder.count({ where: bizWhere });
-    const orderNumber = orderCount + 1;
+    const maxResult = await this.prisma.manualOrder.aggregate({ where: { userId: user.id }, _max: { orderNumber: true } });
+    const orderNumber = (maxResult._max.orderNumber ?? 0) + 1;
 
     const order = await this.prisma.manualOrder.create({
       data: {

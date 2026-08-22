@@ -789,12 +789,12 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
             select: { id: true, orderNumber: true },
           });
         } else {
-          const orderCount = await this.prisma.manualOrder.count({ where: { userId, businessId: bizId } });
+          const maxResult = await this.prisma.manualOrder.aggregate({ where: { userId }, _max: { orderNumber: true } });
           order = await this.prisma.manualOrder.create({
             data: {
               userId,
               businessId: bizId,
-              orderNumber: orderCount + 1,
+              orderNumber: (maxResult._max.orderNumber ?? 0) + 1,
               customerName: resolvedCustomerName ?? resolvedCustomerPhone ?? 'Client WhatsApp',
               customerPhone: resolvedCustomerPhone,
               city: details.city ?? contact.leadCity ?? '',

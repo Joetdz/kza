@@ -634,7 +634,7 @@ model ManualOrder {
   createdAt          DateTime        @default(now()) @map("created_at")
   updatedAt          DateTime        @default(now()) @updatedAt @map("updated_at")
 
-  @@index([userId])
+  @@unique([userId, orderNumber])
   @@index([businessId])
   @@map("manual_orders")
 }
