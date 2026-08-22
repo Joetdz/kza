@@ -197,22 +197,90 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
     return this.getCache(userId, phone).map(m => ({ direction: m.direction, content: m.content }));
   }
 
+  // ── Label management ─────────────────────────────────────────────────────────
+
+  getLabelCache(userId: string): Record<string, string> {
+    const result: Record<string, string> = {};
+    for (const [key, name] of this.labelNames.entries()) {
+      if (key.startsWith(`${userId}:`)) result[key.slice(userId.length + 1)] = name;
+    }
+    return result;
+  }
+
+  async seedLabels(userId: string, labels: Array<{ id: string; name: string }>): Promise<{ seeded: number }> {
+    for (const { id, name } of labels) {
+      this.labelNames.set(`${userId}:${id}`, name);
+    }
+    await this.persistLabels(userId);
+    this.logger.log(`[labels] Seeded ${labels.length} label(s) for ${userId}`);
+    return { seeded: labels.length };
+  }
+
+  // Load label names persisted in DB (survives server restarts)
+  private async loadPersistedLabels(userId: string): Promise<void> {
+    try {
+      const session = await this.prisma.whatsAppSession.findUnique({
+        where: { userId },
+        select: { authState: true },
+      });
+      const saved = (session?.authState as any)?.labelNames as Record<string, string> | undefined;
+      if (!saved) return;
+      let loaded = 0;
+      for (const [id, name] of Object.entries(saved)) {
+        this.labelNames.set(`${userId}:${id}`, name);
+        loaded++;
+      }
+      if (loaded > 0) this.logger.log(`[labels] Loaded ${loaded} persisted label(s) for ${userId}`);
+    } catch { /* ignore */ }
+  }
+
+  // Persist current in-memory label map for this user to DB
+  private async persistLabels(userId: string): Promise<void> {
+    try {
+      const toSave: Record<string, string> = {};
+      for (const [key, name] of this.labelNames.entries()) {
+        if (key.startsWith(`${userId}:`)) {
+          toSave[key.slice(userId.length + 1)] = name;
+        }
+      }
+      if (Object.keys(toSave).length === 0) return;
+      const session = await this.prisma.whatsAppSession.findUnique({
+        where: { userId }, select: { authState: true },
+      });
+      const existing = (session?.authState as any) ?? {};
+      await this.prisma.whatsAppSession.update({
+        where: { userId },
+        data: { authState: { ...existing, labelNames: toSave } },
+      });
+    } catch { /* ignore */ }
+  }
+
   // Request WA Business label list so labelNames cache is populated after reconnect
   private async refreshLabels(userId: string, sock: WASocket): Promise<void> {
     try {
-      const result = await (sock as any).query({
+      const query = (sock as any).query({
         tag: 'iq',
         attrs: { to: 's.whatsapp.net', type: 'get', xmlns: 'w:biz:label' },
         content: [{ tag: 'label', attrs: {} }],
       });
+      // 5 s timeout — some accounts never respond to this IQ query
+      const result = await Promise.race([
+        query,
+        new Promise<null>((_, r) => setTimeout(() => r(new Error('timeout')), 5_000)),
+      ]);
       const nodes: any[] = Array.isArray(result?.content) ? result.content : [];
+      let refreshed = 0;
       for (const node of nodes) {
         const id = node?.attrs?.id;
         const name = node?.attrs?.name;
         if (id && name) {
           this.labelNames.set(`${userId}:${id}`, name);
-          this.logger.log(`Label refreshed: ${id} → "${name}"`);
+          refreshed++;
         }
+      }
+      if (refreshed > 0) {
+        this.logger.log(`[labels] Refreshed ${refreshed} label(s) for ${userId}`);
+        await this.persistLabels(userId);
       }
     } catch {
       // Not all WhatsApp accounts support label queries — silently ignore
@@ -394,7 +462,8 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
           this.logger.error(`Contact sync failed for ${userId}:`, err?.message)
         );
 
-        // Request WhatsApp Business labels so cache is populated on reconnect
+        // Load persisted label names first (survives restarts), then try live refresh
+        this.loadPersistedLabels(userId).catch(() => {});
         this.refreshLabels(userId, sock).catch(() => {});
       }
 
@@ -573,12 +642,16 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
     // WhatsApp Business labels — cache label id→name (fires during initial sync)
     const cacheLabels = (labels: any) => {
       const list: any[] = Array.isArray(labels) ? labels : (labels ? [labels] : []);
+      let changed = false;
       for (const label of list) {
         if (label?.id && label?.name) {
           this.labelNames.set(`${userId}:${label.id}`, label.name);
           this.logger.log(`Label cached: ${label.id} → "${label.name}"`);
+          changed = true;
         }
       }
+      // Persist to DB so label names survive server restarts
+      if (changed) this.persistLabels(userId).catch(() => {});
     };
     sock.ev.on('labels.edit' as any, cacheLabels);
     // Some Baileys builds use 'label.edit' (singular)
