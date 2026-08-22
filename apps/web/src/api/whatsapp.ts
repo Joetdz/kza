@@ -117,8 +117,4 @@ export const waApi = {
   createDraftOrder: (contactId: string) =>
     req<any>(`/whatsapp/contacts/${contactId}/create-draft-order`, { method: 'POST' }),
 
-  // Labels WA (cache côté serveur)
-  getLabels: () => req<Record<string, string>>('/whatsapp/labels'),
-  seedLabels: (labels: Array<{ id: string; name: string }>) =>
-    req<{ seeded: number }>('/whatsapp/labels/seed', { method: 'POST', body: JSON.stringify({ labels }) }),
 };

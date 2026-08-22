@@ -107,15 +107,13 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
   private labelNames = new Map<string, string>();
   // Timestamp (ms) when WhatsApp connection opened — used to skip historical label events
   private connectionOpenAt = new Map<string, number>();
-  // Users who have already completed their initial label sync — grace window skipped on reconnects
-  private labelSyncDone = new Set<string>();
   // LID (Linked Device ID) → real phone (@c.us format): key = `userId:lid`
   private lidToPhone = new Map<string, string>();
   // Trigger label names (case/accent-insensitive) that auto-create a draft order.
   // Short prefixes — matching uses .includes() so "livraison programmée" still matches "livraison".
   private static DRAFT_TRIGGER_LABELS = ['livraison', 'new order', 'commande', 'nouvelle commande'];
   // Grace window after connection during which label events are treated as historical and ignored
-  private static LABEL_SYNC_GRACE_MS = 20_000; // 20 s — WA Business can replay historical labels for up to 15-30 s on first connect
+  private static LABEL_SYNC_GRACE_MS = 45_000; // 45 s — WA replays historical label events during every reconnect
 
   constructor(
     private prisma: PrismaService,
@@ -199,62 +197,6 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
 
   // ── Label management ─────────────────────────────────────────────────────────
 
-  getLabelCache(userId: string): Record<string, string> {
-    const result: Record<string, string> = {};
-    for (const [key, name] of this.labelNames.entries()) {
-      if (key.startsWith(`${userId}:`)) result[key.slice(userId.length + 1)] = name;
-    }
-    return result;
-  }
-
-  async seedLabels(userId: string, labels: Array<{ id: string; name: string }>): Promise<{ seeded: number }> {
-    for (const { id, name } of labels) {
-      this.labelNames.set(`${userId}:${id}`, name);
-    }
-    await this.persistLabels(userId);
-    this.logger.log(`[labels] Seeded ${labels.length} label(s) for ${userId}`);
-    return { seeded: labels.length };
-  }
-
-  // Load label names persisted in DB (survives server restarts)
-  private async loadPersistedLabels(userId: string): Promise<void> {
-    try {
-      const session = await this.prisma.whatsAppSession.findUnique({
-        where: { userId },
-        select: { authState: true },
-      });
-      const saved = (session?.authState as any)?.labelNames as Record<string, string> | undefined;
-      if (!saved) return;
-      let loaded = 0;
-      for (const [id, name] of Object.entries(saved)) {
-        this.labelNames.set(`${userId}:${id}`, name);
-        loaded++;
-      }
-      if (loaded > 0) this.logger.log(`[labels] Loaded ${loaded} persisted label(s) for ${userId}`);
-    } catch { /* ignore */ }
-  }
-
-  // Persist current in-memory label map for this user to DB
-  private async persistLabels(userId: string): Promise<void> {
-    try {
-      const toSave: Record<string, string> = {};
-      for (const [key, name] of this.labelNames.entries()) {
-        if (key.startsWith(`${userId}:`)) {
-          toSave[key.slice(userId.length + 1)] = name;
-        }
-      }
-      if (Object.keys(toSave).length === 0) return;
-      const session = await this.prisma.whatsAppSession.findUnique({
-        where: { userId }, select: { authState: true },
-      });
-      const existing = (session?.authState as any) ?? {};
-      await this.prisma.whatsAppSession.update({
-        where: { userId },
-        data: { authState: { ...existing, labelNames: toSave } },
-      });
-    } catch { /* ignore */ }
-  }
-
   // Request WA Business label list so labelNames cache is populated after reconnect
   private async refreshLabels(userId: string, sock: WASocket): Promise<void> {
     try {
@@ -280,7 +222,6 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
       }
       if (refreshed > 0) {
         this.logger.log(`[labels] Refreshed ${refreshed} label(s) for ${userId}`);
-        await this.persistLabels(userId);
       }
     } catch {
       // Not all WhatsApp accounts support label queries — silently ignore
@@ -396,6 +337,16 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
 
     this.sockets.set(userId, sock);
 
+    // DEBUG: intercept ALL Baileys events to diagnose label issues
+    const _origEmit = (sock.ev as any).emit.bind(sock.ev);
+    (sock.ev as any).emit = (...args: any[]) => {
+      const evName = args[0];
+      if (typeof evName === 'string' && evName.includes('label')) {
+        this.logger.log(`[baileys-all] ${evName}: ${JSON.stringify(args[1])?.slice(0, 500)}`);
+      }
+      return _origEmit(...args);
+    };
+
     sock.ev.on('creds.update', saveCreds);
 
     sock.ev.on('connection.update', async (update) => {
@@ -439,13 +390,9 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
           })
         );
 
-        // Grace window only on the very first connection — reconnects don't reset it
-        if (!this.labelSyncDone.has(userId)) {
-          this.connectionOpenAt.set(userId, Date.now());
-          setTimeout(() => this.labelSyncDone.add(userId), WhatsAppService.LABEL_SYNC_GRACE_MS);
-        } else {
-          this.connectionOpenAt.set(userId, 0); // epoch = always outside grace window
-        }
+        // Reset grace window on every connection (including reconnects) — WA replays historical
+        // labels.association events during every reconnect and they must be ignored
+        this.connectionOpenAt.set(userId, Date.now());
         this.emit('connected', userId, { phone });
         this.logger.log(`WhatsApp connected for ${userId} (${phone}) — label sync window: ${WhatsAppService.LABEL_SYNC_GRACE_MS / 1000}s`);
 
@@ -462,8 +409,6 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
           this.logger.error(`Contact sync failed for ${userId}:`, err?.message)
         );
 
-        // Load persisted label names first (survives restarts), then try live refresh
-        this.loadPersistedLabels(userId).catch(() => {});
         this.refreshLabels(userId, sock).catch(() => {});
       }
 
@@ -484,7 +429,6 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
 
         if (isLogout) {
           await clearDbAuth(userId, this.prisma);
-          this.labelSyncDone.delete(userId); // force fresh sync on next login
           this.logger.log(`WhatsApp logged out for ${userId}`);
 
           if (this.pairingPhones.has(userId)) {
@@ -642,16 +586,12 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
     // WhatsApp Business labels — cache label id→name (fires during initial sync)
     const cacheLabels = (labels: any) => {
       const list: any[] = Array.isArray(labels) ? labels : (labels ? [labels] : []);
-      let changed = false;
       for (const label of list) {
         if (label?.id && label?.name) {
           this.labelNames.set(`${userId}:${label.id}`, label.name);
           this.logger.log(`Label cached: ${label.id} → "${label.name}"`);
-          changed = true;
         }
       }
-      // Persist to DB so label names survive server restarts
-      if (changed) this.persistLabels(userId).catch(() => {});
     };
     sock.ev.on('labels.edit' as any, cacheLabels);
     // Some Baileys builds use 'label.edit' (singular)
@@ -659,6 +599,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
 
     // Label applied to a chat from the physical WhatsApp Business app → auto-create draft order
     sock.ev.on('labels.association' as any, async (data: any) => {
+      this.logger.log(`[labels.association] event received — raw: ${JSON.stringify(data)}`);
       try {
         // Ignore label events that arrive within the grace window after connection open.
         // Baileys replays ALL historical label associations during initial app-state sync,
@@ -757,10 +698,14 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
           contact = await this.upsertContact(userId, phone);
         }
 
-        // Check if a draft already exists for this contact
+        // Check if a draft already exists for this contact — skip if already exists
         const existing = await this.prisma.manualOrder.findFirst({
           where: { userId, sourceContactId: contact.id, isDraft: true },
         });
+        if (existing) {
+          this.logger.log(`Draft already exists for contact ${contact.id}, skipping`);
+          return;
+        }
 
         // ── Name + phone come from WhatsApp, not from AI ─────────────────────────
         // Priority: normalizeDrcPhone(resolved phone) > contact.phone from DB > raw LID stripped
@@ -837,54 +782,27 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
         }
         const qty = details.productQuantity ?? 1;
 
-        let order: { id: string; orderNumber: number };
-
-        if (existing) {
-          // Re-label = refresh the existing draft with updated AI extraction
-          this.logger.log(`Updating existing draft ${existing.id} for contact ${contact.id}`);
-          await this.prisma.manualOrderItem.deleteMany({ where: { orderId: existing.id } });
-          order = await this.prisma.manualOrder.update({
-            where: { id: existing.id },
-            data: {
-              customerName: resolvedCustomerName ?? resolvedCustomerPhone ?? 'Client WhatsApp',
-              customerPhone: resolvedCustomerPhone,
-              city: details.city ?? contact.leadCity ?? existing.city ?? '',
-              address: details.address ?? existing.address ?? '',
-              deliveryFee: details.deliveryFeeCdf ?? existing.deliveryFee ?? 0,
-              totalAmount: matchedProductId ? qty * unitPrice : (unitPrice || existing.totalAmount),
-              scheduledAt: details.expectedDeliveryDate ? new Date(details.expectedDeliveryDate) : existing.scheduledAt,
-              notes: details.notes ?? existing.notes ?? null,
-              updatedAt: new Date(),
-              items: matchedProductId ? {
-                create: [{ productId: matchedProductId, quantity: qty, unitPrice }],
-              } : undefined,
-            },
-            select: { id: true, orderNumber: true },
-          });
-        } else {
-          const maxResult = await this.prisma.manualOrder.aggregate({ where: { userId }, _max: { orderNumber: true } });
-          order = await this.prisma.manualOrder.create({
-            data: {
-              userId,
-              businessId: bizId,
-              orderNumber: (maxResult._max.orderNumber ?? 0) + 1,
-              customerName: resolvedCustomerName ?? resolvedCustomerPhone ?? 'Client WhatsApp',
-              customerPhone: resolvedCustomerPhone,
-              city: details.city ?? contact.leadCity ?? '',
-              address: details.address ?? '',
-              deliveryFee: details.deliveryFeeCdf ?? 0,
-              totalAmount: matchedProductId ? qty * unitPrice : unitPrice,
-              isDraft: true,
-              sourceContactId: contact.id,
-              scheduledAt: details.expectedDeliveryDate ? new Date(details.expectedDeliveryDate) : null,
-              notes: details.notes ?? null,
-              items: matchedProductId ? {
-                create: [{ productId: matchedProductId, quantity: qty, unitPrice }],
-              } : undefined,
-            },
-            select: { id: true, orderNumber: true },
-          });
-        }
+        const orderCount = await this.prisma.manualOrder.count({ where: { userId, businessId: bizId } });
+        const order = await this.prisma.manualOrder.create({
+          data: {
+            userId,
+            businessId: bizId,
+            orderNumber: orderCount + 1,
+            customerName: resolvedCustomerName ?? resolvedCustomerPhone ?? 'Client WhatsApp',
+            customerPhone: resolvedCustomerPhone,
+            city: details.city ?? contact.leadCity ?? '',
+            address: details.address ?? '',
+            deliveryFee: details.deliveryFeeCdf ?? 0,
+            totalAmount: matchedProductId ? qty * unitPrice : unitPrice,
+            isDraft: true,
+            sourceContactId: contact.id,
+            scheduledAt: details.expectedDeliveryDate ? new Date(details.expectedDeliveryDate) : null,
+            notes: details.notes ?? null,
+            items: matchedProductId ? {
+              create: [{ productId: matchedProductId, quantity: qty, unitPrice }],
+            } : undefined,
+          },
+        });
 
         // Mark mentions as converted
         await this.prisma.whatsAppProductMention.updateMany({

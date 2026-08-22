@@ -80,16 +80,6 @@ export class WhatsAppController {
     return this.wa.getStatus(user.id);
   }
 
-  @Get('labels')
-  getLabels(@CurrentUser() user: AuthUser) {
-    return this.wa.getLabelCache(user.id);
-  }
-
-  @Post('labels/seed')
-  seedLabels(@CurrentUser() user: AuthUser, @Body() body: { labels: Array<{ id: string; name: string }> }) {
-    return this.wa.seedLabels(user.id, body.labels);
-  }
-
   @Get('groups')
   getGroups(@CurrentUser() user: AuthUser) {
     return this.wa.getGroups(user.id);
