@@ -42,20 +42,26 @@ export class FollowUpService {
 
     for (const config of configs) {
       try {
-        await this.sendRelanceForUser(config.userId, config.relanceDelayH, config.relanceTemplate);
+        await this.sendRelanceForUser(config.userId, config.relanceDelayH, config.relanceTemplate, config.businessId);
       } catch (err: any) {
         this.logger.warn(`[followup] relance error userId=${config.userId}: ${err?.message}`);
       }
     }
   }
 
-  async sendRelanceForUser(userId: string, delayH: number, template: string): Promise<number> {
+  async sendRelanceForUser(
+    userId: string,
+    delayH: number,
+    template: string,
+    businessId: string | null = null,
+  ): Promise<number> {
     const cutoff = new Date(Date.now() - delayH * 3600 * 1000);
     const DAILY_CAP = 20; // max messages per session to stay under WA limits
 
     const orders = await this.prisma.manualOrder.findMany({
       where: {
         userId,
+        ...(businessId ? { businessId } : {}),
         status: { in: ['pending', 'dispatched', 'postponed'] },
         isDraft: false,
         createdAt: { lte: cutoff },
@@ -80,7 +86,7 @@ export class FollowUpService {
         produit: productName,
       });
 
-      const ok = await this.whatsapp.notifyOrder(userId, phone, message).catch(() => false);
+      const ok = await this.whatsapp.notifyOrder(userId, order.businessId ?? null, phone, message).catch(() => false);
       if (ok) {
         await this.prisma.waFollowUp.create({
           data: { userId, orderId: order.id, type: 'relance', phone, message },
@@ -103,20 +109,26 @@ export class FollowUpService {
 
     for (const config of configs) {
       try {
-        await this.sendLoyaltyForUser(config.userId, config.loyaltyDelayH, config.loyaltyTemplate);
+        await this.sendLoyaltyForUser(config.userId, config.loyaltyDelayH, config.loyaltyTemplate, config.businessId);
       } catch (err: any) {
         this.logger.warn(`[followup] loyalty error userId=${config.userId}: ${err?.message}`);
       }
     }
   }
 
-  async sendLoyaltyForUser(userId: string, delayH: number, template: string): Promise<number> {
+  async sendLoyaltyForUser(
+    userId: string,
+    delayH: number,
+    template: string,
+    businessId: string | null = null,
+  ): Promise<number> {
     const cutoff = new Date(Date.now() - delayH * 3600 * 1000);
     const DAILY_CAP = 20;
 
     const orders = await this.prisma.manualOrder.findMany({
       where: {
         userId,
+        ...(businessId ? { businessId } : {}),
         status: 'delivered',
         isDraft: false,
         updatedAt: { lte: cutoff },
@@ -141,7 +153,7 @@ export class FollowUpService {
         produit: productName,
       });
 
-      const ok = await this.whatsapp.notifyOrder(userId, phone, message).catch(() => false);
+      const ok = await this.whatsapp.notifyOrder(userId, order.businessId ?? null, phone, message).catch(() => false);
       if (ok) {
         await this.prisma.waFollowUp.create({
           data: { userId, orderId: order.id, type: 'loyalty', phone, message },
@@ -167,14 +179,15 @@ export class FollowUpService {
 
   // ─── Preview (liste des destinataires sans envoyer) ───────────────────────
 
-  async previewRelance(userId: string) {
-    const config = await this.getConfig(userId);
+  async previewRelance(userId: string, businessId: string | null = null) {
+    const config = await this.getConfig(userId, businessId);
     const cutoff = new Date(Date.now() - config.relanceDelayH * 3600 * 1000);
     const alreadySent = await this.sentOrderIds(userId, 'relance');
 
     return this.prisma.manualOrder.findMany({
       where: {
         userId,
+        ...(businessId ? { businessId } : {}),
         status: { in: ['pending', 'dispatched', 'postponed'] },
         isDraft: false,
         createdAt: { lte: cutoff },
@@ -186,14 +199,15 @@ export class FollowUpService {
     });
   }
 
-  async previewLoyalty(userId: string) {
-    const config = await this.getConfig(userId);
+  async previewLoyalty(userId: string, businessId: string | null = null) {
+    const config = await this.getConfig(userId, businessId);
     const cutoff = new Date(Date.now() - config.loyaltyDelayH * 3600 * 1000);
     const alreadySent = await this.sentOrderIds(userId, 'loyalty');
 
     return this.prisma.manualOrder.findMany({
       where: {
         userId,
+        ...(businessId ? { businessId } : {}),
         status: 'delivered',
         isDraft: false,
         updatedAt: { lte: cutoff },
@@ -207,12 +221,19 @@ export class FollowUpService {
 
   // ─── Config CRUD ──────────────────────────────────────────────────────────
 
-  async getConfig(userId: string) {
-    return this.prisma.waFollowUpConfig.upsert({
-      where: { userId },
-      create: { userId },
-      update: {},
-    });
+  // businessId is nullable, so the (userId, businessId) unique can't drive an upsert.
+  private async upsertConfig(userId: string, businessId: string | null, data: Record<string, any> = {}) {
+    const existing = await this.prisma.waFollowUpConfig.findFirst({ where: { userId, businessId } });
+    if (existing) {
+      return Object.keys(data).length === 0
+        ? existing
+        : this.prisma.waFollowUpConfig.update({ where: { id: existing.id }, data });
+    }
+    return this.prisma.waFollowUpConfig.create({ data: { userId, businessId, ...data } });
+  }
+
+  async getConfig(userId: string, businessId: string | null = null) {
+    return this.upsertConfig(userId, businessId);
   }
 
   async updateConfig(userId: string, data: Partial<{
@@ -222,12 +243,8 @@ export class FollowUpService {
     loyaltyEnabled: boolean;
     loyaltyDelayH: number;
     loyaltyTemplate: string;
-  }>) {
-    return this.prisma.waFollowUpConfig.upsert({
-      where: { userId },
-      create: { userId, ...data },
-      update: data,
-    });
+  }>, businessId: string | null = null) {
+    return this.upsertConfig(userId, businessId, data);
   }
 
   async getHistory(userId: string, limit = 50) {
@@ -239,15 +256,15 @@ export class FollowUpService {
   }
 
   // Manual triggers (for UI buttons)
-  async triggerRelance(userId: string): Promise<number> {
-    const config = await this.getConfig(userId);
+  async triggerRelance(userId: string, businessId: string | null = null): Promise<number> {
+    const config = await this.getConfig(userId, businessId);
     if (!config.relanceEnabled) return 0;
-    return this.sendRelanceForUser(userId, config.relanceDelayH, config.relanceTemplate);
+    return this.sendRelanceForUser(userId, config.relanceDelayH, config.relanceTemplate, businessId);
   }
 
-  async triggerLoyalty(userId: string): Promise<number> {
-    const config = await this.getConfig(userId);
+  async triggerLoyalty(userId: string, businessId: string | null = null): Promise<number> {
+    const config = await this.getConfig(userId, businessId);
     if (!config.loyaltyEnabled) return 0;
-    return this.sendLoyaltyForUser(userId, config.loyaltyDelayH, config.loyaltyTemplate);
+    return this.sendLoyaltyForUser(userId, config.loyaltyDelayH, config.loyaltyTemplate, businessId);
   }
 }

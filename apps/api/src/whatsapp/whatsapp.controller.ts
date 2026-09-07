@@ -38,19 +38,31 @@ export class WhatsAppController {
   // ── Helper: resolve or auto-create a contact ─────────────────────────────────
   // When contacts are deleted from DB, getContacts() returns id = phone number.
   // This helper auto-creates the DB record on first interaction.
-  private async resolveContact(id: string, userId: string) {
+  // Everything WhatsApp belongs to the business the request is scoped to.
+  private biz(user: AuthUser): string | null {
+    return user.businessId || null;
+  }
+
+  private async resolveContact(id: string, user: AuthUser) {
+    const userId = user.ownerId;
+    const businessId = this.biz(user);
+    const include = { tags: { include: { tag: true } } };
+
     if (id.includes('@')) {
-      // id is a phone number — upsert the contact record
-      return this.prisma.whatsAppContact.upsert({
-        where: { userId_phone: { userId, phone: id } },
-        create: { userId, phone: id },
-        update: {},
-        include: { tags: { include: { tag: true } } },
+      // id is a phone number — create the contact record if it doesn't exist yet
+      const existing = await this.prisma.whatsAppContact.findFirst({
+        where: { userId, businessId, phone: id },
+        include,
+      });
+      if (existing) return existing;
+      return this.prisma.whatsAppContact.create({
+        data: { userId, businessId, phone: id },
+        include,
       });
     }
     const contact = await this.prisma.whatsAppContact.findFirst({
-      where: { id, userId },
-      include: { tags: { include: { tag: true } } },
+      where: { id, userId, businessId },
+      include,
     });
     if (!contact) throw new NotFoundException();
     return contact;
@@ -69,7 +81,8 @@ export class WhatsAppController {
       WHERE client_id = ${userId}
       AND phone_number LIKE '%@lid'
     `;
-    this.wa.syncContactDirectory(userId).catch(() => {});
+    const bizId = (req.headers['x-business-id'] as string) || null;
+    this.wa.syncContactDirectory(userId, bizId).catch(() => {});
     return { ok: true, userId };
   }
 
@@ -77,29 +90,29 @@ export class WhatsAppController {
 
   @Get('status')
   getStatus(@CurrentUser() user: AuthUser) {
-    return this.wa.getStatus(user.id);
+    return this.wa.getStatus(user.ownerId, this.biz(user));
   }
 
   @Get('groups')
   getGroups(@CurrentUser() user: AuthUser) {
-    return this.wa.getGroups(user.id);
+    return this.wa.getGroups(user.ownerId, this.biz(user));
   }
 
   @Post('connect')
   async connect(@CurrentUser() user: AuthUser) {
-    await this.wa.connectFresh(user.id);
+    await this.wa.connectFresh(user.ownerId, this.biz(user));
     return { message: 'Connexion initialisée' };
   }
 
   @Post('disconnect')
   async disconnect(@CurrentUser() user: AuthUser) {
-    await this.wa.disconnect(user.id);
+    await this.wa.disconnect(user.ownerId, this.biz(user));
     return { message: 'Déconnecté' };
   }
 
   @Post('connect-pairing')
   async connectPairing(@CurrentUser() user: AuthUser, @Body() dto: ConnectPairingDto) {
-    await this.wa.connectWithPairingCode(user.id, dto.phone);
+    await this.wa.connectWithPairingCode(user.ownerId, this.biz(user), dto.phone);
     return { message: 'Connexion par code initialisée' };
   }
 
@@ -112,13 +125,13 @@ export class WhatsAppController {
     @Query('search') search?: string,
     @Query('tag') tagId?: string,
   ) {
-    return this.wa.getContacts(user.id, filter, search, tagId);
+    return this.wa.getContacts(user.ownerId, this.biz(user), filter, search, tagId);
   }
 
   @Get('contacts/:id')
   async getContact(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     const contact = await this.prisma.whatsAppContact.findFirst({
-      where: { id, userId: user.id },
+      where: { id, userId: user.ownerId, businessId: this.biz(user) },
       include: { tags: { include: { tag: true } }, notes: { orderBy: { createdAt: 'desc' } } },
     });
     if (!contact) throw new NotFoundException();
@@ -131,13 +144,13 @@ export class WhatsAppController {
     @Body() dto: UpdateContactDto,
     @CurrentUser() user: AuthUser,
   ) {
-    const contact = await this.resolveContact(id, user.id);
+    const contact = await this.resolveContact(id, user);
     return this.prisma.whatsAppContact.update({ where: { id: contact.id }, data: dto });
   }
 
   @Delete('contacts/:id')
   async deleteContact(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    const contact = await this.resolveContact(id, user.id);
+    const contact = await this.resolveContact(id, user);
     await this.prisma.whatsAppContact.delete({ where: { id: contact.id } });
     return { id: contact.id };
   }
@@ -146,7 +159,7 @@ export class WhatsAppController {
 
   @Get('contacts/:id/messages')
   getMessages(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    return this.wa.getMessages(user.id, id);
+    return this.wa.getMessages(user.ownerId, this.biz(user), id);
   }
 
   @Post('contacts/:id/send')
@@ -155,11 +168,11 @@ export class WhatsAppController {
     @Body() dto: SendMessageDto,
     @CurrentUser() user: AuthUser,
   ) {
-    const contact = await this.resolveContact(id, user.id);
+    const contact = await this.resolveContact(id, user);
     if (dto.quotedMsgId) {
-      await this.wa.sendReply(user.id, contact.phone, dto.message, contact.id, dto.quotedMsgId);
+      await this.wa.sendReply(user.ownerId, this.biz(user), contact.phone, dto.message, contact.id, dto.quotedMsgId);
     } else {
-      await this.wa.sendMessage(user.id, contact.phone, dto.message, contact.id, false);
+      await this.wa.sendMessage(user.ownerId, this.biz(user), contact.phone, dto.message, contact.id, false);
     }
     return { ok: true };
   }
@@ -170,15 +183,15 @@ export class WhatsAppController {
     @Body() body: { label: string },
     @CurrentUser() user: AuthUser,
   ) {
-    const contact = await this.resolveContact(id, user.id);
-    const applied = await this.wa.applyLabelToChat(user.id, contact.phone, body.label);
+    const contact = await this.resolveContact(id, user);
+    const applied = await this.wa.applyLabelToChat(user.ownerId, contact.phone, body.label);
     return { ok: applied };
   }
 
   @Patch('contacts/:id/read')
   async markRead(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    const contact = await this.resolveContact(id, user.id);
-    await this.wa.markRead(user.id, contact.phone);
+    const contact = await this.resolveContact(id, user);
+    await this.wa.markRead(user.ownerId, contact.phone);
     return { ok: true };
   }
 
@@ -186,7 +199,7 @@ export class WhatsAppController {
 
   @Get('contacts/:id/notes')
   async getNotes(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    const contact = await this.resolveContact(id, user.id);
+    const contact = await this.resolveContact(id, user);
     return this.prisma.whatsAppNote.findMany({
       where: { contactId: contact.id },
       orderBy: { createdAt: 'desc' },
@@ -199,15 +212,15 @@ export class WhatsAppController {
     @Body() dto: CreateNoteDto,
     @CurrentUser() user: AuthUser,
   ) {
-    const contact = await this.resolveContact(id, user.id);
+    const contact = await this.resolveContact(id, user);
     return this.prisma.whatsAppNote.create({
-      data: { contactId: contact.id, userId: user.id, content: dto.content },
+      data: { contactId: contact.id, userId: user.ownerId, businessId: this.biz(user), content: dto.content },
     });
   }
 
   @Delete('notes/:noteId')
   async deleteNote(@Param('noteId') noteId: string, @CurrentUser() user: AuthUser) {
-    await this.prisma.whatsAppNote.deleteMany({ where: { id: noteId, userId: user.id } });
+    await this.prisma.whatsAppNote.deleteMany({ where: { id: noteId, userId: user.ownerId } });
     return { id: noteId };
   }
 
@@ -216,7 +229,7 @@ export class WhatsAppController {
   @Get('tags')
   getTags(@CurrentUser() user: AuthUser) {
     return this.prisma.whatsAppTag.findMany({
-      where: { userId: user.id },
+      where: { userId: user.ownerId, businessId: this.biz(user) },
       orderBy: { name: 'asc' },
     });
   }
@@ -224,13 +237,13 @@ export class WhatsAppController {
   @Post('tags')
   createTag(@Body() dto: CreateTagDto, @CurrentUser() user: AuthUser) {
     return this.prisma.whatsAppTag.create({
-      data: { userId: user.id, name: dto.name, color: dto.color ?? '#6366f1' },
+      data: { userId: user.ownerId, businessId: this.biz(user), name: dto.name, color: dto.color ?? '#6366f1' },
     });
   }
 
   @Delete('tags/:tagId')
   async deleteTag(@Param('tagId') tagId: string, @CurrentUser() user: AuthUser) {
-    await this.prisma.whatsAppTag.deleteMany({ where: { id: tagId, userId: user.id } });
+    await this.prisma.whatsAppTag.deleteMany({ where: { id: tagId, userId: user.ownerId } });
     return { id: tagId };
   }
 
@@ -240,7 +253,7 @@ export class WhatsAppController {
     @Param('tagId') tagId: string,
     @CurrentUser() user: AuthUser,
   ) {
-    const contact = await this.resolveContact(id, user.id);
+    const contact = await this.resolveContact(id, user);
     return this.prisma.whatsAppContactTag.upsert({
       where: { contactId_tagId: { contactId: contact.id, tagId } },
       create: { contactId: contact.id, tagId },
@@ -254,7 +267,7 @@ export class WhatsAppController {
     @Param('tagId') tagId: string,
     @CurrentUser() user: AuthUser,
   ) {
-    const contact = await this.resolveContact(id, user.id);
+    const contact = await this.resolveContact(id, user);
     await this.prisma.whatsAppContactTag.delete({
       where: { contactId_tagId: { contactId: contact.id, tagId } },
     });
@@ -263,22 +276,30 @@ export class WhatsAppController {
 
   // ── Config IA ────────────────────────────────────────────────────────────────
 
+  // businessId is nullable, so the (userId, businessId) unique can't drive an upsert.
+  private async upsertAiConfig(user: AuthUser, dto: Partial<AiConfigDto> = {}) {
+    const businessId = this.biz(user);
+    const existing = await this.prisma.whatsAppAIConfig.findFirst({
+      where: { userId: user.ownerId, businessId },
+    });
+    if (existing) {
+      return Object.keys(dto).length === 0
+        ? existing
+        : this.prisma.whatsAppAIConfig.update({ where: { id: existing.id }, data: dto });
+    }
+    return this.prisma.whatsAppAIConfig.create({
+      data: { userId: user.ownerId, businessId, ...dto },
+    });
+  }
+
   @Get('ai-config')
   getAiConfig(@CurrentUser() user: AuthUser) {
-    return this.prisma.whatsAppAIConfig.upsert({
-      where: { userId: user.id },
-      create: { userId: user.id },
-      update: {},
-    });
+    return this.upsertAiConfig(user);
   }
 
   @Patch('ai-config')
   updateAiConfig(@Body() dto: AiConfigDto, @CurrentUser() user: AuthUser) {
-    return this.prisma.whatsAppAIConfig.upsert({
-      where: { userId: user.id },
-      create: { userId: user.id, ...dto },
-      update: dto,
-    });
+    return this.upsertAiConfig(user, dto);
   }
 
   // ── Base de connaissance ──────────────────────────────────────────────────────
@@ -286,7 +307,7 @@ export class WhatsAppController {
   @Get('kb')
   getKb(@CurrentUser() user: AuthUser) {
     return this.prisma.whatsAppKBEntry.findMany({
-      where: { userId: user.id },
+      where: { userId: user.ownerId, businessId: this.biz(user) },
       orderBy: [{ category: 'asc' }, { title: 'asc' }],
     });
   }
@@ -294,7 +315,7 @@ export class WhatsAppController {
   @Post('kb')
   createKb(@Body() dto: KbEntryDto, @CurrentUser() user: AuthUser) {
     return this.prisma.whatsAppKBEntry.create({
-      data: { userId: user.id, ...dto, tags: dto.tags ?? [] },
+      data: { userId: user.ownerId, businessId: this.biz(user), ...dto, tags: dto.tags ?? [] },
     });
   }
 
@@ -304,14 +325,14 @@ export class WhatsAppController {
     @Body() dto: UpdateKbEntryDto,
     @CurrentUser() user: AuthUser,
   ) {
-    const entry = await this.prisma.whatsAppKBEntry.findFirst({ where: { id, userId: user.id } });
+    const entry = await this.prisma.whatsAppKBEntry.findFirst({ where: { id, userId: user.ownerId, businessId: this.biz(user) } });
     if (!entry) throw new NotFoundException();
     return this.prisma.whatsAppKBEntry.update({ where: { id }, data: dto });
   }
 
   @Delete('kb/:id')
   async deleteKb(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    const entry = await this.prisma.whatsAppKBEntry.findFirst({ where: { id, userId: user.id } });
+    const entry = await this.prisma.whatsAppKBEntry.findFirst({ where: { id, userId: user.ownerId, businessId: this.biz(user) } });
     if (!entry) throw new NotFoundException();
     await this.prisma.whatsAppKBEntry.delete({ where: { id } });
     return { id };
@@ -331,7 +352,7 @@ export class WhatsAppController {
   @Get('automations')
   getAutomations(@CurrentUser() user: AuthUser) {
     return this.prisma.whatsAppAutomation.findMany({
-      where: { userId: user.id },
+      where: { userId: user.ownerId, businessId: this.biz(user) },
       orderBy: { createdAt: 'desc' },
     });
   }
@@ -339,7 +360,7 @@ export class WhatsAppController {
   @Post('automations')
   createAutomation(@Body() dto: AutomationDto, @CurrentUser() user: AuthUser) {
     return this.prisma.whatsAppAutomation.create({
-      data: { userId: user.id, ...dto },
+      data: { userId: user.ownerId, businessId: this.biz(user), ...dto },
     });
   }
 
@@ -349,14 +370,14 @@ export class WhatsAppController {
     @Body() dto: UpdateAutomationDto,
     @CurrentUser() user: AuthUser,
   ) {
-    const auto = await this.prisma.whatsAppAutomation.findFirst({ where: { id, userId: user.id } });
+    const auto = await this.prisma.whatsAppAutomation.findFirst({ where: { id, userId: user.ownerId, businessId: this.biz(user) } });
     if (!auto) throw new NotFoundException();
     return this.prisma.whatsAppAutomation.update({ where: { id }, data: dto });
   }
 
   @Delete('automations/:id')
   async deleteAutomation(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    const auto = await this.prisma.whatsAppAutomation.findFirst({ where: { id, userId: user.id } });
+    const auto = await this.prisma.whatsAppAutomation.findFirst({ where: { id, userId: user.ownerId, businessId: this.biz(user) } });
     if (!auto) throw new NotFoundException();
     await this.prisma.whatsAppAutomation.delete({ where: { id } });
     return { id };
@@ -374,7 +395,7 @@ export class WhatsAppController {
     @Query('contactStatus') contactStatus?: string,
     @Query('segment') segment?: string,
   ) {
-    const where: any = { clientId: user.id };
+    const where: any = { clientId: user.ownerId };
     if (search) {
       where.OR = [
         { phoneNumber: { contains: search } },
@@ -399,20 +420,20 @@ export class WhatsAppController {
 
   @Post('audience/sync')
   async triggerAudienceSync(@CurrentUser() user: AuthUser) {
-    this.wa.syncContactDirectory(user.id).catch(() => {});
+    this.wa.syncContactDirectory(user.ownerId, this.biz(user)).catch(() => {});
     return { message: 'Sync démarrée' };
   }
 
   @Get('audience/stats')
   async getAudienceStats(@CurrentUser() user: AuthUser) {
     const [total, active, consented] = await Promise.all([
-      this.prisma.waCampaignContact.count({ where: { clientId: user.id } }),
-      this.prisma.waCampaignContact.count({ where: { clientId: user.id, contactStatus: 'active' } }),
-      this.prisma.waCampaignContact.count({ where: { clientId: user.id, consentStatus: 'granted' } }),
+      this.prisma.waCampaignContact.count({ where: { clientId: user.ownerId } }),
+      this.prisma.waCampaignContact.count({ where: { clientId: user.ownerId, contactStatus: 'active' } }),
+      this.prisma.waCampaignContact.count({ where: { clientId: user.ownerId, consentStatus: 'granted' } }),
     ]);
     // Collect all unique segments
     const contacts = await this.prisma.waCampaignContact.findMany({
-      where: { clientId: user.id },
+      where: { clientId: user.ownerId },
       select: { segments: true },
     });
     const segments = [...new Set(contacts.flatMap(c => c.segments))].sort();
@@ -425,13 +446,15 @@ export class WhatsAppController {
     @Body() dto: UpdateAudienceContactDto,
     @CurrentUser() user: AuthUser,
   ) {
-    const contact = await this.prisma.waCampaignContact.findFirst({ where: { id, clientId: user.id } });
+    const contact = await this.prisma.waCampaignContact.findFirst({ where: { id, clientId: user.ownerId } });
     if (!contact) throw new NotFoundException();
     return this.prisma.waCampaignContact.update({ where: { id }, data: dto });
   }
 
   // ── Profil utilisateur ────────────────────────────────────────────────────────
 
+  // A profile belongs to the person signed in, not to the business — an invited
+  // member edits their own, never the owner's.
   @Get('profile')
   getProfile(@CurrentUser() user: AuthUser) {
     return this.prisma.userProfile.upsert({
@@ -457,13 +480,13 @@ export class WhatsAppController {
     const [allMentions, converted] = await Promise.all([
       this.prisma.whatsAppProductMention.groupBy({
         by: ['productName', 'productId'],
-        where: { userId: user.id },
+        where: { userId: user.ownerId },
         _count: { _all: true },
         orderBy: { _count: { productName: 'desc' } },
       }),
       this.prisma.whatsAppProductMention.groupBy({
         by: ['productName'],
-        where: { userId: user.id, isConverted: true },
+        where: { userId: user.ownerId, isConverted: true },
         _count: { _all: true },
       }),
     ]);
@@ -489,17 +512,18 @@ export class WhatsAppController {
     @Param('id') contactId: string,
     @CurrentUser() user: AuthUser,
   ) {
+    const businessId = this.biz(user);
     const contact = await this.prisma.whatsAppContact.findFirst({
-      where: { id: contactId, userId: user.id },
+      where: { id: contactId, userId: user.ownerId, businessId },
     });
     if (!contact) throw new NotFoundException('Contact introuvable');
 
     // Get conversation history from in-memory cache
-    const history = this.wa.getCacheForContact(user.id, contact.phone);
+    const history = this.wa.getCacheForContact(user.ownerId, businessId, contact.phone);
 
     // Load catalog then extract order details with AI
     const products = await this.prisma.product.findMany({
-      where: { userId: user.id },
+      where: { userId: user.ownerId, businessId },
       select: { id: true, name: true, sellingPrice: true },
     });
 
@@ -522,19 +546,22 @@ export class WhatsAppController {
       if (cp) unitPrice = cp.sellingPrice ?? 0;
     }
 
-    const bizId = user.businessId ?? user.id;
-    const orderCount = await this.prisma.manualOrder.count({
-      where: { userId: user.id, businessId: bizId },
+    const bizId = businessId ?? user.ownerId;
+    // MAX+1, not count+1 — a deleted order would otherwise hand out a number already taken
+    const agg = await this.prisma.manualOrder.aggregate({
+      _max: { orderNumber: true },
+      where: { userId: user.ownerId, businessId: bizId },
     });
+    const nextOrderNumber = (agg._max.orderNumber ?? 0) + 1;
 
     const qty = details.productQuantity ?? 1;
     const totalAmount = matchedProductId ? qty * unitPrice : unitPrice;
 
     const order = await this.prisma.manualOrder.create({
       data: {
-        userId: user.id,
+        userId: user.ownerId,
         businessId: bizId,
-        orderNumber: orderCount + 1,
+        orderNumber: nextOrderNumber,
         customerName: contact.leadName ?? contact.displayName ?? 'Client WhatsApp',
         customerPhone: contact.phone ?? null,
         city: details.city ?? contact.leadCity ?? '',

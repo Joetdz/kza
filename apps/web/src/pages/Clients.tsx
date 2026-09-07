@@ -1,10 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Phone, MessageCircle, Package, AlertCircle, Search, RefreshCw } from 'lucide-react';
-import { useAuth } from '../contexts/AuthContext';
+import { Phone, MessageCircle, Package, Search, RefreshCw } from 'lucide-react';
 import { logisticsApi, type ManualOrder } from '../api/logistics';
-
-const ADMIN_EMAILS = (import.meta.env.VITE_ADMIN_EMAILS ?? '')
-  .split(',').map((e: string) => e.trim().toLowerCase()).filter(Boolean);
 
 const FILTERS: { value: string; label: string; color: string }[] = [
   { value: 'all',           label: 'Tous',            color: 'bg-gray-100 text-gray-700' },
@@ -37,15 +33,12 @@ function waLink(phone: string) {
 }
 
 export function Clients() {
-  const { user } = useAuth();
-  const isAdmin = !!user?.email && ADMIN_EMAILS.includes(user.email.toLowerCase());
-
   const [orders, setOrders] = useState<ManualOrder[]>([]);
   const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
 
-  useEffect(() => { if (isAdmin) load(); }, [isAdmin]);
+  useEffect(() => { load(); }, []);
 
   async function load() {
     setLoading(true);
@@ -83,16 +76,6 @@ export function Clients() {
     return list;
   }, [orders, filter, search]);
 
-  if (!isAdmin) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center p-8">
-          <AlertCircle size={40} className="text-gray-300 mx-auto mb-3" />
-          <p className="text-gray-500 font-medium">Accès réservé à l'administrateur</p>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-gray-50">

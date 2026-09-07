@@ -64,19 +64,26 @@ export class StoreController {
     private push: PushService,
   ) {}
 
+  // Each business owns its own store — scope every lookup by (userId, businessId)
+  private storeWhere(user: AuthUser) {
+    return { userId: user.ownerId, businessId: user.businessId || null };
+  }
+
   // ── GET my store config (auth) ────────────────────────────────────────────
 
   @Get('my')
   async getMyStore(@CurrentUser() user: AuthUser) {
-    const store = await this.prisma.onlineStore.findUnique({
-      where: { userId: user.id },
+    const store = await this.prisma.onlineStore.findFirst({
+      where: this.storeWhere(user),
       include: { products: { select: { productId: true, storePrice: true, comparePrice: true, bundleQty: true, bundlePrice: true, storeDescription: true } } },
     });
 
     if (!store) return null;
 
     // Fetch WhatsApp phone as fallback suggestion
-    const waSession = await this.prisma.whatsAppSession.findUnique({ where: { userId: user.id } });
+    const waSession = await this.prisma.whatsAppSession.findFirst({
+      where: { userId: user.ownerId, businessId: user.businessId || null },
+    });
 
     return {
       ...store,
@@ -114,11 +121,11 @@ export class StoreController {
     if (!dto.name?.trim()) throw new BadRequestException('Le nom est requis');
     if (!dto.whatsappPhone?.trim()) throw new BadRequestException('Le numéro WhatsApp est requis');
 
-    const existing = await this.prisma.onlineStore.findUnique({ where: { userId: user.id } });
+    const existing = await this.prisma.onlineStore.findFirst({ where: this.storeWhere(user) });
 
     if (existing) {
       return this.prisma.onlineStore.update({
-        where: { userId: user.id },
+        where: { id: existing.id },
         data: {
           name: dto.name.trim(),
           description: dto.description ?? null,
@@ -135,7 +142,8 @@ export class StoreController {
     const slug = buildSlug(dto.name);
     return this.prisma.onlineStore.create({
       data: {
-        userId: user.id,
+        userId: user.ownerId,
+        businessId: user.businessId || null,
         slug,
         name: dto.name.trim(),
         description: dto.description ?? null,
@@ -160,7 +168,7 @@ export class StoreController {
 
   @Put('my/products')
   async setStoreProducts(@CurrentUser() user: AuthUser, @Body() body: { productIds: string[] }) {
-    const store = await this.prisma.onlineStore.findUnique({ where: { userId: user.id } });
+    const store = await this.prisma.onlineStore.findFirst({ where: this.storeWhere(user) });
     if (!store) throw new NotFoundException('Créez votre boutique d\'abord');
 
     // Preserve existing store prices before replacing
@@ -198,7 +206,7 @@ export class StoreController {
     @Param('productId') productId: string,
     @Body() body: { storePrice?: number | null; comparePrice?: number | null; bundleQty?: number | null; bundlePrice?: number | null; storeDescription?: string | null },
   ) {
-    const store = await this.prisma.onlineStore.findUnique({ where: { userId: user.id } });
+    const store = await this.prisma.onlineStore.findFirst({ where: this.storeWhere(user) });
     if (!store) throw new NotFoundException('Boutique introuvable');
     const data: any = {};
     if ('storePrice' in body) data.storePrice = body.storePrice ?? null;
@@ -248,7 +256,7 @@ Règles :
 
   @Get('my/orders')
   async getOrders(@CurrentUser() user: AuthUser) {
-    const store = await this.prisma.onlineStore.findUnique({ where: { userId: user.id } });
+    const store = await this.prisma.onlineStore.findFirst({ where: this.storeWhere(user) });
     if (!store) return { orders: [] };
 
     const orders = await this.prisma.storeOrder.findMany({
@@ -267,7 +275,7 @@ Règles :
     @Param('orderId') orderId: string,
     @Body() body: { status: string },
   ) {
-    const store = await this.prisma.onlineStore.findUnique({ where: { userId: user.id } });
+    const store = await this.prisma.onlineStore.findFirst({ where: this.storeWhere(user) });
     if (!store) throw new NotFoundException('Boutique introuvable');
 
     await this.prisma.storeOrder.updateMany({
@@ -338,7 +346,7 @@ Règles:
 
   @Get('my/media')
   async getMyMedia(@CurrentUser() user: AuthUser) {
-    const where = user.businessId ? { businessId: user.businessId } : { userId: user.id };
+    const where = user.businessId ? { businessId: user.businessId } : { userId: user.ownerId };
     return this.prisma.productMedia.findMany({
       where: { product: where },
       include: { product: { select: { id: true, name: true, imageUrl: true } } },
@@ -353,7 +361,7 @@ Règles:
     @CurrentUser() user: AuthUser,
     @Body() body: { productId: string; url: string; type: string; caption?: string; audioUrl?: string },
   ) {
-    const where = user.businessId ? { businessId: user.businessId } : { userId: user.id };
+    const where = user.businessId ? { businessId: user.businessId } : { userId: user.ownerId };
     const product = await this.prisma.product.findFirst({ where: { id: body.productId, ...where } });
     if (!product) throw new NotFoundException('Produit introuvable');
     return this.prisma.productMedia.create({
@@ -381,7 +389,7 @@ Règles:
     });
     if (!media) throw new NotFoundException('Média introuvable');
     const p = media.product;
-    const owns = user.businessId ? p.businessId === user.businessId : p.userId === user.id;
+    const owns = user.businessId ? p.businessId === user.businessId : p.userId === user.ownerId;
     if (!owns) throw new NotFoundException('Média introuvable');
     return this.prisma.productMedia.update({
       where: { id },
@@ -402,7 +410,7 @@ Règles:
     });
     if (!media) throw new NotFoundException('Média introuvable');
     const p = media.product;
-    const owns = user.businessId ? p.businessId === user.businessId : p.userId === user.id;
+    const owns = user.businessId ? p.businessId === user.businessId : p.userId === user.ownerId;
     if (!owns) throw new NotFoundException('Média introuvable');
     await this.prisma.productMedia.delete({ where: { id } });
     return { id };
@@ -588,7 +596,7 @@ Règles:
           select: { id: true, orderNumber: true },
         });
         // Notify logistics dashboard via socket + push
-        this.whatsapp.emitDraftOrderCreated(store.userId, draft.id, draft.orderNumber);
+        this.whatsapp.emitDraftOrderCreated(store.userId, store.businessId ?? null, draft.id, draft.orderNumber);
         this.push.sendToUser(store.userId, {
           title: '🛒 Nouvelle commande !',
           body: `${dto.customerName} vient de commander sur ${store.name}`,
@@ -628,7 +636,7 @@ Règles:
     const waUrl = `https://wa.me/${destPhone}?text=${encodeURIComponent(messageText)}`;
 
     // Notify business internally (best-effort, non-blocking)
-    this.whatsapp.notifyOrder(store.userId, destPhone, messageText).catch(() => {});
+    this.whatsapp.notifyOrder(store.userId, store.businessId ?? null, destPhone, messageText).catch(() => {});
 
     // Always return waUrl so the client sends from their own number
     return { orderId: order.id, ref, waUrl };

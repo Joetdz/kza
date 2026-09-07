@@ -6,11 +6,29 @@ import { CreateBusinessDto, UpdateBusinessDto } from './dto/create-business.dto'
 export class BusinessService {
   constructor(private prisma: PrismaService) {}
 
-  findAll(userId: string) {
-    return this.prisma.business.findMany({
+  /** Businesses this user owns, plus those they were invited to — each tagged with its role. */
+  async findAll(userId: string) {
+    const owned = await this.prisma.business.findMany({
       where: { userId },
       orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
     });
+
+    const memberships = await this.prisma.businessMember.findMany({
+      where: { userId },
+      include: { business: true },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    return [
+      ...owned.map(b => ({ ...b, role: 'owner' as const, isOwner: true })),
+      ...memberships.map(m => ({
+        ...m.business,
+        role: m.role === 'manager' ? ('manager' as const) : ('operator' as const),
+        isOwner: false,
+        // A guest never gets someone else's business auto-selected as their default.
+        isDefault: false,
+      })),
+    ];
   }
 
   async create(userId: string, dto: CreateBusinessDto) {

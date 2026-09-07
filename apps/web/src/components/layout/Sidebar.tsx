@@ -1,24 +1,27 @@
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, Package, ShoppingCart, CreditCard,
-  BarChart2, Target, Download, X, LogOut, MessageCircle, Shield, Store, Truck, Users,
+  BarChart2, Target, Download, X, LogOut, MessageCircle, Shield, Store, Truck, Users, UserCog,
 } from 'lucide-react';
 import { useStore } from '../../store/useStore';
 import { useAuth } from '../../contexts/AuthContext';
+import { useRole } from '../../hooks/useRole';
 import { BusinessSelector } from '../BusinessSelector';
 
 const ADMIN_EMAILS = (import.meta.env.VITE_ADMIN_EMAILS ?? '')
   .split(',').map((e: string) => e.trim().toLowerCase()).filter(Boolean);
 
+// `finance: true` hides the link from operators — the server enforces this too,
+// so this is purely so an operator doesn't see links that would 403.
 const nav = [
   { to: '/',           icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/stock',      icon: Package,         label: 'Stock' },
-  { to: '/ventes',     icon: ShoppingCart,    label: 'Ventes' },
-  { to: '/depenses',   icon: CreditCard,      label: 'Dépenses' },
-  { to: '/analytique', icon: BarChart2,       label: 'Analytique' },
-  { to: '/objectifs',  icon: Target,          label: 'Objectifs' },
+  { to: '/ventes',     icon: ShoppingCart,    label: 'Ventes',      finance: true },
+  { to: '/depenses',   icon: CreditCard,      label: 'Dépenses',    finance: true },
+  { to: '/analytique', icon: BarChart2,       label: 'Analytique',  finance: true },
+  { to: '/objectifs',  icon: Target,          label: 'Objectifs',   finance: true },
   { to: '/boutique',   icon: Store,           label: 'Ma Boutique' },
-  { to: '/export',     icon: Download,        label: 'Export' },
+  { to: '/export',     icon: Download,        label: 'Export',      finance: true },
   { to: '/whatsapp',   icon: MessageCircle,   label: 'WhatsApp CRM' },
   { to: '/logistique', icon: Truck,           label: 'Logistique' },
   { to: '/clients',    icon: Users,           label: 'Clients' },
@@ -27,8 +30,10 @@ const nav = [
 export function Sidebar() {
   const { sidebarOpen, toggleSidebar } = useStore();
   const { user, signOut } = useAuth();
+  const { canSeeFinances, canManageTeam } = useRole();
 
   const isAdmin = !!user?.email && ADMIN_EMAILS.includes(user.email.toLowerCase());
+  const visibleNav = nav.filter(item => !item.finance || canSeeFinances);
 
   return (
     <>
@@ -59,7 +64,7 @@ export function Sidebar() {
 
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto py-2 px-3 space-y-1">
-          {nav.map(({ to, icon: Icon, label }) => (
+          {visibleNav.map(({ to, icon: Icon, label }) => (
             <NavLink
               key={to}
               to={to}
@@ -77,6 +82,24 @@ export function Sidebar() {
               {label}
             </NavLink>
           ))}
+
+          {/* Team management — owner only */}
+          {canManageTeam && (
+            <NavLink
+              to="/equipe"
+              onClick={() => sidebarOpen && toggleSidebar()}
+              className={({ isActive }) =>
+                `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all
+                ${isActive
+                  ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/30'
+                  : 'text-gray-400 hover:text-white hover:bg-gray-800'
+                }`
+              }
+            >
+              <UserCog size={18} />
+              Équipe
+            </NavLink>
+          )}
 
           {/* Admin link — visible only for admin users */}
           {isAdmin && (

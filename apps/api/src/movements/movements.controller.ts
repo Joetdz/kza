@@ -9,16 +9,16 @@ export class MovementsController {
 
   @Get()
   findAll(@CurrentUser() user: AuthUser) {
-    return this.service.findAll(user.id, user.businessId || undefined);
+    return this.service.findAll(user.ownerId, user.businessId || undefined);
   }
 
   @Get('product/:productId')
   findByProduct(@Param('productId') productId: string, @CurrentUser() user: AuthUser) {
-    return this.service.findByProduct(productId, user.id, user.businessId || undefined);
+    return this.service.findByProduct(productId, user.ownerId, user.businessId || undefined);
   }
 
   @Post()
   create(@Body() dto: CreateMovementDto, @CurrentUser() user: AuthUser) {
-    return this.service.create(dto, user.id, user.businessId || undefined);
+    return this.service.create(dto, user.ownerId, user.businessId || undefined);
   }
 }

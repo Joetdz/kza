@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { supabase } from '../lib/supabase';
 import { waApi } from '../api/whatsapp';
+import { useStore } from '../store/useStore';
 
 const WS_URL = (import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api').replace('/api', '');
 
@@ -55,6 +56,7 @@ export interface AudienceSyncState {
 }
 
 export function useWhatsApp() {
+  const currentBusinessId = useStore(s => s.currentBusinessId);
   const socketRef = useRef<Socket | null>(null);
   const loadedRef = useRef<Set<string>>(new Set()); // tracks which contactIds are fetched
   const pairingDoneRef = useRef(false); // true once pairing code received — ignore subsequent QR events
@@ -101,7 +103,17 @@ export function useWhatsApp() {
       sock.on('connect', () => setSocketReady(true));
       sock.on('disconnect', () => setSocketReady(false));
 
-      sock.on('qr', ({ qr: q }: { qr: string }) => {
+      // Each business has its own WhatsApp connection, but events reach every socket
+      // of the user — drop anything that belongs to a business we're not showing.
+      const onBiz = (event: string, handler: (payload: any) => void) => {
+        sock.on(event, (payload: any) => {
+          const current = localStorage.getItem('kza_business_id');
+          if (payload?.businessId && current && payload.businessId !== current) return;
+          handler(payload);
+        });
+      };
+
+      onBiz('qr', ({ qr: q }: { qr: string }) => {
         if (pairingDoneRef.current) return; // pairing code already shown — ignore QR refreshes
         setQr(q);
         setPairingCode(null);
@@ -109,7 +121,7 @@ export function useWhatsApp() {
         setLoading(null);
       });
 
-      sock.on('pairing_code', ({ code }: { code: string }) => {
+      onBiz('pairing_code', ({ code }: { code: string }) => {
         pairingDoneRef.current = true;
         setPairingCode(code);
         setQr(null);
@@ -117,17 +129,17 @@ export function useWhatsApp() {
         setPairingError(null);
       });
 
-      sock.on('pairing_error', ({ message }: { message: string }) => {
+      onBiz('pairing_error', ({ message }: { message: string }) => {
         setPairingError(message);
         setPairingCode(null);
         setLoading(null);
       });
 
-      sock.on('loading', ({ percent, message }: { percent: number; message: string }) => {
+      onBiz('loading', ({ percent, message }: { percent: number; message: string }) => {
         setLoading({ percent, message });
       });
 
-      sock.on('connected', ({ phone: p }: { phone: string }) => {
+      onBiz('connected', ({ phone: p }: { phone: string }) => {
         setConnected(true);
         setPhone(p);
         setQr(null);
@@ -137,7 +149,7 @@ export function useWhatsApp() {
         loadContacts();
       });
 
-      sock.on('disconnected', () => {
+      onBiz('disconnected', () => {
         pairingDoneRef.current = false;
         setConnected(false);
         setPhone(null);
@@ -150,13 +162,13 @@ export function useWhatsApp() {
       });
 
       // Sync progress
-      sock.on('sync-start', ({ total }: { total: number }) => {
+      onBiz('sync-start', ({ total }: { total: number }) => {
         setSync({ status: 'syncing', imported: 0, total });
       });
-      sock.on('sync-progress', ({ imported, total }: { imported: number; total: number }) => {
+      onBiz('sync-progress', ({ imported, total }: { imported: number; total: number }) => {
         setSync(prev => ({ ...prev, imported, total }));
       });
-      sock.on('sync-complete', ({ imported, contacts: fresh }: { imported: number; contacts: WaContact[] }) => {
+      onBiz('sync-complete', ({ imported, contacts: fresh }: { imported: number; contacts: WaContact[] }) => {
         setSync({ status: 'done', imported, total: imported });
         setContacts(fresh);
         // Clear message cache so they're re-fetched with correct IDs
@@ -166,19 +178,19 @@ export function useWhatsApp() {
       });
 
       // Audience sync progress
-      sock.on('audience-sync-start', ({ total }: { total: number }) => {
+      onBiz('audience-sync-start', ({ total }: { total: number }) => {
         setAudienceSync({ status: 'syncing', done: 0, total });
       });
-      sock.on('audience-sync-progress', ({ done, total }: { done: number; total: number }) => {
+      onBiz('audience-sync-progress', ({ done, total }: { done: number; total: number }) => {
         setAudienceSync(prev => ({ ...prev, done, total }));
       });
-      sock.on('audience-sync-complete', ({ total }: { total: number }) => {
+      onBiz('audience-sync-complete', ({ total }: { total: number }) => {
         setAudienceSync({ status: 'done', done: total, total });
         setTimeout(() => setAudienceSync({ status: 'idle', done: 0, total: 0 }), 4000);
       });
 
       // Real-time incoming/outgoing message
-      sock.on('message', ({ contact, message }: { contact: any; message: WaMessage }) => {
+      onBiz('message', ({ contact, message }: { contact: any; message: WaMessage }) => {
         // Add to message list if the contact is already loaded
         setMessages(prev => {
           if (!prev[message.contactId] && !loadedRef.current.has(message.contactId)) {
@@ -214,7 +226,7 @@ export function useWhatsApp() {
       });
 
       // ACK checkmarks update
-      sock.on('message-ack', ({ waId, ack }: { waId: string; ack: number }) => {
+      onBiz('message-ack', ({ waId, ack }: { waId: string; ack: number }) => {
         setMessages(prev => {
           const updated: Record<string, WaMessage[]> = {};
           for (const [cid, msgs] of Object.entries(prev)) {
@@ -225,7 +237,7 @@ export function useWhatsApp() {
       });
 
       // Revoked message
-      sock.on('message-revoked', ({ waId }: { waId: string }) => {
+      onBiz('message-revoked', ({ waId }: { waId: string }) => {
         setMessages(prev => {
           const updated: Record<string, WaMessage[]> = {};
           for (const [cid, msgs] of Object.entries(prev)) {
@@ -237,10 +249,10 @@ export function useWhatsApp() {
         });
       });
 
-      sock.on('lead-updated', (data: any) => {
+      onBiz('lead-updated', (data: any) => {
         setContacts(prev => prev.map(c => (c.id === data.contactId ? { ...c, ...data } : c)));
       });
-      sock.on('contact-updated', (data: any) => {
+      onBiz('contact-updated', (data: any) => {
         setContacts(prev => prev.map(c => (c.id === data.contactId ? { ...c, ...data } : c)));
       });
 
@@ -279,14 +291,24 @@ export function useWhatsApp() {
     return updated;
   }, []);
 
-  // Load initial status on mount — statusLoaded prevents flicker
+  // Load status on mount and whenever the active business changes — each business has
+  // its own WhatsApp connection, so the previous one's contacts must not linger.
   useEffect(() => {
+    setStatusLoaded(false);
+    setContacts([]);
+    setMessages({});
+    loadedRef.current.clear();
+    pairingDoneRef.current = false;
+    setQr(null);
+    setPairingCode(null);
+    setPairingError(null);
+
     waApi.getStatus().then(({ connected: c, phone: p }) => {
       setConnected(c);
       setPhone(p);
       if (c) loadContacts();
     }).catch(() => {}).finally(() => setStatusLoaded(true));
-  }, [loadContacts]);
+  }, [loadContacts, currentBusinessId]);
 
   return {
     statusLoaded, connected, phone, qr, pairingCode, pairingError, loading, contacts, messages, socketReady, sync, audienceSync,

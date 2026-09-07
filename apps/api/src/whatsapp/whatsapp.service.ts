@@ -130,10 +130,10 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
       if (sessions.length === 0) return;
       this.logger.log(`Auto-reconnecting ${sessions.length} WhatsApp session(s) after server restart...`);
       sessions.forEach((session, idx) => {
-        // Stagger by 3 s per user to avoid hammering WA simultaneously
+        // Stagger by 3 s per session to avoid hammering WA simultaneously
         setTimeout(() => {
-          this.connect(session.userId).catch(err =>
-            this.logger.error(`Auto-reconnect failed for ${session.userId}:`, err?.message),
+          this.connect(session.userId, session.businessId).catch(err =>
+            this.logger.error(`Auto-reconnect failed for ${session.userId}/${session.businessId}:`, err?.message),
           );
         }, idx * 3000);
       });
@@ -146,26 +146,43 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
     this.gatewayEmit = fn;
   }
 
-  emitDraftOrderCreated(userId: string, orderId: string, orderNumber: number, contactId?: string) {
-    this.emit('draft-order-created', userId, { orderId, orderNumber, contactId: contactId ?? null, userId });
+  // A WhatsApp connection belongs to one business of one user, so every in-memory
+  // map is keyed by this composite — never by userId alone.
+  private waKey(userId: string, businessId: string | null): string {
+    return `${userId}:${businessId ?? ''}`;
   }
 
-  private emit(event: string, userId: string, data: any) {
+  emitDraftOrderCreated(
+    userId: string,
+    businessId: string | null,
+    orderId: string,
+    orderNumber: number,
+    contactId?: string,
+  ) {
+    this.emit('draft-order-created', userId, businessId, {
+      orderId, orderNumber, contactId: contactId ?? null, userId,
+    });
+  }
+
+  // Events reach every socket of the user, so the payload carries businessId
+  // and the client drops what doesn't belong to the business it is showing.
+  private emit(event: string, userId: string, businessId: string | null, data: any) {
     if (event === 'draft-order-created') {
-      this.logger.log(`[emit] draft-order-created → userId=${userId} hasGateway=${!!this.gatewayEmit}`);
+      this.logger.log(`[emit] draft-order-created → userId=${userId} biz=${businessId} hasGateway=${!!this.gatewayEmit}`);
     }
-    if (this.gatewayEmit) this.gatewayEmit(event, userId, data);
+    if (this.gatewayEmit) this.gatewayEmit(event, userId, { ...data, businessId });
   }
 
-  private getPendingSet(userId: string): Set<string> {
-    if (!this.pendingSendIds.has(userId)) this.pendingSendIds.set(userId, new Set());
-    return this.pendingSendIds.get(userId)!;
+  private getPendingSet(userId: string, businessId: string | null): Set<string> {
+    const key = this.waKey(userId, businessId);
+    if (!this.pendingSendIds.has(key)) this.pendingSendIds.set(key, new Set());
+    return this.pendingSendIds.get(key)!;
   }
 
   // ── Per-contact sequential message queue ─────────────────────────────────────
 
-  private enqueue(userId: string, phone: string, handler: () => Promise<void>): void {
-    const key = `${userId}:${phone}`;
+  private enqueue(userId: string, businessId: string | null, phone: string, handler: () => Promise<void>): void {
+    const key = `${this.waKey(userId, businessId)}:${phone}`;
     const prev = this.messageQueues.get(key) ?? Promise.resolve();
     const next = prev.then(handler).catch(err =>
       this.logger.error(`Queue error [${key}]:`, err?.message ?? err)
@@ -178,59 +195,65 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
 
   // ── In-memory message cache ───────────────────────────────────────────────────
 
-  private addToCache(userId: string, phone: string, msg: CachedMsg) {
-    const key = `${userId}:${phone}`;
+  private addToCache(userId: string, businessId: string | null, phone: string, msg: CachedMsg) {
+    const key = `${this.waKey(userId, businessId)}:${phone}`;
     const cache = this.msgCache.get(key) ?? [];
     cache.push(msg);
     if (cache.length > 50) cache.shift();
     this.msgCache.set(key, cache);
   }
 
-  private getCache(userId: string, phone: string): CachedMsg[] {
-    return this.msgCache.get(`${userId}:${phone}`) ?? [];
+  private getCache(userId: string, businessId: string | null, phone: string): CachedMsg[] {
+    return this.msgCache.get(`${this.waKey(userId, businessId)}:${phone}`) ?? [];
   }
 
   // Public accessor for controller (create-draft-order)
-  getCacheForContact(userId: string, phone: string): Array<{ direction: string; content: string }> {
-    return this.getCache(userId, phone).map(m => ({ direction: m.direction, content: m.content }));
+  getCacheForContact(
+    userId: string,
+    businessId: string | null,
+    phone: string,
+  ): Array<{ direction: string; content: string }> {
+    return this.getCache(userId, businessId, phone).map(m => ({ direction: m.direction, content: m.content }));
   }
 
   // ── Label management ─────────────────────────────────────────────────────────
 
   // Request WA Business label list so labelNames cache is populated after reconnect
-  private async refreshLabels(userId: string, sock: WASocket): Promise<void> {
+  private async refreshLabels(userId: string, businessId: string | null, sock: WASocket): Promise<void> {
     try {
       const query = (sock as any).query({
         tag: 'iq',
         attrs: { to: 's.whatsapp.net', type: 'get', xmlns: 'w:biz:label' },
         content: [{ tag: 'label', attrs: {} }],
       });
-      // 5 s timeout — some accounts never respond to this IQ query
       const result = await Promise.race([
         query,
         new Promise<null>((_, r) => setTimeout(() => r(new Error('timeout')), 5_000)),
       ]);
-      const nodes: any[] = Array.isArray(result?.content) ? result.content : [];
+      this.logger.log(`[refreshLabels] raw result: ${JSON.stringify(result)?.slice(0, 2000)}`);
+      // Try top-level content first, then one level deeper (some accounts wrap in a list node)
+      const topLevel: any[] = Array.isArray(result?.content) ? result.content : [];
+      const nodes: any[] = topLevel.flatMap((n: any) =>
+        n?.attrs?.id ? [n] : (Array.isArray(n?.content) ? n.content : [])
+      );
       let refreshed = 0;
       for (const node of nodes) {
         const id = node?.attrs?.id;
         const name = node?.attrs?.name;
         if (id && name) {
-          this.labelNames.set(`${userId}:${id}`, name);
+          this.labelNames.set(`${this.waKey(userId, businessId)}:${id}`, name);
           refreshed++;
         }
       }
-      if (refreshed > 0) {
-        this.logger.log(`[labels] Refreshed ${refreshed} label(s) for ${userId}`);
-      }
-    } catch {
-      // Not all WhatsApp accounts support label queries — silently ignore
+      this.logger.log(`[refreshLabels] found ${refreshed} label(s), cache now ${this.labelNames.size}`);
+    } catch (e: any) {
+      this.logger.log(`[refreshLabels] error/timeout: ${e?.message}`);
     }
   }
 
   // Resolve a JID or LID to the real phone number (@c.us format).
   // WhatsApp v7 multi-device uses LIDs in label events instead of phone numbers.
-  private resolvePhone(userId: string, jid: string): string {
+  private resolvePhone(userId: string, businessId: string | null, jid: string): string {
     // Already a normal phone JID
     if (jid.endsWith('@s.whatsapp.net')) return jidToDb(jid);
     // Remove the suffix to get the raw ID
@@ -239,7 +262,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
     const digits = raw.replace(/\D/g, '');
     if (digits.length <= 13) return jidToDb(jid); // treat as normal phone
     // Looks like a LID (>13 digits) — look up mapping
-    const mapped = this.lidToPhone.get(`${userId}:${raw}`);
+    const mapped = this.lidToPhone.get(`${this.waKey(userId, businessId)}:${raw}`);
     if (mapped) {
       this.logger.log(`LID resolved: ${raw} → ${mapped}`);
       return mapped;
@@ -248,16 +271,17 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
     return jidToDb(jid);
   }
 
-  private scheduleReconnect(userId: string) {
-    if (this.loggedOut.has(userId)) return;
+  private scheduleReconnect(userId: string, businessId: string | null) {
+    const key = this.waKey(userId, businessId);
+    if (this.loggedOut.has(key)) return;
     // Don't auto-reconnect if a pairing is in progress — let the timeout handle it
-    if (this.pairingPhones.has(userId)) return;
-    const delay = Math.min(this.reconnectDelay.get(userId) ?? 5000, 60_000);
-    this.reconnectDelay.set(userId, delay * 2);
-    this.logger.log(`Reconnecting ${userId} in ${delay}ms`);
+    if (this.pairingPhones.has(key)) return;
+    const delay = Math.min(this.reconnectDelay.get(key) ?? 5000, 60_000);
+    this.reconnectDelay.set(key, delay * 2);
+    this.logger.log(`Reconnecting ${key} in ${delay}ms`);
     setTimeout(() => {
-      if (!this.loggedOut.has(userId) && !this.sockets.has(userId) && !this.pairingPhones.has(userId)) {
-        this.connect(userId);
+      if (!this.loggedOut.has(key) && !this.sockets.has(key) && !this.pairingPhones.has(key)) {
+        this.connect(userId, businessId);
       }
     }, delay);
   }
@@ -272,11 +296,12 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
 
   // Rate limit outgoing messages: max `limit` per 60s window per user.
   // Returns how many ms to wait (0 = no wait needed).
-  private rateWait(userId: string, limit = 25): number {
+  private rateWait(userId: string, businessId: string | null, limit = 25): number {
+    const key = this.waKey(userId, businessId);
     const now = Date.now();
-    const r = this.rateLimiters.get(userId);
+    const r = this.rateLimiters.get(key);
     if (!r || now > r.resetAt) {
-      this.rateLimiters.set(userId, { count: 1, resetAt: now + 60_000 });
+      this.rateLimiters.set(key, { count: 1, resetAt: now + 60_000 });
       return 0;
     }
     if (r.count >= limit) {
@@ -286,28 +311,48 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
     return 0;
   }
 
-  private clearKeepAlive(userId: string) {
-    const t = this.keepAliveTimers.get(userId);
-    if (t) { clearInterval(t); this.keepAliveTimers.delete(userId); }
+  private clearKeepAlive(userId: string, businessId: string | null) {
+    const key = this.waKey(userId, businessId);
+    const t = this.keepAliveTimers.get(key);
+    if (t) { clearInterval(t); this.keepAliveTimers.delete(key); }
   }
 
-  private clearPairingTimeout(userId: string) {
-    const t = this.pairingTimeouts.get(userId);
-    if (t) { clearTimeout(t); this.pairingTimeouts.delete(userId); }
+  private clearPairingTimeout(userId: string, businessId: string | null) {
+    const key = this.waKey(userId, businessId);
+    const t = this.pairingTimeouts.get(key);
+    if (t) { clearTimeout(t); this.pairingTimeouts.delete(key); }
   }
 
   // ── Connect ───────────────────────────────────────────────────────────────────
 
-  async connect(userId: string): Promise<void> {
-    if (this.sockets.has(userId)) {
-      const session = await this.prisma.whatsAppSession.findUnique({ where: { userId } });
-      if (session?.connected && this.connectedUsers.has(userId)) {
-        this.emit('connected', userId, { phone: session.phone });
+  // businessId is nullable, so the (userId, businessId) unique can't drive an upsert —
+  // update the row if it exists, insert otherwise.
+  private async markSession(
+    userId: string,
+    businessId: string | null,
+    data: { connected: boolean; phone?: string | null },
+  ): Promise<void> {
+    const updated = await this.prisma.whatsAppSession.updateMany({
+      where: { userId, businessId },
+      data,
+    });
+    if (updated.count === 0) {
+      await this.prisma.whatsAppSession.create({ data: { userId, businessId, ...data } });
+    }
+  }
+
+  async connect(userId: string, businessId: string | null): Promise<void> {
+    const key = this.waKey(userId, businessId);
+
+    if (this.sockets.has(key)) {
+      const session = await this.prisma.whatsAppSession.findFirst({ where: { userId, businessId } });
+      if (session?.connected && this.connectedUsers.has(key)) {
+        this.emit('connected', userId, businessId, { phone: session.phone });
       }
       return;
     }
 
-    const { state, saveCreds } = await useDbAuthState(userId, this.prisma);
+    const { state, saveCreds } = await useDbAuthState(userId, businessId, this.prisma);
 
     // fetchLatestBaileysVersion hits GitHub — may hang on VPS; fall back to pinned version after 5s
     const FALLBACK_VERSION: [number, number, number] = [2, 3000, 1015901307];
@@ -322,7 +367,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
       version = FALLBACK_VERSION;
     }
 
-    const pairingPhone = this.pairingPhones.get(userId);
+    const pairingPhone = this.pairingPhones.get(key);
 
     const sock = makeWASocket({
       version,
@@ -335,7 +380,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
       generateHighQualityLinkPreview: false,
     });
 
-    this.sockets.set(userId, sock);
+    this.sockets.set(key, sock);
 
     // DEBUG: intercept ALL Baileys events to diagnose label issues
     const _origEmit = (sock.ev as any).emit.bind(sock.ev);
@@ -354,93 +399,85 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
 
       if (qr) {
         if (pairingPhone) {
-          this.clearPairingTimeout(userId);
+          this.clearPairingTimeout(userId, businessId);
           try {
             const code = await sock.requestPairingCode(pairingPhone.replace(/\D/g, ''));
-            this.pairingPhones.delete(userId);
-            this.emit('pairing_code', userId, { code });
+            this.pairingPhones.delete(key);
+            this.emit('pairing_code', userId, businessId, { code });
           } catch (err: any) {
-            this.pairingPhones.delete(userId);
-            this.emit('pairing_error', userId, {
+            this.pairingPhones.delete(key);
+            this.emit('pairing_error', userId, businessId, {
               message: 'Impossible de générer le code. Réessayez.',
             });
           }
         } else {
           const qrDataUrl = await qrcode.toDataURL(qr);
-          this.emit('qr', userId, { qr: qrDataUrl });
+          this.emit('qr', userId, businessId, { qr: qrDataUrl });
         }
       }
 
       if (connection === 'connecting') {
-        this.emit('loading', userId, { percent: 50, message: 'Connexion...' });
+        this.emit('loading', userId, businessId, { percent: 50, message: 'Connexion...' });
       }
 
       if (connection === 'open') {
         const rawId = sock.user?.id ?? '';
         const phone = rawId ? jidNormalizedUser(rawId).split('@')[0] : null;
-        this.connectedUsers.add(userId);
-        this.reconnectDelay.set(userId, 5000);
-        this.pairingPhones.delete(userId);
+        this.connectedUsers.add(key);
+        this.reconnectDelay.set(key, 5000);
+        this.pairingPhones.delete(key);
 
         await this.prisma.withRetry(() =>
-          this.prisma.whatsAppSession.upsert({
-            where: { userId },
-            create: { userId, connected: true, phone },
-            update: { connected: true, phone },
-          })
+          this.markSession(userId, businessId, { connected: true, phone })
         );
 
         // Reset grace window on every connection (including reconnects) — WA replays historical
         // labels.association events during every reconnect and they must be ignored
-        this.connectionOpenAt.set(userId, Date.now());
-        this.emit('connected', userId, { phone });
-        this.logger.log(`WhatsApp connected for ${userId} (${phone}) — label sync window: ${WhatsAppService.LABEL_SYNC_GRACE_MS / 1000}s`);
+        this.connectionOpenAt.set(key, Date.now());
+        this.emit('connected', userId, businessId, { phone });
+        this.logger.log(`WhatsApp connected for ${key} (${phone}) — label sync window: ${WhatsAppService.LABEL_SYNC_GRACE_MS / 1000}s`);
 
         // Keep-alive: periodic presence update to prevent session idle-expiry
-        this.clearKeepAlive(userId);
+        this.clearKeepAlive(userId, businessId);
         const keepAlive = setInterval(async () => {
-          if (this.connectedUsers.has(userId) && this.sockets.has(userId)) {
+          if (this.connectedUsers.has(key) && this.sockets.has(key)) {
             await sock.sendPresenceUpdate('available').catch(() => {});
           }
         }, 9 * 60 * 1000); // every 9 minutes
-        this.keepAliveTimers.set(userId, keepAlive);
+        this.keepAliveTimers.set(key, keepAlive);
 
-        this.syncContactDirectory(userId).catch(err =>
-          this.logger.error(`Contact sync failed for ${userId}:`, err?.message)
+        this.syncContactDirectory(userId, businessId).catch(err =>
+          this.logger.error(`Contact sync failed for ${key}:`, err?.message)
         );
 
-        this.refreshLabels(userId, sock).catch(() => {});
+        this.refreshLabels(userId, businessId, sock).catch(() => {});
       }
 
       if (connection === 'close') {
-        this.clearKeepAlive(userId);
-        this.sockets.delete(userId);
-        this.connectedUsers.delete(userId);
+        this.clearKeepAlive(userId, businessId);
+        this.sockets.delete(key);
+        this.connectedUsers.delete(key);
         const statusCode = (lastDisconnect?.error as any)?.output?.statusCode;
         const isLogout = statusCode === DisconnectReason.loggedOut;
 
-        await this.prisma.whatsAppSession.upsert({
-          where: { userId },
-          create: { userId, connected: false },
-          update: { connected: false },
-        }).catch(() => {});
+        await this.markSession(userId, businessId, { connected: false }).catch(() => {});
 
-        this.emit('disconnected', userId, { reason: String(statusCode) });
+        this.emit('disconnected', userId, businessId, { reason: String(statusCode) });
 
         if (isLogout) {
-          await clearDbAuth(userId, this.prisma);
-          this.logger.log(`WhatsApp logged out for ${userId}`);
+          await clearDbAuth(userId, businessId, this.prisma);
+          this.logger.log(`WhatsApp logged out for ${key}`);
 
-          if (this.pairingPhones.has(userId)) {
+          if (this.pairingPhones.has(key)) {
             // Logout happened during a pairing attempt (stale session wiped by WA)
             // Auth files are now clean — retry the connection to get a fresh QR
-            this.logger.log(`Retrying connection for ${userId} after logout during pairing`);
-            setTimeout(() => this.connect(userId), 1000);
+            this.logger.log(`Retrying connection for ${key} after logout during pairing`);
+            setTimeout(() => this.connect(userId, businessId), 1000);
           } else {
-            this.loggedOut.add(userId);
+            this.loggedOut.add(key);
           }
-        } else if (!this.loggedOut.has(userId)) {
-          this.scheduleReconnect(userId);
+        } else if (!this.loggedOut.has(key)) {
+          this.scheduleReconnect(userId, businessId);
         }
       }
     });
@@ -454,19 +491,19 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
 
         if (msg.key.fromMe) {
           const waId = msg.key.id ?? '';
-          if (this.getPendingSet(userId).has(waId)) {
-            this.getPendingSet(userId).delete(waId);
+          if (this.getPendingSet(userId, businessId).has(waId)) {
+            this.getPendingSet(userId, businessId).delete(waId);
             continue; // we already emitted this when we sent it
           }
           if (!jid.endsWith('@g.us')) {
-            await this.handleOutgoingFromPhone(userId, msg).catch(err =>
+            await this.handleOutgoingFromPhone(userId, businessId, msg).catch(err =>
               this.logger.error('handleOutgoingFromPhone error:', err?.message)
             );
           }
         } else {
           if (jid.endsWith('@g.us')) continue; // skip group chat messages
           const phone = jidToDb(jid);
-          this.enqueue(userId, phone, () => this.handleIncoming(userId, sock, msg));
+          this.enqueue(userId, businessId, phone, () => this.handleIncoming(userId, businessId, sock, msg));
         }
       }
     });
@@ -474,12 +511,12 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
     // Contact name updates + LID → phone mapping
     const processContact = (c: any) => {
       const name = c.notify || c.name || null;
-      if (name && c.id) this.contactNames.set(`${userId}:${c.id}`, name);
+      if (name && c.id) this.contactNames.set(`${key}:${c.id}`, name);
       // Build LID ↔ phone map: if contact has a LID field alongside a normal JID
       const lid: string | undefined = c.lid ?? c.lidJid ?? c.linkedDeviceId;
       if (lid && c.id?.endsWith('@s.whatsapp.net')) {
         const lidRaw = lid.replace(/@lid$/, '').replace(/@c\.us$/, '');
-        this.lidToPhone.set(`${userId}:${lidRaw}`, jidToDb(c.id));
+        this.lidToPhone.set(`${key}:${lidRaw}`, jidToDb(c.id));
         this.logger.log(`LID cached (upsert): ${lidRaw} → ${jidToDb(c.id)}`);
       }
       // Reverse: if the contact itself IS a LID and has a pn (phone number) field
@@ -488,7 +525,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
         const lidRaw = c.id.replace(/@lid$/, '').replace(/@c\.us$/, '');
         const digits = lidRaw.replace(/\D/g, '');
         if (digits.length > 12) {
-          this.lidToPhone.set(`${userId}:${lidRaw}`, jidToDb(pn));
+          this.lidToPhone.set(`${key}:${lidRaw}`, jidToDb(pn));
           this.logger.log(`LID cached (pn): ${lidRaw} → ${jidToDb(pn)}`);
         }
       }
@@ -509,7 +546,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
       if (lid && pn) {
         const lidRaw = lid.replace(/@lid$/, '').replace(/@c\.us$/, '');
         const phone = jidToDb(pn);
-        this.lidToPhone.set(`${userId}:${lidRaw}`, phone);
+        this.lidToPhone.set(`${key}:${lidRaw}`, phone);
         this.logger.log(`LID mapped: ${lidRaw} → ${phone}`);
       }
     });
@@ -519,7 +556,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
       for (const update of updates) {
         if (update.key?.id) {
           const ack = update.receipt?.receiptTimestamp ? 3 : 2;
-          this.emit('message-ack', userId, { waId: update.key.id, ack });
+          this.emit('message-ack', userId, businessId, { waId: update.key.id, ack });
         }
       }
     });
@@ -535,8 +572,8 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
         }))
         .sort((a, b) => a.name.localeCompare(b.name));
       if (groups.length > 0) {
-        this.groupsCache.set(userId, groups);
-        this.logger.log(`Groups cache updated for ${userId}: ${groups.length} groups`);
+        this.groupsCache.set(key, groups);
+        this.logger.log(`Groups cache updated for ${key}: ${groups.length} groups`);
       }
     };
 
@@ -560,7 +597,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
         const text = extractText(msg.message) ?? '';
         if (!text) continue;
         const timestamp = Number(msg.messageTimestamp ?? Date.now() / 1000) * 1000;
-        this.addToCache(userId, phone, {
+        this.addToCache(userId, businessId, phone, {
           direction: msg.key.fromMe ? 'out' : 'in',
           content: text,
           waId: msg.key.id ?? undefined,
@@ -568,10 +605,10 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
         });
         cached++;
       }
-      if (cached > 0) this.logger.log(`History sync: cached ${cached} msgs for ${userId}`);
+      if (cached > 0) this.logger.log(`History sync: cached ${cached} msgs for ${key}`);
     });
     sock.ev.on('chats.upsert' as any, (chats: any) => {
-      const current = this.groupsCache.get(userId) ?? [];
+      const current = this.groupsCache.get(key) ?? [];
       const updated = [...current];
       const list: any[] = Array.isArray(chats) ? chats : [];
       for (const c of list) {
@@ -580,7 +617,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
         const entry = { id: c.id as string, name: (c.name ?? c.subject ?? c.id) as string, participants: (c.participants as any[])?.length ?? 0 };
         if (idx >= 0) updated[idx] = entry; else updated.push(entry);
       }
-      if (updated.length > 0) this.groupsCache.set(userId, updated.sort((a, b) => a.name.localeCompare(b.name)));
+      if (updated.length > 0) this.groupsCache.set(key, updated.sort((a, b) => a.name.localeCompare(b.name)));
     });
 
     // WhatsApp Business labels — cache label id→name (fires during initial sync)
@@ -588,7 +625,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
       const list: any[] = Array.isArray(labels) ? labels : (labels ? [labels] : []);
       for (const label of list) {
         if (label?.id && label?.name) {
-          this.labelNames.set(`${userId}:${label.id}`, label.name);
+          this.labelNames.set(`${key}:${label.id}`, label.name);
           this.logger.log(`Label cached: ${label.id} → "${label.name}"`);
         }
       }
@@ -604,10 +641,10 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
         // Ignore label events that arrive within the grace window after connection open.
         // Baileys replays ALL historical label associations during initial app-state sync,
         // which would create hundreds of bogus drafts. Only process real-time events.
-        const openAt = this.connectionOpenAt.get(userId) ?? 0;
+        const openAt = this.connectionOpenAt.get(key) ?? 0;
         const ageMs = Date.now() - openAt;
         if (ageMs < WhatsAppService.LABEL_SYNC_GRACE_MS) {
-          this.logger.log(`Skipping historical label event for ${userId} (${Math.round(ageMs / 1000)}s after connect, grace=${WhatsAppService.LABEL_SYNC_GRACE_MS / 1000}s)`);
+          this.logger.log(`Skipping historical label event for ${key} (${Math.round(ageMs / 1000)}s after connect, grace=${WhatsAppService.LABEL_SYNC_GRACE_MS / 1000}s)`);
           return;
         }
 
@@ -624,10 +661,10 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
         if (!labelId || !chatId) return;
 
         // Look up label name; if not cached yet, try to refresh then retry
-        let labelName = this.labelNames.get(`${userId}:${labelId}`) ?? '';
+        let labelName = this.labelNames.get(`${key}:${labelId}`) ?? '';
         if (!labelName) {
-          await this.refreshLabels(userId, sock);
-          labelName = this.labelNames.get(`${userId}:${labelId}`) ?? '';
+          await this.refreshLabels(userId, businessId, sock);
+          labelName = this.labelNames.get(`${key}:${labelId}`) ?? '';
         }
 
         this.logger.log(`Label association: id=${labelId} name="${labelName}" chat=${chatId} (cached labels: ${this.labelNames.size})`);
@@ -647,7 +684,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
         }
 
         // Resolve LID to real phone number (WhatsApp v7 multi-device uses LIDs in label events)
-        let phone = this.resolvePhone(userId, chatId);
+        let phone = this.resolvePhone(userId, businessId, chatId);
         this.logger.log(`Label handler → chatId: ${chatId}, resolved phone: ${phone}`);
 
         // Detect if LID was not resolved (still has >13 digit number as @c.us)
@@ -660,7 +697,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
             if (pn) {
               const realPhone = jidToDb(jidNormalizedUser(pn));
               const lidRaw = chatId.replace(/@lid$/, '').replace(/@c\.us$/, '');
-              this.lidToPhone.set(`${userId}:${lidRaw}`, realPhone);
+              this.lidToPhone.set(`${key}:${lidRaw}`, realPhone);
               this.logger.log(`LID resolved via signalRepository: ${chatId} → ${realPhone}`);
               phone = realPhone;
             } else {
@@ -673,11 +710,11 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
 
         // Build message history from in-memory cache (populated by messages.upsert + messaging-history.set)
         // Also try the LID-format key — messaging-history.set caches messages under the LID remoteJid
-        let history = this.getCacheForContact(userId, phone);
+        let history = this.getCacheForContact(userId, businessId, phone);
         if (history.length === 0) {
           const lidKey = jidToDb(chatId); // e.g. 259544957616361@c.us
           if (lidKey !== phone) {
-            history = this.getCacheForContact(userId, lidKey);
+            history = this.getCacheForContact(userId, businessId, lidKey);
             if (history.length > 0) {
               this.logger.log(`History found under LID key ${lidKey}: ${history.length} msgs`);
             }
@@ -686,16 +723,16 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
         this.logger.log(`History for ${phone}: ${history.length} msgs — preview: ${history.slice(0, 2).map(m => m.content.substring(0, 60)).join(' | ')}`);
 
         // Upsert contact — also try the raw chatId (LID stored as @c.us) if not found by resolved phone
-        let contact = await this.prisma.whatsAppContact.findUnique({
-          where: { userId_phone: { userId, phone } },
+        let contact = await this.prisma.whatsAppContact.findFirst({
+          where: { userId, businessId, phone },
         });
         if (!contact && phone !== jidToDb(chatId)) {
-          contact = await this.prisma.whatsAppContact.findUnique({
-            where: { userId_phone: { userId, phone: jidToDb(chatId) } },
+          contact = await this.prisma.whatsAppContact.findFirst({
+            where: { userId, businessId, phone: jidToDb(chatId) },
           });
         }
         if (!contact) {
-          contact = await this.upsertContact(userId, phone);
+          contact = await this.upsertContact(userId, businessId, phone);
         }
 
         // Check if a draft already exists for this contact — skip if already exists
@@ -722,15 +759,15 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
         }
 
         const resolvedCustomerName  =
-          this.contactNames.get(`${userId}:${toJid(phone)}`)
-          ?? this.contactNames.get(`${userId}:${chatId}`)
+          this.contactNames.get(`${key}:${toJid(phone)}`)
+          ?? this.contactNames.get(`${key}:${chatId}`)
           ?? contact.leadName
           ?? contact.displayName
           ?? null;
 
         // ── AI extracts order details from conversation + catalog ─────────────────
         const products = await this.prisma.product.findMany({
-          where: { userId },
+          where: { userId, businessId },
           select: { id: true, name: true, sellingPrice: true },
         });
 
@@ -770,8 +807,9 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
           if (catalogProduct) unitPrice = catalogProduct.sellingPrice ?? 0;
         }
 
-        // Get business ID — prefer contact's business, fallback to first business of this user
-        let bizId: string = (contact as any).businessId ?? null;
+        // The order belongs to the business this WhatsApp connection serves.
+        // Fall back to the contact's own business, then to the user's oldest one.
+        let bizId: string | null = businessId ?? (contact as any).businessId ?? null;
         if (!bizId) {
           const biz = await this.prisma.business.findFirst({
             where: { userId },
@@ -782,12 +820,13 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
         }
         const qty = details.productQuantity ?? 1;
 
-        const orderCount = await this.prisma.manualOrder.count({ where: { userId, businessId: bizId } });
+        const agg = await this.prisma.manualOrder.aggregate({ _max: { orderNumber: true }, where: { userId, businessId: bizId } });
+        const nextOrderNumber = (agg._max.orderNumber ?? 0) + 1;
         const order = await this.prisma.manualOrder.create({
           data: {
             userId,
             businessId: bizId,
-            orderNumber: orderCount + 1,
+            orderNumber: nextOrderNumber,
             customerName: resolvedCustomerName ?? resolvedCustomerPhone ?? 'Client WhatsApp',
             customerPhone: resolvedCustomerPhone,
             city: details.city ?? contact.leadCity ?? '',
@@ -813,7 +852,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
         this.logger.log(`Auto-draft order #${order.orderNumber} created for contact ${contact.phone} (label: ${labelName})`);
 
         // Notify frontend via WebSocket
-        this.emit('draft-order-created', userId, { orderId: order.id, orderNumber: order.orderNumber, contactId: contact.id, userId });
+        this.emit('draft-order-created', userId, businessId, { orderId: order.id, orderNumber: order.orderNumber, contactId: contact.id, userId });
 
         // Push notification pour les utilisateurs hors de l'app
         this.pushService?.sendToUser(userId, {
@@ -831,69 +870,77 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
   // Called from the HTTP endpoint (user clicks "Générer le QR Code" or "Connecter").
   // Always starts fresh: kills any stale socket and wipes the stored auth so Baileys
   // emits a new QR / pairing code instead of silently trying to reuse an old session.
-  async connectFresh(userId: string): Promise<void> {
-    this.loggedOut.delete(userId);
+  async connectFresh(userId: string, businessId: string | null): Promise<void> {
+    const key = this.waKey(userId, businessId);
+    this.loggedOut.delete(key);
 
-    if (this.sockets.has(userId)) {
-      const sock = this.sockets.get(userId)!;
-      this.sockets.delete(userId);
-      this.connectedUsers.delete(userId);
+    if (this.sockets.has(key)) {
+      const sock = this.sockets.get(key)!;
+      this.sockets.delete(key);
+      this.connectedUsers.delete(key);
       (sock.ev as any).removeAllListeners();
       sock.end(new Error('reset'));
     }
 
-    await clearDbAuth(userId, this.prisma);
-    this.logger.log(`Cleared stale auth for ${userId} — fresh QR connect`);
-    await this.connect(userId);
+    await clearDbAuth(userId, businessId, this.prisma);
+    this.logger.log(`Cleared stale auth for ${key} — fresh QR connect`);
+    await this.connect(userId, businessId);
   }
 
-  async connectWithPairingCode(userId: string, phone: string): Promise<void> {
+  async connectWithPairingCode(userId: string, businessId: string | null, phone: string): Promise<void> {
+    const key = this.waKey(userId, businessId);
     const normalized = phone.replace(/[^0-9]/g, '');
-    this.pairingPhones.set(userId, normalized);
-    this.clearPairingTimeout(userId);
-    this.loggedOut.delete(userId); // allow fresh connection even after a previous logout
+    this.pairingPhones.set(key, normalized);
+    this.clearPairingTimeout(userId, businessId);
+    this.loggedOut.delete(key); // allow fresh connection even after a previous logout
 
-    if (this.sockets.has(userId)) {
-      const sock = this.sockets.get(userId)!;
-      this.sockets.delete(userId);
-      this.connectedUsers.delete(userId);
+    if (this.sockets.has(key)) {
+      const sock = this.sockets.get(key)!;
+      this.sockets.delete(key);
+      this.connectedUsers.delete(key);
       (sock.ev as any).removeAllListeners();
       sock.end(new Error('reset'));
     }
 
     // Always wipe stale auth so WhatsApp generates a fresh QR/pairing code
-    await clearDbAuth(userId, this.prisma);
-    this.logger.log(`Cleared stale auth for ${userId} — fresh pairing`);
+    await clearDbAuth(userId, businessId, this.prisma);
+    this.logger.log(`Cleared stale auth for ${key} — fresh pairing`);
 
     // Emit error if no code arrives within 35s
     const timeout = setTimeout(() => {
-      if (this.pairingPhones.has(userId)) {
-        this.pairingPhones.delete(userId);
-        this.logger.warn(`Pairing timeout for ${userId}`);
-        this.emit('pairing_error', userId, {
+      if (this.pairingPhones.has(key)) {
+        this.pairingPhones.delete(key);
+        this.logger.warn(`Pairing timeout for ${key}`);
+        this.emit('pairing_error', userId, businessId, {
           message: 'Délai dépassé. Réessayez.',
         });
       }
     }, 35_000);
-    this.pairingTimeouts.set(userId, timeout);
+    this.pairingTimeouts.set(key, timeout);
 
-    await this.connect(userId);
+    await this.connect(userId, businessId);
   }
 
   // ── Incoming message handler ──────────────────────────────────────────────────
 
-  private async handleIncoming(userId: string, sock: WASocket, msg: WAMessage): Promise<void> {
+  private async handleIncoming(
+    userId: string,
+    businessId: string | null,
+    sock: WASocket,
+    msg: WAMessage,
+  ): Promise<void> {
+    const key = this.waKey(userId, businessId);
     const jid = msg.key.remoteJid!;
     const phone = jidToDb(jid);
     const text = extractText(msg.message) ?? '';
     const timestamp = Number(msg.messageTimestamp ?? Date.now() / 1000) * 1000;
 
-    const displayName = this.contactNames.get(`${userId}:${jid}`) ?? null;
-    const isFirst = !(await this.prisma.whatsAppContact.findUnique({
-      where: { userId_phone: { userId, phone } },
+    const displayName = this.contactNames.get(`${key}:${jid}`) ?? null;
+    const isFirst = !(await this.prisma.whatsAppContact.findFirst({
+      where: { userId, businessId, phone },
     }));
 
-    const contact = await this.upsertContact(userId, phone, { displayName });
+    const contact = await this.upsertContact(userId, businessId, phone, { displayName });
 
     // ── Media handling ────────────────────────────────────────────────────────────
     let mediaUrl: string | null = null;
@@ -938,7 +985,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
 
     const content = text || (mediaType ? `[${mediaType}]` : '[Message]');
     const sentAt = new Date(timestamp).toISOString();
-    this.addToCache(userId, phone, { direction: 'in', content, mediaType, mediaUrl, waId: msg.key.id ?? undefined, sentAt });
+    this.addToCache(userId, businessId, phone, { direction: 'in', content, mediaType, mediaUrl, waId: msg.key.id ?? undefined, sentAt });
 
     // Silent product mention classification (always runs, regardless of AI being enabled)
     if (text) this.classifyAndSaveMention(userId, contact.businessId, contact.id, text).catch(() => {});
@@ -946,7 +993,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
     const quotedMsgId: string | null =
       (msg.message?.extendedTextMessage?.contextInfo?.stanzaId) ?? null;
 
-    this.emit('message', userId, {
+    this.emit('message', userId, businessId, {
       contact: { ...contact, unreadCount: 1 },
       message: {
         id: msg.key.id!,
@@ -967,18 +1014,17 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
     const event = isFirst ? 'welcome' : 'message';
     const autoMessages = await this.automationService.process(userId, contact.id, event, { message: text });
     for (const autoMsg of autoMessages) {
-      await this.sendMessageViaSocket(userId, sock, jid, phone, autoMsg, contact.id, null);
+      await this.sendMessageViaSocket(userId, businessId, sock, jid, phone, autoMsg, contact.id, null);
     }
 
     // ── AI reply ──────────────────────────────────────────────────────────────────
     const hasContent = !!text || ['image', 'audio'].includes(mediaType ?? '');
     if (contact.aiEnabled && autoMessages.length === 0 && hasContent) {
-      const hasAgentConfig = await this.prisma.whatsAppAIConfig.findUnique({ where: { userId } })
-        .then(c => !!c?.systemPrompt?.trim() && c.enabled);
-      const kbCount = await this.prisma.whatsAppKBEntry.count({ where: { userId, enabled: true } });
+      const aiConfig = await this.prisma.whatsAppAIConfig.findFirst({ where: { userId, businessId } });
+      const hasAgentConfig = !!aiConfig?.systemPrompt?.trim() && aiConfig.enabled;
+      const kbCount = await this.prisma.whatsAppKBEntry.count({ where: { userId, businessId, enabled: true } });
       if (!hasAgentConfig || kbCount === 0) return;
 
-      const aiConfig = await this.prisma.whatsAppAIConfig.findUnique({ where: { userId } });
       const delay = Math.floor(Math.random() * 7000) + 3000; // 3–10s random
 
       await sock.sendPresenceUpdate('composing', jid).catch(() => {});
@@ -986,19 +1032,19 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
       await sock.sendPresenceUpdate('paused', jid).catch(() => {});
 
       // History from in-memory cache (excludes current message)
-      const history = this.getCache(userId, phone).slice(0, -1).map(m => ({
+      const history = this.getCache(userId, businessId, phone).slice(0, -1).map(m => ({
         direction: m.direction,
         content: m.content,
       }));
 
       const aiResult = await this.aiService.reply(
-        userId, phone, history, text,
+        userId, businessId, phone, history, text,
         mediaBase64 ?? undefined, mediaMimetype ?? undefined,
         contact.leadStatus ?? undefined,
       );
 
       if (aiResult?.text) {
-        await this.sendMessageViaSocket(userId, sock, jid, phone, aiResult.text, contact.id, true);
+        await this.sendMessageViaSocket(userId, businessId, sock, jid, phone, aiResult.text, contact.id, true);
 
         if (aiResult.imageUrl) {
           await this.sendImageViaSocket(sock, jid, aiResult.imageUrl).catch(() => {});
@@ -1006,7 +1052,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
 
         if (aiResult.shouldEscalate) {
           await this.prisma.whatsAppContact.update({ where: { id: contact.id }, data: { aiEnabled: false } });
-          this.emit('contact-updated', userId, { contactId: contact.id, aiEnabled: false });
+          this.emit('contact-updated', userId, businessId, { contactId: contact.id, aiEnabled: false });
         }
 
         const qualifyHistory = [
@@ -1029,14 +1075,14 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
               ...(qualification.leadStatus && { leadStatus: qualification.leadStatus }),
             },
           });
-          this.emit('lead-updated', userId, { contactId: contact.id, ...qualification });
+          this.emit('lead-updated', userId, businessId, { contactId: contact.id, ...qualification });
 
           if (qualification.leadStatus === 'hot' && contact.leadStatus !== 'hot') {
             await this.automationService.process(userId, contact.id, 'lead_status', { status: 'hot' });
           }
           if (qualification.leadStatus === 'converted' && contact.leadStatus !== 'converted') {
             const recap = await this.aiService.generateOrderRecap(qualifyHistory, aiConfig?.primaryLanguage ?? 'fr');
-            if (recap) await this.sendMessageViaSocket(userId, sock, jid, phone, recap, contact.id, true);
+            if (recap) await this.sendMessageViaSocket(userId, businessId, sock, jid, phone, recap, contact.id, true);
             // Mark all product mentions for this contact as converted
             await this.prisma.whatsAppProductMention.updateMany({
               where: { contactId: contact.id, isConverted: false },
@@ -1049,18 +1095,22 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
   }
 
   // Messages sent from physical phone (not via API)
-  private async handleOutgoingFromPhone(userId: string, msg: WAMessage): Promise<void> {
+  private async handleOutgoingFromPhone(
+    userId: string,
+    businessId: string | null,
+    msg: WAMessage,
+  ): Promise<void> {
     const jid = msg.key.remoteJid!;
     const phone = jidToDb(jid);
     const text = extractText(msg.message) ?? '';
     const timestamp = Number(msg.messageTimestamp ?? Date.now() / 1000) * 1000;
     const sentAt = new Date(timestamp).toISOString();
 
-    const contact = await this.upsertContact(userId, phone);
+    const contact = await this.upsertContact(userId, businessId, phone);
     const content = text || '[message]';
-    this.addToCache(userId, phone, { direction: 'out', content, waId: msg.key.id ?? undefined, sentAt });
+    this.addToCache(userId, businessId, phone, { direction: 'out', content, waId: msg.key.id ?? undefined, sentAt });
 
-    this.emit('message', userId, {
+    this.emit('message', userId, businessId, {
       contact,
       message: {
         id: msg.key.id!,
@@ -1086,7 +1136,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
     text: string,
   ): Promise<void> {
     const products = await this.prisma.product.findMany({
-      where: { userId },
+      where: { userId, businessId: businessId ?? null },
       select: { id: true, name: true },
     });
     if (!products.length) return;
@@ -1110,6 +1160,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
 
   private async sendMessageViaSocket(
     userId: string,
+    businessId: string | null,
     sock: WASocket,
     jid: string,
     phone: string,
@@ -1118,9 +1169,9 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
     fromAi: boolean | null,
   ): Promise<void> {
     // Rate limiting: if window is full, wait for it to reset
-    const wait = this.rateWait(userId, 25);
+    const wait = this.rateWait(userId, businessId, 25);
     if (wait > 0) {
-      this.logger.warn(`Rate limit reached for ${userId}, waiting ${Math.ceil(wait / 1000)}s`);
+      this.logger.warn(`Rate limit reached for ${this.waKey(userId, businessId)}, waiting ${Math.ceil(wait / 1000)}s`);
       await new Promise(r => setTimeout(r, wait + 500));
     }
 
@@ -1137,12 +1188,12 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
     }
 
     const waId = result?.key?.id ?? null;
-    if (waId) this.getPendingSet(userId).add(waId);
+    if (waId) this.getPendingSet(userId, businessId).add(waId);
 
     const sentAt = new Date().toISOString();
-    this.addToCache(userId, phone, { direction: 'out', content: text, waId: waId ?? undefined, sentAt });
+    this.addToCache(userId, businessId, phone, { direction: 'out', content: text, waId: waId ?? undefined, sentAt });
 
-    this.emit('message', userId, {
+    this.emit('message', userId, businessId, {
       contact: { id: contactId },
       message: {
         id: waId ?? `out-${Date.now()}`,
@@ -1174,63 +1225,69 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
 
   async sendMessage(
     userId: string,
+    businessId: string | null,
     phone: string,
     text: string,
     contactId: string,
     fromAi: boolean | null = false,
     _clientOverride?: any,
   ): Promise<void> {
-    const sock = this.sockets.get(userId);
-    if (!sock || !this.connectedUsers.has(userId)) {
+    const key = this.waKey(userId, businessId);
+    const sock = this.sockets.get(key);
+    if (!sock || !this.connectedUsers.has(key)) {
       throw new HttpException('WhatsApp non connecté', HttpStatus.SERVICE_UNAVAILABLE);
     }
     const jid = toJid(phone);
-    await this.sendMessageViaSocket(userId, sock, jid, jidToDb(jid), text, contactId, fromAi);
+    await this.sendMessageViaSocket(userId, businessId, sock, jid, jidToDb(jid), text, contactId, fromAi);
   }
 
-  async sendImage(userId: string, phone: string, imageUrl: string, _clientOverride?: any): Promise<void> {
-    const sock = this.sockets.get(userId);
-    if (!sock || !this.connectedUsers.has(userId)) {
+  async sendImage(userId: string, businessId: string | null, phone: string, imageUrl: string, _clientOverride?: any): Promise<void> {
+    const key = this.waKey(userId, businessId);
+    const sock = this.sockets.get(key);
+    if (!sock || !this.connectedUsers.has(key)) {
       throw new HttpException('WhatsApp non connecté', HttpStatus.SERVICE_UNAVAILABLE);
     }
     await this.sendImageViaSocket(sock, toJid(phone), imageUrl);
   }
 
-  async sendDocument(userId: string, phone: string, buffer: Buffer, filename: string, mimetype: string): Promise<void> {
-    const sock = this.sockets.get(userId);
-    if (!sock || !this.connectedUsers.has(userId)) {
+  async sendDocument(userId: string, businessId: string | null, phone: string, buffer: Buffer, filename: string, mimetype: string): Promise<void> {
+    const key = this.waKey(userId, businessId);
+    const sock = this.sockets.get(key);
+    if (!sock || !this.connectedUsers.has(key)) {
       throw new HttpException('WhatsApp non connecté', HttpStatus.SERVICE_UNAVAILABLE);
     }
     await sock.sendMessage(toJid(phone), { document: buffer, mimetype, fileName: filename });
   }
 
-  async sendReply(userId: string, phone: string, text: string, contactId: string, _quotedWaId: string): Promise<void> {
-    await this.sendMessage(userId, phone, text, contactId, false);
+  async sendReply(userId: string, businessId: string | null, phone: string, text: string, contactId: string, _quotedWaId: string): Promise<void> {
+    await this.sendMessage(userId, businessId, phone, text, contactId, false);
   }
 
   async notifyOrder(
     userId: string,
+    businessId: string | null,
     toPhone: string,
     text: string,
     imagePath?: string,
   ): Promise<boolean> {
-    const sock = this.sockets.get(userId);
+    const key = this.waKey(userId, businessId);
+    const sock = this.sockets.get(key);
     if (!sock) {
-      this.logger.warn(`notifyOrder [${userId}]: no socket`);
+      this.logger.warn(`notifyOrder [${key}]: no socket`);
       return false;
     }
 
     return new Promise<boolean>(resolve => {
       this.bulkQueue = this.bulkQueue.then(async () => {
         try {
-          const wait = this.rateWait(userId, 25);
+          const wait = this.rateWait(userId, businessId, 25);
           if (wait > 0) await new Promise(r => setTimeout(r, wait + 500));
 
           await this.jitter(1500, 3500);
 
-          const currentSock = this.sockets.get(userId);
+          const currentSock = this.sockets.get(key);
           if (!currentSock) {
-            this.logger.warn(`notifyOrder [${userId}]: socket lost before send`);
+            this.logger.warn(`notifyOrder [${key}]: socket lost before send`);
             resolve(false);
             return;
           }
@@ -1239,7 +1296,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
 
           if (imagePath && fs.existsSync(imagePath)) {
             // Single message: image + full details as caption
-            this.logger.log(`notifyOrder [${userId}]: sending image+caption to ${jid}`);
+            this.logger.log(`notifyOrder [${key}]: sending image+caption to ${jid}`);
             const buffer = fs.readFileSync(imagePath);
             const ext = path.extname(imagePath).toLowerCase();
             const mimetype = ext === '.png' ? 'image/png'
@@ -1249,13 +1306,13 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
             await currentSock.sendMessage(jid, { image: buffer, caption: text, mimetype });
           } else {
             // No image — plain text
-            this.logger.log(`notifyOrder [${userId}]: sending text to ${jid}`);
+            this.logger.log(`notifyOrder [${key}]: sending text to ${jid}`);
             await currentSock.sendMessage(jid, { text });
           }
 
           resolve(true);
         } catch (err: any) {
-          this.logger.warn(`notifyOrder [${userId}]: failed — ${err?.message}`);
+          this.logger.warn(`notifyOrder [${key}]: failed — ${err?.message}`);
           resolve(false);
         }
       });
@@ -1264,9 +1321,15 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
 
   // ── Contacts ──────────────────────────────────────────────────────────────────
 
-  async getContacts(userId: string, filter?: string, search?: string, tagId?: string): Promise<any[]> {
+  async getContacts(
+    userId: string,
+    businessId: string | null,
+    filter?: string,
+    search?: string,
+    tagId?: string,
+  ): Promise<any[]> {
     const dbContacts = await this.prisma.whatsAppContact.findMany({
-      where: { userId },
+      where: { userId, businessId },
       include: { tags: { include: { tag: true } } },
     });
 
@@ -1288,9 +1351,9 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
         return true;
       })
       .map(c => {
-        const cache = this.getCache(userId, c.phone);
+        const cache = this.getCache(userId, businessId, c.phone);
         const last = cache[cache.length - 1];
-        const liveDisplayName = this.contactNames.get(`${userId}:${toJid(c.phone)}`);
+        const liveDisplayName = this.contactNames.get(`${this.waKey(userId, businessId)}:${toJid(c.phone)}`);
         return {
           id: c.id,
           phone: c.phone,
@@ -1317,13 +1380,13 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
   }
 
   // Returns cached messages (in-memory, rebuilt as messages flow)
-  async getMessages(userId: string, contactId: string, limit = 50): Promise<any[]> {
+  async getMessages(userId: string, businessId: string | null, contactId: string, limit = 50): Promise<any[]> {
     let phone = contactId;
     if (!contactId.includes('@')) {
-      const db = await this.prisma.whatsAppContact.findFirst({ where: { id: contactId, userId } });
+      const db = await this.prisma.whatsAppContact.findFirst({ where: { id: contactId, userId, businessId } });
       if (db) phone = db.phone;
     }
-    const cache = this.getCache(userId, phone);
+    const cache = this.getCache(userId, businessId, phone);
     return cache.slice(-limit).map((m, i) => ({
       id: m.waId ?? `cached-${i}`,
       waId: m.waId ?? null,
@@ -1350,30 +1413,31 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
 
   // ── Groups ────────────────────────────────────────────────────────────────────
 
-  async getGroups(userId: string): Promise<{ id: string; name: string; participants: number }[]> {
-    const sock = this.sockets.get(userId);
-    const isConnected = this.connectedUsers.has(userId);
-    const cached = this.groupsCache.get(userId) ?? [];
+  async getGroups(userId: string, businessId: string | null): Promise<{ id: string; name: string; participants: number }[]> {
+    const key = this.waKey(userId, businessId);
+    const sock = this.sockets.get(key);
+    const isConnected = this.connectedUsers.has(key);
+    const cached = this.groupsCache.get(key) ?? [];
 
-    this.logger.log(`getGroups [${userId}]: sock=${!!sock}, connected=${isConnected}, cache=${cached.length}`);
+    this.logger.log(`getGroups [${key}]: sock=${!!sock}, connected=${isConnected}, cache=${cached.length}`);
 
     if (!sock) {
-      this.logger.warn(`getGroups [${userId}]: no socket, returning cache`);
+      this.logger.warn(`getGroups [${key}]: no socket, returning cache`);
       return cached;
     }
     if (!isConnected) {
-      this.logger.warn(`getGroups [${userId}]: not in connectedUsers, returning cache`);
+      this.logger.warn(`getGroups [${key}]: not in connectedUsers, returning cache`);
       return cached;
     }
 
     // Live fetch
     try {
-      this.logger.log(`getGroups [${userId}]: calling groupFetchAllParticipating...`);
+      this.logger.log(`getGroups [${key}]: calling groupFetchAllParticipating...`);
       const raw = await sock.groupFetchAllParticipating();
-      const keys = Object.keys(raw ?? {});
-      this.logger.log(`getGroups [${userId}]: got ${keys.length} groups from WA`);
+      const ids = Object.keys(raw ?? {});
+      this.logger.log(`getGroups [${key}]: got ${ids.length} groups from WA`);
 
-      const list = keys
+      const list = ids
         .map(id => {
           const g = raw[id] as any;
           return {
@@ -1384,20 +1448,20 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
         })
         .sort((a, b) => a.name.localeCompare(b.name));
 
-      if (list.length > 0) this.groupsCache.set(userId, list);
+      if (list.length > 0) this.groupsCache.set(key, list);
       return list;
     } catch (err: any) {
-      this.logger.warn(`getGroups [${userId}]: groupFetchAllParticipating threw: ${err?.message}`);
+      this.logger.warn(`getGroups [${key}]: groupFetchAllParticipating threw: ${err?.message}`);
     }
 
     // Cache fallback
     if (cached.length > 0) {
-      this.logger.log(`getGroups [${userId}]: returning ${cached.length} cached groups`);
+      this.logger.log(`getGroups [${key}]: returning ${cached.length} cached groups`);
       return cached;
     }
 
     // Wait 3s and retry once (first call right after fresh connection)
-    this.logger.log(`getGroups [${userId}]: cache empty, retrying in 3s...`);
+    this.logger.log(`getGroups [${key}]: cache empty, retrying in 3s...`);
     await new Promise(r => setTimeout(r, 3000));
     try {
       const raw = await sock.groupFetchAllParticipating();
@@ -1406,19 +1470,20 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
         name: (g.subject ?? g.name ?? id) as string,
         participants: (g.participants as any[])?.length ?? 0,
       })).sort((a, b) => a.name.localeCompare(b.name));
-      this.logger.log(`getGroups [${userId}]: retry got ${list.length} groups`);
-      if (list.length > 0) this.groupsCache.set(userId, list);
+      this.logger.log(`getGroups [${key}]: retry got ${list.length} groups`);
+      if (list.length > 0) this.groupsCache.set(key, list);
       return list;
     } catch (err: any) {
-      this.logger.warn(`getGroups [${userId}]: retry also failed: ${err?.message}`);
+      this.logger.warn(`getGroups [${key}]: retry also failed: ${err?.message}`);
       return [];
     }
   }
 
   // ── Audience contact directory sync ──────────────────────────────────────────
 
-  async syncContactDirectory(userId: string): Promise<void> {
-    const session = await this.prisma.whatsAppSession.findUnique({ where: { userId } });
+  async syncContactDirectory(userId: string, businessId: string | null): Promise<void> {
+    const waPrefix = `${this.waKey(userId, businessId)}:`;
+    const session = await this.prisma.whatsAppSession.findFirst({ where: { userId, businessId } });
     const waAccountId = session?.phone ?? null;
     const profile = await this.prisma.userProfile.findUnique({ where: { userId } });
     const businessSector = profile?.businessSector ?? null;
@@ -1426,17 +1491,17 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
 
     // Build list from in-memory contact names (populated by contacts.upsert event)
     const contacts: Array<{ phone: string; displayName: string | null }> = [];
-    for (const [key, name] of this.contactNames.entries()) {
-      if (!key.startsWith(`${userId}:`)) continue;
-      const jid = key.slice(userId.length + 1);
+    for (const [cacheKey, name] of this.contactNames.entries()) {
+      if (!cacheKey.startsWith(waPrefix)) continue;
+      const jid = cacheKey.slice(waPrefix.length);
       if (jid.endsWith('@g.us') || jid.includes('@broadcast') || jid === 'status@broadcast') continue;
       const phone = jidToDb(jid);
       if (phone.endsWith('@lid')) continue;
       contacts.push({ phone, displayName: name });
     }
 
-    this.logger.log(`Audience sync: ${contacts.length} contacts for ${userId}`);
-    this.emit('audience-sync-start', userId, { total: contacts.length });
+    this.logger.log(`Audience sync: ${contacts.length} contacts for ${waPrefix}`);
+    this.emit('audience-sync-start', userId, businessId, { total: contacts.length });
 
     const BATCH = 50;
     let done = 0;
@@ -1445,34 +1510,55 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
       await Promise.all(chunk.map(c =>
         this.prisma.waCampaignContact.upsert({
           where: { clientId_phoneNumber: { clientId: userId, phoneNumber: c.phone } },
-          create: { clientId: userId, phoneNumber: c.phone, displayName: c.displayName, waAccountId, businessSector, source: 'whatsapp_sync', syncedAt: now },
+          create: { clientId: userId, businessId, phoneNumber: c.phone, displayName: c.displayName, waAccountId, businessSector, source: 'whatsapp_sync', syncedAt: now },
           update: { displayName: c.displayName, waAccountId, syncedAt: now, ...(businessSector ? { businessSector } : {}) },
         }).catch(() => {})
       ));
       done += chunk.length;
-      this.emit('audience-sync-progress', userId, { done, total: contacts.length });
+      this.emit('audience-sync-progress', userId, businessId, { done, total: contacts.length });
     }
 
-    this.emit('audience-sync-complete', userId, { total: done });
+    this.emit('audience-sync-complete', userId, businessId, { total: done });
     this.logger.log(`Audience sync complete for ${userId}: ${done} contacts`);
   }
 
   // ── Safe contact upsert ───────────────────────────────────────────────────────
 
-  private async upsertContact(userId: string, phone: string, data: { displayName?: string | null } = {}) {
+  // businessId is nullable, so the (userId, businessId, phone) unique can't drive an
+  // upsert — look up first, then create, retrying the read on a unique-violation race.
+  private async upsertContact(
+    userId: string,
+    businessId: string | null,
+    phone: string,
+    data: { displayName?: string | null } = {},
+  ) {
+    const include = { tags: { include: { tag: true } } };
+    const existing = await this.prisma.whatsAppContact.findFirst({
+      where: { userId, businessId, phone },
+      include,
+    });
+
+    if (existing) {
+      if (!data.displayName || data.displayName === existing.displayName) return existing;
+      return this.prisma.whatsAppContact.update({
+        where: { id: existing.id },
+        data: { displayName: data.displayName },
+        include,
+      });
+    }
+
     try {
-      return await this.prisma.whatsAppContact.upsert({
-        where: { userId_phone: { userId, phone } },
-        create: { userId, phone, ...(data.displayName ? { displayName: data.displayName } : {}) },
-        update: { ...(data.displayName ? { displayName: data.displayName } : {}) },
-        include: { tags: { include: { tag: true } } },
+      return await this.prisma.whatsAppContact.create({
+        data: { userId, businessId, phone, ...(data.displayName ? { displayName: data.displayName } : {}) },
+        include,
       });
     } catch (err: any) {
       if (err?.code === 'P2002') {
-        return this.prisma.whatsAppContact.findUniqueOrThrow({
-          where: { userId_phone: { userId, phone } },
-          include: { tags: { include: { tag: true } } },
+        const raced = await this.prisma.whatsAppContact.findFirst({
+          where: { userId, businessId, phone },
+          include,
         });
+        if (raced) return raced;
       }
       throw err;
     }
@@ -1480,32 +1566,29 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
 
   // ── Disconnect ────────────────────────────────────────────────────────────────
 
-  async disconnect(userId: string): Promise<void> {
-    this.loggedOut.add(userId);
-    this.clearKeepAlive(userId);
-    const sock = this.sockets.get(userId);
+  async disconnect(userId: string, businessId: string | null): Promise<void> {
+    const key = this.waKey(userId, businessId);
+    this.loggedOut.add(key);
+    this.clearKeepAlive(userId, businessId);
+    const sock = this.sockets.get(key);
     if (sock) {
       await sock.logout().catch(() => {});
       (sock.ev as any).removeAllListeners();
-      this.sockets.delete(userId);
-      this.connectedUsers.delete(userId);
+      this.sockets.delete(key);
+      this.connectedUsers.delete(key);
     }
-    await clearDbAuth(userId, this.prisma);
+    await clearDbAuth(userId, businessId, this.prisma);
 
-    await this.prisma.whatsAppSession.upsert({
-      where: { userId },
-      create: { userId, connected: false },
-      update: { connected: false },
-    }).catch(() => {});
+    await this.markSession(userId, businessId, { connected: false }).catch(() => {});
 
-    this.pendingSendIds.delete(userId);
-    this.emit('disconnected', userId, {});
+    this.pendingSendIds.delete(key);
+    this.emit('disconnected', userId, businessId, {});
   }
 
-  async getStatus(userId: string) {
-    const session = await this.prisma.whatsAppSession.findUnique({ where: { userId } });
+  async getStatus(userId: string, businessId: string | null) {
+    const session = await this.prisma.whatsAppSession.findFirst({ where: { userId, businessId } });
     return {
-      connected: this.connectedUsers.has(userId),
+      connected: this.connectedUsers.has(this.waKey(userId, businessId)),
       phone: session?.phone ?? null,
     };
   }
@@ -1513,15 +1596,16 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
   async reconnectAll(): Promise<void> {
     const sessions = await this.prisma.whatsAppSession.findMany({ where: { connected: true } });
     for (const s of sessions) {
-      this.logger.log(`Auto-reconnecting ${s.userId}`);
-      this.connect(s.userId).catch(err =>
-        this.logger.error(`Reconnect failed ${s.userId}:`, err)
+      this.logger.log(`Auto-reconnecting ${s.userId}/${s.businessId}`);
+      this.connect(s.userId, s.businessId).catch(err =>
+        this.logger.error(`Reconnect failed ${s.userId}/${s.businessId}:`, err)
       );
     }
   }
 
   onModuleDestroy() {
-    for (const [userId] of this.keepAliveTimers) this.clearKeepAlive(userId);
+    for (const [, timer] of this.keepAliveTimers) clearInterval(timer);
+    this.keepAliveTimers.clear();
     for (const [, sock] of this.sockets) {
       (sock.ev as any).removeAllListeners();
       sock.end(new Error('shutdown'));

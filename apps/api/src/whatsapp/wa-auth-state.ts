@@ -21,15 +21,17 @@ function fromJsonSafe(obj: any): any {
   return JSON.parse(JSON.stringify(obj), BufferJSON.reviver);
 }
 
-export async function useDbAuthState(userId: string, prisma: PrismaService) {
+// Each business owns its own WhatsApp connection, so credentials and Signal keys
+// are scoped by (userId, businessId) — never by userId alone.
+export async function useDbAuthState(userId: string, businessId: string | null, prisma: PrismaService) {
   // Load credentials from WhatsAppSession.authState (null on first pair → fresh creds)
-  const session = await prisma.whatsAppSession.findUnique({ where: { userId } });
+  const session = await prisma.whatsAppSession.findFirst({ where: { userId, businessId } });
   const creds = session?.authState ? fromJsonSafe(session.authState) : initAuthCreds();
 
   const rawStore = {
     get: async (type: string, ids: string[]): Promise<Record<string, any>> => {
       const rows = await prisma.waBaileyAuthKey.findMany({
-        where: { userId, keyType: type, keyId: { in: ids } },
+        where: { userId, businessId, keyType: type, keyId: { in: ids } },
       });
       const result: Record<string, any> = {};
       for (const row of rows) {
@@ -50,17 +52,26 @@ export async function useDbAuthState(userId: string, prisma: PrismaService) {
           if (value == null) {
             tasks.push(
               prisma.waBaileyAuthKey
-                .deleteMany({ where: { userId, keyType: type, keyId: id } })
+                .deleteMany({ where: { userId, businessId, keyType: type, keyId: id } })
                 .catch(() => {}),
             );
           } else {
+            // businessId is nullable, so the compound unique can't be used with upsert —
+            // update-then-insert instead.
+            const keyData = toJsonSafe(value);
             tasks.push(
               prisma.waBaileyAuthKey
-                .upsert({
-                  where: { userId_keyType_keyId: { userId, keyType: type, keyId: id } },
-                  create: { userId, keyType: type, keyId: id, keyData: toJsonSafe(value) },
-                  update: { keyData: toJsonSafe(value) },
+                .updateMany({
+                  where: { userId, businessId, keyType: type, keyId: id },
+                  data: { keyData },
                 })
+                .then(res =>
+                  res.count === 0
+                    ? prisma.waBaileyAuthKey.create({
+                        data: { userId, businessId, keyType: type, keyId: id, keyData },
+                      })
+                    : null,
+                )
                 .catch(() => {}),
             );
           }
@@ -76,22 +87,31 @@ export async function useDbAuthState(userId: string, prisma: PrismaService) {
   };
 
   const saveCreds = async () => {
-    await prisma.whatsAppSession.upsert({
-      where: { userId },
-      create: { userId, authState: toJsonSafe(creds), connected: false },
-      update: { authState: toJsonSafe(creds) },
+    const authState = toJsonSafe(creds);
+    const updated = await prisma.whatsAppSession.updateMany({
+      where: { userId, businessId },
+      data: { authState },
     });
+    if (updated.count === 0) {
+      await prisma.whatsAppSession.create({
+        data: { userId, businessId, authState, connected: false },
+      });
+    }
   };
 
   return { state, saveCreds };
 }
 
-/** Wipe all auth data for a user (called on logout or before a fresh pair) */
-export async function clearDbAuth(userId: string, prisma: PrismaService): Promise<void> {
+/** Wipe auth data for one business's connection (called on logout or before a fresh pair) */
+export async function clearDbAuth(
+  userId: string,
+  businessId: string | null,
+  prisma: PrismaService,
+): Promise<void> {
   await Promise.all([
     prisma.whatsAppSession
-      .updateMany({ where: { userId }, data: { authState: Prisma.DbNull } })
+      .updateMany({ where: { userId, businessId }, data: { authState: Prisma.DbNull } })
       .catch(() => {}),
-    prisma.waBaileyAuthKey.deleteMany({ where: { userId } }).catch(() => {}),
+    prisma.waBaileyAuthKey.deleteMany({ where: { userId, businessId } }).catch(() => {}),
   ]);
 }

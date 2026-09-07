@@ -28,23 +28,23 @@ export class AiService {
     });
   }
 
-  private async getConfig(userId: string) {
-    return this.prisma.whatsAppAIConfig.upsert({
-      where: { userId },
-      create: { userId },
-      update: {},
-    });
+  // Config and knowledge belong to the business whose WhatsApp received the message.
+  // businessId is nullable, so the (userId, businessId) unique can't drive an upsert.
+  private async getConfig(userId: string, businessId: string | null) {
+    const existing = await this.prisma.whatsAppAIConfig.findFirst({ where: { userId, businessId } });
+    if (existing) return existing;
+    return this.prisma.whatsAppAIConfig.create({ data: { userId, businessId } });
   }
 
   // ── Build a strict, structured knowledge base ─────────────────────────────────
-  private async buildKnowledgeBlock(userId: string): Promise<string> {
+  private async buildKnowledgeBlock(userId: string, businessId: string | null): Promise<string> {
     const products = await this.prisma.product.findMany({
-      where: { userId },
+      where: { userId, businessId },
       orderBy: { name: 'asc' },
     });
 
     const entries = await this.prisma.whatsAppKBEntry.findMany({
-      where: { userId, enabled: true },
+      where: { userId, businessId, enabled: true },
       orderBy: { category: 'asc' },
     });
 
@@ -204,6 +204,7 @@ ${leadStatus === 'converted' ? `\n⚠️ STATUT CLIENT : VENTE ACQUISE. La comma
   // ── Main reply ────────────────────────────────────────────────────────────────
   async reply(
     userId: string,
+    businessId: string | null,
     _contactPhone: string,
     messages: Array<{ direction: string; content: string }>,
     newMessage: string,
@@ -211,7 +212,7 @@ ${leadStatus === 'converted' ? `\n⚠️ STATUT CLIENT : VENTE ACQUISE. La comma
     mediaMimetype?: string,
     leadStatus?: string,
   ): Promise<{ text: string; shouldEscalate: boolean; imageUrl?: string } | null> {
-    const aiConfig = await this.getConfig(userId);
+    const aiConfig = await this.getConfig(userId, businessId);
     if (!aiConfig.enabled) return null;
 
     if (!this.isWithinActiveHours(aiConfig.activeHours)) {
@@ -225,7 +226,7 @@ ${leadStatus === 'converted' ? `\n⚠️ STATUT CLIENT : VENTE ACQUISE. La comma
       return { text: aiConfig.escalationMessage, shouldEscalate: true };
     }
 
-    const kb = await this.buildKnowledgeBlock(userId);
+    const kb = await this.buildKnowledgeBlock(userId, businessId);
     const systemPrompt = this.buildSystemPrompt(aiConfig, kb, leadStatus);
 
     // Full conversation history — Barbara must always have complete context

@@ -4,6 +4,7 @@ import { SalesService } from './sales.service';
 import { CreateSaleDto } from './dto/create-sale.dto';
 import { SALE_STATUSES } from '@kza/shared';
 import { CurrentUser, AuthUser } from '../auth/current-user.decorator';
+import { Roles } from '../auth/roles.guard';
 import { PrismaService } from '../prisma/prisma.service';
 import { WhatsAppService } from '../whatsapp/whatsapp.service';
 
@@ -13,6 +14,7 @@ class UpdateSaleStatusDto {
 }
 
 @Controller('sales')
+@Roles('owner', 'manager')
 export class SalesController {
   constructor(
     private readonly service: SalesService,
@@ -22,14 +24,14 @@ export class SalesController {
 
   @Get()
   findAll(@CurrentUser() user: AuthUser) {
-    return this.service.findAll(user.id, user.businessId || undefined);
+    return this.service.findAll(user.ownerId, user.businessId || undefined);
   }
 
   @Get('customers/suggest')
   async suggestCustomers(@CurrentUser() user: AuthUser, @Query('q') q: string) {
     if (!q || q.trim().length < 2) return [];
-    const bizWhere = user.businessId ? { businessId: user.businessId } : { userId: user.id };
-    const waWhere = user.businessId ? { businessId: user.businessId } : { userId: user.id };
+    const bizWhere = user.businessId ? { businessId: user.businessId } : { userId: user.ownerId };
+    const waWhere = user.businessId ? { businessId: user.businessId } : { userId: user.ownerId };
 
     const fromSales = await this.prisma.sale.findMany({
       where: { ...bizWhere, OR: [{ customerName: { contains: q, mode: 'insensitive' } }, { customerPhone: { contains: q } }], NOT: { customerPhone: null } },
@@ -54,7 +56,7 @@ export class SalesController {
 
   @Post()
   create(@Body() dto: CreateSaleDto, @CurrentUser() user: AuthUser) {
-    return this.service.create(dto, user.id, user.businessId || undefined);
+    return this.service.create(dto, user.ownerId, user.businessId || undefined);
   }
 
   @Post(':id/send-invoice')
@@ -66,7 +68,8 @@ export class SalesController {
     const buffer = Buffer.from(body.pdfBase64, 'base64');
     const shortId = saleId.slice(0, 8).toUpperCase();
     await this.whatsappService.sendDocument(
-      user.businessId || user.id,
+      user.ownerId,
+      user.businessId || null,
       body.phone,
       buffer,
       `Facture-${shortId}.pdf`,
@@ -77,11 +80,11 @@ export class SalesController {
 
   @Patch(':id/status')
   updateStatus(@Param('id') id: string, @Body() dto: UpdateSaleStatusDto, @CurrentUser() user: AuthUser) {
-    return this.service.updateStatus(id, dto.status, user.id, user.businessId || undefined);
+    return this.service.updateStatus(id, dto.status, user.ownerId, user.businessId || undefined);
   }
 
   @Delete(':id')
   remove(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    return this.service.remove(id, user.id, user.businessId || undefined);
+    return this.service.remove(id, user.ownerId, user.businessId || undefined);
   }
 }

@@ -2,6 +2,7 @@ import { Controller, Get, Post, Patch, Delete, Body, Param } from '@nestjs/commo
 import { BusinessService } from './business.service';
 import { CreateBusinessDto, UpdateBusinessDto } from './dto/create-business.dto';
 import { CurrentUser, AuthUser } from '../auth/current-user.decorator';
+import { Roles } from '../auth/roles.guard';
 
 @Controller('businesses')
 export class BusinessController {
@@ -17,7 +18,10 @@ export class BusinessController {
     return this.service.create(user.id, dto);
   }
 
+  // Editing or deleting a business stays with its owner — the service also
+  // re-checks ownership, so an invited member can never reach another's business.
   @Patch(':id')
+  @Roles('owner')
   update(
     @CurrentUser() user: AuthUser,
     @Param('id') id: string,
@@ -27,6 +31,7 @@ export class BusinessController {
   }
 
   @Delete(':id')
+  @Roles('owner')
   remove(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.service.remove(user.id, id);
   }

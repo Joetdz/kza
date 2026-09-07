@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import { ScrollLock } from '../components/ui/ScrollLock';
 import { X } from 'lucide-react';
 
-type AuthMode = 'login' | 'register';
+export type AuthMode = 'login' | 'register';
 type InputMethod = 'email' | 'phone';
 
 const PHONE_COUNTRIES = [
@@ -31,7 +31,7 @@ const PHONE_COUNTRIES = [
 
 // ── Auth Modal ─────────────────────────────────────────────────────────────────
 
-function AuthModal({ initialMode, onClose }: { initialMode: AuthMode; onClose: () => void }) {
+export function AuthModal({ initialMode, onClose }: { initialMode: AuthMode; onClose: () => void }) {
   const [mode, setMode] = useState<AuthMode>(initialMode);
   const [inputMethod, setInputMethod] = useState<InputMethod>('email');
   const [email, setEmail] = useState('');

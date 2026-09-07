@@ -4,6 +4,8 @@ import type { Product, Sale, Expense, SalesGoal, StockMovement } from '../types'
 import { productsApi, movementsApi, salesApi, expensesApi, goalsApi, businessApi } from '../api';
 import { toast } from '../hooks/useToast';
 
+export type BusinessRole = 'owner' | 'manager' | 'operator';
+
 export interface BusinessRecord {
   id: string;
   name: string;
@@ -17,6 +19,9 @@ export interface BusinessRecord {
   isDefault: boolean;
   createdAt: string;
   updatedAt: string;
+  /** 'owner' on your own businesses; 'manager' / 'operator' on ones you were invited to. */
+  role?: BusinessRole;
+  isOwner?: boolean;
 }
 
 interface AppStore {
@@ -167,11 +172,16 @@ export const useStore = create<AppStore>()((set, get) => ({
   hydrate: async () => {
     set({ loading: true, error: null });
     try {
+      // Sales/expenses/goals are 403 for an operator role — the server enforces this,
+      // so skip calling them here rather than let one rejection sink the whole batch.
+      const current = get().businesses.find(b => b.id === get().currentBusinessId);
+      const canSeeFinances = (current?.role ?? 'owner') !== 'operator';
+
       const [products, sales, expenses, goals, movements] = await Promise.all([
         productsApi.getAll(),
-        salesApi.getAll(),
-        expensesApi.getAll(),
-        goalsApi.getAll(),
+        canSeeFinances ? salesApi.getAll() : Promise.resolve([]),
+        canSeeFinances ? expensesApi.getAll() : Promise.resolve([]),
+        canSeeFinances ? goalsApi.getAll() : Promise.resolve([]),
         movementsApi.getAll(),
       ]);
       set({ products, sales, expenses, goals, movements });

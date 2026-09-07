@@ -2,6 +2,7 @@ import { Controller, Post, Body, Get, Delete, Res } from '@nestjs/common';
 import { Response } from 'express';
 import { PrismaService } from '../prisma/prisma.service';
 import { CurrentUser, AuthUser } from '../auth/current-user.decorator';
+import { Roles } from '../auth/roles.guard';
 import OpenAI from 'openai';
 
 interface ChatMessage {
@@ -10,6 +11,7 @@ interface ChatMessage {
 }
 
 @Controller('business-ai')
+@Roles('owner', 'manager')
 export class BusinessAiController {
   private openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -219,7 +221,7 @@ DATE ACTUELLE: ${now.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long'
     @CurrentUser() user: AuthUser,
     @Body() body: { message: string; history?: ChatMessage[]; voiceMode?: boolean },
   ) {
-    const context = await this.buildContext(user.id);
+    const context = await this.buildContext(user.ownerId);
     const isVoice = !!body.voiceMode;
 
     const systemPrompt = isVoice
@@ -273,7 +275,7 @@ ${context}`;
 
   @Get('insights')
   async getInsights(@CurrentUser() user: AuthUser) {
-    const context = await this.buildContext(user.id);
+    const context = await this.buildContext(user.ownerId);
 
     const completion = await this.openai.chat.completions.create({
       model: 'gpt-4o-mini',

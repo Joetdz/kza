@@ -213,7 +213,7 @@ export class PartnerPortalController {
       ].filter(l => l !== null).join('\n');
 
       if ((partner as any).whatsappGroupId) {
-        await this.whatsapp.notifyOrder(order.userId, (partner as any).whatsappGroupId, groupMsg, imagePath);
+        await this.whatsapp.notifyOrder(order.userId, order.businessId ?? null, (partner as any).whatsappGroupId, groupMsg, imagePath);
       }
 
       // ── 2. Message personnel au livreur ──────────────────────────────
@@ -236,7 +236,7 @@ export class PartnerPortalController {
           order.notes ? `📝 Notes : ${order.notes}` : null,
         ].filter(l => l !== null).join('\n');
 
-        await this.whatsapp.notifyOrder(order.userId, agent.phone, agentMsg, imagePath);
+        await this.whatsapp.notifyOrder(order.userId, order.businessId ?? null, agent.phone, agentMsg, imagePath);
       }
     }
 

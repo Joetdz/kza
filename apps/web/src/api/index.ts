@@ -230,3 +230,57 @@ export const businessApi = {
   setDefault: (id: string) =>
     req<BusinessRecord>(`/businesses/${id}/set-default`, { method: 'POST' }),
 };
+
+// ─── Équipe ──────────────────────────────────────────────────────
+export interface TeamMember {
+  id: string;
+  userId: string;
+  email: string | null;
+  displayName: string | null;
+  role: 'manager' | 'operator';
+  createdAt: string;
+}
+
+export interface PendingInvite {
+  id: string;
+  token: string;
+  role: 'manager' | 'operator';
+  label: string | null;
+  expiresAt: string;
+  createdAt: string;
+}
+
+export interface InvitePreview {
+  status: 'pending' | 'accepted' | 'revoked' | 'expired';
+  role: 'manager' | 'operator';
+  businessName: string;
+  businessCity: string | null;
+  businessLogo: string | null;
+  expiresAt: string;
+}
+
+export const teamApi = {
+  list: (businessId: string) =>
+    req<{ members: TeamMember[]; pendingInvites: PendingInvite[] }>(`/businesses/${businessId}/team`),
+  createInvite: (businessId: string, body: { role: 'manager' | 'operator'; label?: string }) =>
+    req<PendingInvite>(`/businesses/${businessId}/team/invites`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  revokeInvite: (businessId: string, inviteId: string) =>
+    req<{ id: string }>(`/businesses/${businessId}/team/invites/${inviteId}`, { method: 'DELETE' }),
+  updateRole: (businessId: string, memberId: string, role: 'manager' | 'operator') =>
+    req<TeamMember>(`/businesses/${businessId}/team/members/${memberId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ role }),
+    }),
+  removeMember: (businessId: string, memberId: string) =>
+    req<{ id: string }>(`/businesses/${businessId}/team/members/${memberId}`, { method: 'DELETE' }),
+
+  peekInvite: (token: string) => req<InvitePreview>(`/invites?token=${encodeURIComponent(token)}`),
+  acceptInvite: (token: string) =>
+    req<{ businessId: string; businessName: string; role: 'manager' | 'operator' }>('/invites/accept', {
+      method: 'POST',
+      body: JSON.stringify({ token }),
+    }),
+};

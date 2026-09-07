@@ -5,6 +5,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
+import { RolesGuard } from './auth/roles.guard';
 import { ProductsModule } from './products/products.module';
 import { MovementsModule } from './movements/movements.module';
 import { SalesModule } from './sales/sales.module';
@@ -45,6 +46,11 @@ import { PushModule } from './push/push.module';
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
+    },
+    // Runs after JwtAuthGuard, so request.user (and its role) is already resolved.
+    {
+      provide: APP_GUARD,
+      useClass: RolesGuard,
     },
   ],
 })

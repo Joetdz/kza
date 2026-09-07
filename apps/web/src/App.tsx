@@ -20,6 +20,8 @@ import { WhatsAppLayout } from './pages/whatsapp/WhatsAppLayout';
 import { AdminDashboard } from './pages/AdminDashboard';
 import { Logistics } from './pages/Logistics';
 import { Clients } from './pages/Clients';
+import { Team } from './pages/Team';
+import { AcceptInvite } from './pages/AcceptInvite';
 import { PartnerPortal } from './pages/PartnerPortal';
 import { Pricing } from './pages/Pricing';
 import { Inbox } from './pages/whatsapp/Inbox';
@@ -75,6 +77,13 @@ function AppInner() {
   if (hash.startsWith('#/partenaire/')) {
     const token = hash.split('/')[2];
     if (token) return <PartnerPortal token={token} />;
+  }
+
+  // Team invite — must sit above the session and "no business yet" gates below,
+  // since an invited user has neither when they open the link.
+  if (hash.startsWith('#/invitation/')) {
+    const token = hash.split('/')[2];
+    if (token) return <AcceptInvite token={token} />;
   }
 
   if (hash.startsWith('#/boutique/')) {
@@ -184,6 +193,7 @@ function AppInner() {
           <Route path="/admin" element={<AdminDashboard />} />
           <Route path="/logistique" element={<Logistics />} />
           <Route path="/clients" element={<Clients />} />
+          <Route path="/equipe" element={<Team />} />
           <Route path="/whatsapp" element={<WhatsAppLayout />}>
             <Route index element={<Inbox />} />
             <Route path="ia" element={<AIConfig />} />

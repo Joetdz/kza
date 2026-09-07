@@ -25,8 +25,52 @@ model Business {
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
+  members BusinessMember[]
+  invites BusinessInvite[]
+
   @@index([userId])
   @@map("businesses")
+}
+
+// ─── Équipe (membres invités sur un business) ────────────────────────────────
+
+// A business is owned by Business.userId. Other people reach it through a
+// membership row: they keep their own account, but read the owner's data.
+model BusinessMember {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  businessId String   @map("business_id") @db.Uuid
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  userId     String   @map("user_id")
+  email      String?
+  displayName String? @map("display_name")
+  role       String   @default("operator") // "manager" | "operator"
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@unique([businessId, userId])
+  @@index([userId])
+  @@index([businessId])
+  @@map("business_members")
+}
+
+// One-shot invite link. The owner shares the token (typically over WhatsApp);
+// whoever opens it while signed in becomes a member of that business.
+model BusinessInvite {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  businessId String    @map("business_id") @db.Uuid
+  business   Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  token      String    @unique
+  role       String    @default("operator")
+  label      String?
+  createdBy  String    @map("created_by")
+  acceptedBy String?   @map("accepted_by")
+  acceptedAt DateTime? @map("accepted_at")
+  revokedAt  DateTime? @map("revoked_at")
+  expiresAt  DateTime  @map("expires_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  @@index([businessId])
+  @@map("business_invites")
 }
 
 model Product {
@@ -149,7 +193,7 @@ model SalesGoal {
 
 model WhatsAppSession {
   id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId     String   @unique @map("user_id")
+  userId     String   @map("user_id")
   businessId String?  @map("business_id") @db.Uuid
   authState  Json?    @map("auth_state")
   connected  Boolean  @default(false)
@@ -157,19 +201,22 @@ model WhatsAppSession {
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
 
+  @@unique([userId, businessId])
   @@index([businessId])
   @@map("wa_sessions")
 }
 
 model WaBaileyAuthKey {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId    String   @map("user_id")
-  keyType   String   @map("key_type")
-  keyId     String   @map("key_id")
-  keyData   Json     @map("key_data")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String   @map("user_id")
+  businessId String?  @map("business_id") @db.Uuid
+  keyType    String   @map("key_type")
+  keyId      String   @map("key_id")
+  keyData    Json     @map("key_data")
+  updatedAt  DateTime @updatedAt @map("updated_at")
 
-  @@unique([userId, keyType, keyId])
+  @@unique([userId, businessId, keyType, keyId])
+  @@index([businessId])
   @@map("wa_baileys_keys")
 }
 
@@ -202,7 +249,7 @@ model WhatsAppContact {
   tags     WhatsAppContactTag[]
   mentions WhatsAppProductMention[]
 
-  @@unique([userId, phone])
+  @@unique([userId, businessId, phone])
   @@index([userId])
   @@index([businessId])
   @@map("wa_contacts")
@@ -227,7 +274,7 @@ model WhatsAppMessage {
 
   contact WhatsAppContact @relation(fields: [contactId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, waId])
+  @@unique([userId, businessId, waId])
   @@index([contactId])
   @@index([businessId])
   @@map("wa_messages")
@@ -255,7 +302,7 @@ model WhatsAppTag {
 
   contacts WhatsAppContactTag[]
 
-  @@unique([userId, name])
+  @@unique([userId, businessId, name])
   @@index([businessId])
   @@map("wa_tags")
 }
@@ -273,7 +320,7 @@ model WhatsAppContactTag {
 
 model WhatsAppAIConfig {
   id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId              String   @unique @map("user_id")
+  userId              String   @map("user_id")
   businessId          String?  @map("business_id") @db.Uuid
   enabled             Boolean  @default(true)
   systemPrompt        String   @default("") @map("system_prompt")
@@ -292,7 +339,9 @@ model WhatsAppAIConfig {
   createdAt           DateTime @default(now()) @map("created_at")
   updatedAt           DateTime @updatedAt @map("updated_at")
 
+  @@unique([userId, businessId])
   @@index([userId])
+  @@index([businessId])
   @@map("wa_ai_configs")
 }
 
@@ -370,7 +419,8 @@ model ProductCategory {
 
 model OnlineStore {
   id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId        String   @unique @map("user_id")
+  userId        String   @map("user_id")
+  businessId    String?  @map("business_id") @db.Uuid
   slug          String   @unique
   name          String
   description   String?
@@ -387,6 +437,8 @@ model OnlineStore {
   products StoreProduct[]
   orders   StoreOrder[]
 
+  @@unique([userId, businessId])
+  @@index([businessId])
   @@map("online_stores")
 }
 
@@ -634,7 +686,7 @@ model ManualOrder {
   createdAt          DateTime        @default(now()) @map("created_at")
   updatedAt          DateTime        @default(now()) @updatedAt @map("updated_at")
 
-  @@unique([userId, orderNumber])
+  @@unique([userId, businessId, orderNumber])
   @@index([businessId])
   @@map("manual_orders")
 }
@@ -668,7 +720,8 @@ model LocationStock {
 
 model WaFollowUpConfig {
   id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId           String   @unique @map("user_id")
+  userId           String   @map("user_id")
+  businessId       String?  @map("business_id") @db.Uuid
   relanceEnabled   Boolean  @default(false) @map("relance_enabled")
   relanceDelayH    Int      @default(24) @map("relance_delay_h")
   relanceTemplate  String   @default("Bonjour {{nom}}, votre commande #{{numero_commande}} ({{produit}}) n'a pas encore été livrée. Êtes-vous disponible pour la réception ?") @map("relance_template")
@@ -678,6 +731,8 @@ model WaFollowUpConfig {
   createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @updatedAt @map("updated_at")
 
+  @@unique([userId, businessId])
+  @@index([businessId])
   @@map("wa_followup_configs")
 }
 

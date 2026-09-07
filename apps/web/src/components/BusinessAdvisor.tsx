@@ -4,6 +4,7 @@ import {
   BrainCircuit, Send, Loader2, ChevronDown, Sparkles,
   Trash2, Mic, MicOff, PhoneCall, PhoneOff, X,
 } from 'lucide-react';
+import { useRole } from '../hooks/useRole';
 
 const BASE = (import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api');
 
@@ -13,11 +14,13 @@ type CallState = 'idle' | 'listening' | 'thinking' | 'speaking';
 
 async function authReq<T>(path: string, init?: RequestInit): Promise<T> {
   const { data: { session } } = await supabase.auth.getSession();
+  const bizId = localStorage.getItem('kza_business_id') ?? '';
   const res = await fetch(`${BASE}${path}`, {
     ...init,
     headers: {
       'Content-Type': 'application/json',
       ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+      ...(bizId ? { 'X-Business-Id': bizId } : {}),
       ...(init?.headers ?? {}),
     },
   });
@@ -64,6 +67,7 @@ const CALL_STATUS: Record<CallState, string> = {
 };
 
 export function BusinessAdvisor() {
+  const { canSeeFinances } = useRole();
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<'chat' | 'call'>('chat');
   const [messages, setMessages] = useState<Msg[]>([]);
@@ -278,6 +282,10 @@ export function BusinessAdvisor() {
   const panelStyle: React.CSSProperties = isMobile
     ? { inset: 0, borderRadius: 0 }
     : { width: 420, height: 640, bottom: 24, right: 24, borderRadius: 20 };
+
+  // The advisor reasons over sales/expenses — nothing useful to show an operator,
+  // who can't see that data anyway. All hooks above still ran, so this is safe.
+  if (!canSeeFinances) return null;
 
   return (
     <>

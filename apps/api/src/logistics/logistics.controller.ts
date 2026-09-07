@@ -16,7 +16,7 @@ export class LogisticsController {
   ) {}
 
   private where(user: AuthUser) {
-    return user.businessId ? { businessId: user.businessId } : { userId: user.id };
+    return user.businessId ? { businessId: user.businessId } : { userId: user.ownerId };
   }
 
   private fmt(n: number, decimals = 0) {
@@ -45,8 +45,8 @@ export class LogisticsController {
   createLocation(@CurrentUser() user: AuthUser, @Body() body: { name: string; city: string; address?: string; type?: string }) {
     return this.prisma.stockLocation.create({
       data: {
-        userId: user.id,
-        businessId: user.businessId ?? user.id,
+        userId: user.ownerId,
+        businessId: user.businessId ?? user.ownerId,
         name: body.name,
         city: body.city,
         address: body.address,
@@ -118,8 +118,8 @@ export class LogisticsController {
   ) {
     const partner = await this.prisma.deliveryPartner.create({
       data: {
-        userId: user.id,
-        businessId: user.businessId ?? user.id,
+        userId: user.ownerId,
+        businessId: user.businessId ?? user.ownerId,
         name: body.name,
         phone: body.phone,
         city: body.city,
@@ -128,8 +128,8 @@ export class LogisticsController {
     });
     await this.prisma.stockLocation.create({
       data: {
-        userId: user.id,
-        businessId: user.businessId ?? user.id,
+        userId: user.ownerId,
+        businessId: user.businessId ?? user.ownerId,
         name: body.name,
         city: body.city ?? '',
         type: 'PARTNER',
@@ -229,13 +229,13 @@ export class LogisticsController {
     const totalAmount = body.items.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
 
     const bizWhere = this.where(user);
-    const maxResult = await this.prisma.manualOrder.aggregate({ where: { userId: user.id }, _max: { orderNumber: true } });
+    const maxResult = await this.prisma.manualOrder.aggregate({ where: { userId: user.ownerId }, _max: { orderNumber: true } });
     const orderNumber = (maxResult._max.orderNumber ?? 0) + 1;
 
     const order = await this.prisma.manualOrder.create({
       data: {
-        userId: user.id,
-        businessId: user.businessId ?? user.id,
+        userId: user.ownerId,
+        businessId: user.businessId ?? user.ownerId,
         orderNumber,
         customerName: body.customerName,
         customerPhone: body.customerPhone,
@@ -371,7 +371,7 @@ export class LogisticsController {
           ? join(uploadsRoot, (firstWithImage.product.imageUrl as string).replace(/^\/uploads\//, ''))
           : undefined;
 
-        this.whatsapp.notifyOrder(order.userId, destination, msg, imagePath)
+        this.whatsapp.notifyOrder(order.userId, order.businessId ?? null, destination, msg, imagePath)
           .then(sent => this.logger.log(`[dispatch] WA sent=${sent} for order=${id}`))
           .catch(err => this.logger.warn(`[dispatch] WA error: ${err?.message}`));
       }
@@ -476,7 +476,7 @@ export class LogisticsController {
       ? join(uploadsRoot, (firstWithImage.product.imageUrl as string).replace(/^\/uploads\//, ''))
       : undefined;
 
-    const sent = await this.whatsapp.notifyOrder(user.id, destination, msg, imagePath);
+    const sent = await this.whatsapp.notifyOrder(user.ownerId, user.businessId || null, destination, msg, imagePath);
     return { sent };
   }
 
@@ -489,7 +489,7 @@ export class LogisticsController {
 
   @Get('my/logistics/followup/config')
   getFollowUpConfig(@CurrentUser() user: AuthUser) {
-    return this.followUp.getConfig(user.id);
+    return this.followUp.getConfig(user.ownerId, user.businessId || null);
   }
 
   @Patch('my/logistics/followup/config')
@@ -501,33 +501,33 @@ export class LogisticsController {
     loyaltyDelayH?: number;
     loyaltyTemplate?: string;
   }) {
-    return this.followUp.updateConfig(user.id, body);
+    return this.followUp.updateConfig(user.ownerId, body, user.businessId || null);
   }
 
   @Get('my/logistics/followup/history')
   getFollowUpHistory(@CurrentUser() user: AuthUser, @Query('limit') limit?: string) {
-    return this.followUp.getHistory(user.id, limit ? parseInt(limit, 10) : 50);
+    return this.followUp.getHistory(user.ownerId, limit ? parseInt(limit, 10) : 50);
   }
 
   @Get('my/logistics/followup/preview-relance')
   previewRelance(@CurrentUser() user: AuthUser) {
-    return this.followUp.previewRelance(user.id);
+    return this.followUp.previewRelance(user.ownerId, user.businessId || null);
   }
 
   @Get('my/logistics/followup/preview-loyalty')
   previewLoyalty(@CurrentUser() user: AuthUser) {
-    return this.followUp.previewLoyalty(user.id);
+    return this.followUp.previewLoyalty(user.ownerId, user.businessId || null);
   }
 
   @Post('my/logistics/followup/trigger-relance')
   async triggerRelance(@CurrentUser() user: AuthUser) {
-    const sent = await this.followUp.triggerRelance(user.id);
+    const sent = await this.followUp.triggerRelance(user.ownerId, user.businessId || null);
     return { sent };
   }
 
   @Post('my/logistics/followup/trigger-loyalty')
   async triggerLoyalty(@CurrentUser() user: AuthUser) {
-    const sent = await this.followUp.triggerLoyalty(user.id);
+    const sent = await this.followUp.triggerLoyalty(user.ownerId, user.businessId || null);
     return { sent };
   }
 
@@ -649,7 +649,7 @@ export class LogisticsController {
   async getPayments(@CurrentUser() user: AuthUser, @Query('status') status?: string) {
     return this.prisma.partnerPayment.findMany({
       where: {
-        partner: { userId: user.id },
+        partner: { userId: user.ownerId },
         ...(status ? { status } : {}),
       },
       include: { partner: { select: { id: true, name: true, city: true } } },
@@ -664,7 +664,7 @@ export class LogisticsController {
     @Body() body: { notes?: string },
   ) {
     const payment = await this.prisma.partnerPayment.findFirst({
-      where: { id, partner: { userId: user.id } },
+      where: { id, partner: { userId: user.ownerId } },
     });
     if (!payment) return null;
     return this.prisma.partnerPayment.update({
@@ -680,7 +680,7 @@ export class LogisticsController {
     @Body() body: { notes?: string },
   ) {
     const payment = await this.prisma.partnerPayment.findFirst({
-      where: { id, partner: { userId: user.id } },
+      where: { id, partner: { userId: user.ownerId } },
     });
     if (!payment) return null;
     return this.prisma.partnerPayment.update({
@@ -702,7 +702,7 @@ export class LogisticsController {
     const end   = new Date(date); end.setHours(23, 59, 59, 999);
 
     const partner = await this.prisma.deliveryPartner.findFirst({
-      where: { id: partnerId, userId: user.id },
+      where: { id: partnerId, userId: user.ownerId },
       include: { location: { include: { stocks: { include: { product: true } } } } },
     });
     if (!partner) return null;

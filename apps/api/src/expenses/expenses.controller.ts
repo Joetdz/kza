@@ -2,28 +2,30 @@ import { Controller, Get, Post, Patch, Delete, Body, Param } from '@nestjs/commo
 import { ExpensesService } from './expenses.service';
 import { CreateExpenseDto } from './dto/create-expense.dto';
 import { CurrentUser, AuthUser } from '../auth/current-user.decorator';
+import { Roles } from '../auth/roles.guard';
 
 @Controller('expenses')
+@Roles('owner', 'manager')
 export class ExpensesController {
   constructor(private readonly service: ExpensesService) {}
 
   @Get()
   findAll(@CurrentUser() user: AuthUser) {
-    return this.service.findAll(user.id, user.businessId || undefined);
+    return this.service.findAll(user.ownerId, user.businessId || undefined);
   }
 
   @Post()
   create(@Body() dto: CreateExpenseDto, @CurrentUser() user: AuthUser) {
-    return this.service.create(dto, user.id, user.businessId || undefined);
+    return this.service.create(dto, user.ownerId, user.businessId || undefined);
   }
 
   @Patch(':id')
   update(@Param('id') id: string, @Body() dto: Partial<CreateExpenseDto>, @CurrentUser() user: AuthUser) {
-    return this.service.update(id, dto, user.id, user.businessId || undefined);
+    return this.service.update(id, dto, user.ownerId, user.businessId || undefined);
   }
 
   @Delete(':id')
   remove(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    return this.service.remove(id, user.id, user.businessId || undefined);
+    return this.service.remove(id, user.ownerId, user.businessId || undefined);
   }
 }

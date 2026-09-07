@@ -1,15 +1,11 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, Trash2, MapPin, Truck, ShoppingBag, ChevronRight, X, Package, AlertCircle, MessageCircle, BarChart2, Link, Printer, Edit2, Check, Calendar, DollarSign, FileText, Bell, RefreshCw, Phone, Search } from 'lucide-react';
-import { useAuth } from '../contexts/AuthContext';
+import { Plus, Trash2, MapPin, Truck, ShoppingBag, ChevronRight, X, Package, MessageCircle, BarChart2, Link, Printer, Edit2, Check, Calendar, DollarSign, FileText, Bell, RefreshCw, Phone, Search } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { logisticsApi, type StockLocation, type DeliveryPartner, type ManualOrder, type PartnerReport, type PartnerPayment, type FollowUpConfig, type FollowUpEntry } from '../api/logistics';
 import { ScrollLock } from '../components/ui/ScrollLock';
 import { CitySelect } from '../components/CitySelect';
 import { waApi } from '../api/whatsapp';
-
-const ADMIN_EMAILS = (import.meta.env.VITE_ADMIN_EMAILS ?? '')
-  .split(',').map((e: string) => e.trim().toLowerCase()).filter(Boolean);
 
 const CITY_COMMUNES: Record<string, string[]> = {
   'Kinshasa': [
@@ -53,9 +49,7 @@ function orderNum(n: number) {
 }
 
 export function Logistics() {
-  const { user } = useAuth();
   const { products } = useStore();
-  const isAdmin = !!user?.email && ADMIN_EMAILS.includes(user.email.toLowerCase());
 
   const [tab, setTab] = useState<'locations' | 'partners' | 'orders' | 'payments' | 'relance'>('locations');
   const [locations, setLocations] = useState<StockLocation[]>([]);
@@ -537,16 +531,6 @@ export function Logistics() {
     } catch { /* ignore */ }
   }
 
-  if (!isAdmin) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center p-8">
-          <AlertCircle size={40} className="text-gray-300 mx-auto mb-3" />
-          <p className="text-gray-500 font-medium">Accès réservé à l'administrateur</p>
-        </div>
-      </div>
-    );
-  }
 
   const pendingPaymentsCount = payments.filter(p => p.status === 'pending').length;
 

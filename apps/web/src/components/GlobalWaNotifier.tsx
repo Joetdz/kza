@@ -136,6 +136,14 @@ export function GlobalWaNotifier() {
         return;
       }
 
+      // Events reach every socket of the user — each business has its own WhatsApp
+      // connection, so drop what belongs to a business we're not currently showing.
+      const currentBusinessId = localStorage.getItem('kza_business_id');
+      if (data?.businessId && currentBusinessId && data.businessId !== currentBusinessId) {
+        console.debug('[GlobalWaNotifier] draft-order-created ignored — other business', data.businessId);
+        return;
+      }
+
       console.debug('[GlobalWaNotifier] draft-order-created', data);
       const now = Date.now();
       if (now - lastFired < 1500) return;
