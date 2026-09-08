@@ -72,6 +72,20 @@ interface CachedMsg {
   sentAt: string;
 }
 
+// Messages a contact sent in a rapid burst, accumulated while we wait to see if
+// they're still typing — flushed as one turn once the burst goes quiet.
+interface PendingBatch {
+  texts: string[];
+  isFirst: boolean;
+  jid: string;
+  contactId: string;
+  aiEnabled: boolean;
+  leadStatus: string | null;
+  mediaBase64?: string;
+  mediaMimetype?: string;
+  hasContent: boolean;
+}
+
 export type WaGatewayCallback = (event: string, userId: string, data: any) => void;
 
 const silentLogger = pino({ level: 'silent' });
@@ -109,6 +123,15 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
   private connectionOpenAt = new Map<string, number>();
   // LID (Linked Device ID) → real phone (@c.us format): key = `userId:lid`
   private lidToPhone = new Map<string, string>();
+  // Sessions with a connect() in flight — the socket lands in `sockets` only seconds
+  // later, and this holds the key in the meantime so nothing opens a rival stream.
+  private connecting = new Set<string>();
+  // At most one pending reconnect per session
+  private reconnectTimers = new Map<string, NodeJS.Timeout>();
+  // Messages awaiting the quiet window before the bot engages: key = `userId:businessId:phone`
+  private pendingBatches = new Map<string, PendingBatch>();
+  // Debounce timers backing pendingBatches — reset on every new message in the burst
+  private engagementTimers = new Map<string, NodeJS.Timeout>();
   // Trigger label names (case/accent-insensitive) that auto-create a draft order.
   // Short prefixes — matching uses .includes() so "livraison programmée" still matches "livraison".
   private static DRAFT_TRIGGER_LABELS = ['livraison', 'new order', 'commande', 'nouvelle commande'];
@@ -271,19 +294,32 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
     return jidToDb(jid);
   }
 
-  private scheduleReconnect(userId: string, businessId: string | null) {
+  private scheduleReconnect(userId: string, businessId: string | null, statusCode?: number) {
     const key = this.waKey(userId, businessId);
     if (this.loggedOut.has(key)) return;
     // Don't auto-reconnect if a pairing is in progress — let the timeout handle it
     if (this.pairingPhones.has(key)) return;
-    const delay = Math.min(this.reconnectDelay.get(key) ?? 5000, 60_000);
+
+    // Never leave two reconnects pending: both timers would fire on an empty socket
+    // map and each open its own stream.
+    const pending = this.reconnectTimers.get(key);
+    if (pending) clearTimeout(pending);
+
+    // A 440 means another client currently holds this session. Retrying every 5 s just
+    // trades kicks with it, so wait long enough for whoever owns it to settle.
+    const isConflict = statusCode === DisconnectReason.connectionReplaced;
+    const floor = isConflict ? 60_000 : 5000;
+    const delay = Math.min(Math.max(this.reconnectDelay.get(key) ?? floor, floor), 120_000);
     this.reconnectDelay.set(key, delay * 2);
-    this.logger.log(`Reconnecting ${key} in ${delay}ms`);
-    setTimeout(() => {
-      if (!this.loggedOut.has(key) && !this.sockets.has(key) && !this.pairingPhones.has(key)) {
+    this.logger.log(`Reconnecting ${key} in ${delay}ms${isConflict ? ' (conflict — another client holds this session)' : ''}`);
+
+    const timer = setTimeout(() => {
+      this.reconnectTimers.delete(key);
+      if (!this.loggedOut.has(key) && !this.sockets.has(key) && !this.connecting.has(key) && !this.pairingPhones.has(key)) {
         this.connect(userId, businessId);
       }
     }, delay);
+    this.reconnectTimers.set(key, timer);
   }
 
   // ── Anti-ban helpers ──────────────────────────────────────────────────────────
@@ -344,27 +380,40 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
   async connect(userId: string, businessId: string | null): Promise<void> {
     const key = this.waKey(userId, businessId);
 
-    if (this.sockets.has(key)) {
+    // Claim the key before the first await. The socket is only registered in
+    // `this.sockets` further down, after a DB read and a version fetch that can take
+    // 5 s — a second connect() slipping into that gap would open a rival stream on the
+    // same credentials, and WhatsApp answers that with a 440 conflict that kills one of
+    // the two. Whichever loses then tears down state and reconnects, on repeat.
+    if (this.sockets.has(key) || this.connecting.has(key)) {
       const session = await this.prisma.whatsAppSession.findFirst({ where: { userId, businessId } });
       if (session?.connected && this.connectedUsers.has(key)) {
         this.emit('connected', userId, businessId, { phone: session.phone });
       }
       return;
     }
+    this.connecting.add(key);
 
-    const { state, saveCreds } = await useDbAuthState(userId, businessId, this.prisma);
-
-    // fetchLatestBaileysVersion hits GitHub — may hang on VPS; fall back to pinned version after 5s
-    const FALLBACK_VERSION: [number, number, number] = [2, 3000, 1015901307];
+    let state: Awaited<ReturnType<typeof useDbAuthState>>['state'];
+    let saveCreds: Awaited<ReturnType<typeof useDbAuthState>>['saveCreds'];
     let version: [number, number, number];
     try {
-      const timeout = new Promise<{ version: [number, number, number] }>(resolve =>
-        setTimeout(() => resolve({ version: FALLBACK_VERSION }), 5000),
-      );
-      const result = await Promise.race([fetchLatestBaileysVersion(), timeout]);
-      version = result.version;
-    } catch {
-      version = FALLBACK_VERSION;
+      ({ state, saveCreds } = await useDbAuthState(userId, businessId, this.prisma));
+
+      // fetchLatestBaileysVersion hits GitHub — may hang on VPS; fall back to pinned version after 5s
+      const FALLBACK_VERSION: [number, number, number] = [2, 3000, 1015901307];
+      try {
+        const timeout = new Promise<{ version: [number, number, number] }>(resolve =>
+          setTimeout(() => resolve({ version: FALLBACK_VERSION }), 5000),
+        );
+        const result = await Promise.race([fetchLatestBaileysVersion(), timeout]);
+        version = result.version;
+      } catch {
+        version = FALLBACK_VERSION;
+      }
+    } catch (err) {
+      this.connecting.delete(key);
+      throw err;
     }
 
     const pairingPhone = this.pairingPhones.get(key);
@@ -381,6 +430,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
     });
 
     this.sockets.set(key, sock);
+    this.connecting.delete(key);
 
     // DEBUG: intercept ALL Baileys events to diagnose label issues
     const _origEmit = (sock.ev as any).emit.bind(sock.ev);
@@ -423,6 +473,39 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
       if (connection === 'open') {
         const rawId = sock.user?.id ?? '';
         const phone = rawId ? jidNormalizedUser(rawId).split('@')[0] : null;
+
+        // One number belongs to exactly one business. Linking the same WhatsApp account
+        // to a second business would leave two sessions fighting over the single stream
+        // WhatsApp allows per set of credentials — an endless 440 conflict loop. Refuse
+        // the newcomer instead, and stop it retrying.
+        if (phone) {
+          const takenBy = await this.prisma.whatsAppSession.findFirst({
+            where: { userId, phone, NOT: { businessId } },
+            select: { businessId: true },
+          });
+          if (takenBy) {
+            const owner = await this.prisma.business.findUnique({
+              where: { id: takenBy.businessId ?? '' },
+              select: { name: true },
+            });
+            const ownerName = owner?.name ?? 'un autre business';
+            this.logger.warn(`Refusing ${key}: number ${phone} is already linked to ${ownerName} (${takenBy.businessId})`);
+
+            this.loggedOut.add(key); // block scheduleReconnect
+            this.sockets.delete(key);
+            this.connectedUsers.delete(key);
+            (sock.ev as any).removeAllListeners();
+            sock.end(new Error('duplicate number'));
+
+            await clearDbAuth(userId, businessId, this.prisma).catch(() => {});
+            await this.markSession(userId, businessId, { connected: false, phone: null }).catch(() => {});
+            this.emit('pairing_error', userId, businessId, {
+              message: `Ce numéro est déjà connecté à « ${ownerName} ». Chaque business doit avoir son propre numéro WhatsApp.`,
+            });
+            return;
+          }
+        }
+
         this.connectedUsers.add(key);
         this.reconnectDelay.set(key, 5000);
         this.pairingPhones.delete(key);
@@ -454,11 +537,22 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
       }
 
       if (connection === 'close') {
+        const statusCode = (lastDisconnect?.error as any)?.output?.statusCode;
+
+        // A socket that has already been superseded still emits close — typically the
+        // loser of a 440 conflict. Letting it run would delete the live socket's entry
+        // and schedule a reconnect on top of a healthy connection, which is what turns
+        // a single conflict into an endless connect/kick loop.
+        if (this.sockets.get(key) !== sock) {
+          this.logger.warn(`Ignoring close from superseded socket for ${key} (statusCode=${statusCode})`);
+          return;
+        }
+
         this.clearKeepAlive(userId, businessId);
         this.sockets.delete(key);
         this.connectedUsers.delete(key);
-        const statusCode = (lastDisconnect?.error as any)?.output?.statusCode;
         const isLogout = statusCode === DisconnectReason.loggedOut;
+        this.logger.warn(`WhatsApp closed for ${key}: statusCode=${statusCode} message=${lastDisconnect?.error?.message}`);
 
         await this.markSession(userId, businessId, { connected: false }).catch(() => {});
 
@@ -477,7 +571,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
             this.loggedOut.add(key);
           }
         } else if (!this.loggedOut.has(key)) {
-          this.scheduleReconnect(userId, businessId);
+          this.scheduleReconnect(userId, businessId, statusCode);
         }
       }
     });
@@ -1010,86 +1104,173 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
       },
     });
 
+    // ── Accumulate into the pending batch, then debounce engagement ────────────────
+    // A burst of messages from the same contact collapses into a single AI turn once
+    // the burst goes quiet (see engageContact) — this also is what makes the bot wait
+    // before reacting, rather than opening/replying within milliseconds like a script.
+    const contactKey = `${key}:${phone}`;
+    const msgHasContent = !!text || ['image', 'audio'].includes(mediaType ?? '');
+    const batch = this.pendingBatches.get(contactKey);
+    if (batch) {
+      batch.texts.push(content);
+      batch.hasContent = batch.hasContent || msgHasContent;
+      batch.aiEnabled = contact.aiEnabled;
+      batch.leadStatus = contact.leadStatus ?? null;
+      if (mediaBase64 && mediaMimetype) {
+        batch.mediaBase64 = mediaBase64;
+        batch.mediaMimetype = mediaMimetype;
+      }
+    } else {
+      this.pendingBatches.set(contactKey, {
+        texts: [content],
+        isFirst,
+        jid,
+        contactId: contact.id,
+        aiEnabled: contact.aiEnabled,
+        leadStatus: contact.leadStatus ?? null,
+        mediaBase64: mediaBase64 ?? undefined,
+        mediaMimetype: mediaMimetype ?? undefined,
+        hasContent: msgHasContent,
+      });
+    }
+    this.logger.log(`[batch] ${contactKey}: ${batch ? 'appended to' : 'started'} batch (now ${this.pendingBatches.get(contactKey)?.texts.length} msg(s))`);
+    this.scheduleEngagement(contactKey, userId, businessId, phone);
+  }
+
+  // Reset (or start) the quiet-window timer for one contact. Called on every
+  // incoming message — a fresh message always pushes the flush further out, so a
+  // burst only flushes once the contact actually stops typing.
+  private scheduleEngagement(contactKey: string, userId: string, businessId: string | null, phone: string): void {
+    const prevTimer = this.engagementTimers.get(contactKey);
+    if (prevTimer) clearTimeout(prevTimer);
+
+    // 4–7s: long enough to catch a fast follow-up message, short enough to still feel
+    // prompt. Also serves as the anti-ban "a human doesn't react instantly" delay.
+    const waitMs = Math.floor(Math.random() * 3000) + 4000;
+    const timer = setTimeout(() => {
+      this.engagementTimers.delete(contactKey);
+      this.engageContact(userId, businessId, phone).catch(err =>
+        this.logger.error(`Engagement error [${contactKey}]:`, err?.message ?? err)
+      );
+    }, waitMs);
+    this.engagementTimers.set(contactKey, timer);
+  }
+
+  // Flushes one contact's pending batch: runs automations, then the AI reply, treating
+  // every message accumulated during the quiet window as a single conversational turn.
+  private async engageContact(userId: string, businessId: string | null, phone: string): Promise<void> {
+    const key = this.waKey(userId, businessId);
+    const contactKey = `${key}:${phone}`;
+    const batch = this.pendingBatches.get(contactKey);
+    if (!batch) {
+      this.logger.warn(`[engage] ${contactKey}: fired with no pending batch — should not happen`);
+      return;
+    }
+    this.pendingBatches.delete(contactKey);
+
+    const sock = this.sockets.get(key);
+    if (!sock || !this.connectedUsers.has(key)) {
+      this.logger.warn(`[engage] ${contactKey}: no live socket (sock=${!!sock}, connected=${this.connectedUsers.has(key)}) — dropping batch of ${batch.texts.length} msg(s)`);
+      return;
+    }
+
+    const combinedText = batch.texts.filter(Boolean).join('\n');
+    const jid = batch.jid;
+    this.logger.log(`[engage] ${contactKey}: flushing ${batch.texts.length} msg(s) — "${combinedText.slice(0, 120)}"`);
+
     // ── Automations ───────────────────────────────────────────────────────────────
-    const event = isFirst ? 'welcome' : 'message';
-    const autoMessages = await this.automationService.process(userId, contact.id, event, { message: text });
+    const event = batch.isFirst ? 'welcome' : 'message';
+    const autoMessages = await this.automationService.process(userId, batch.contactId, event, { message: combinedText });
     for (const autoMsg of autoMessages) {
-      await this.sendMessageViaSocket(userId, businessId, sock, jid, phone, autoMsg, contact.id, null);
+      await this.sendMessageViaSocket(userId, businessId, sock, jid, phone, autoMsg, batch.contactId, null);
+    }
+    if (autoMessages.length > 0) {
+      this.logger.log(`[engage] ${contactKey}: ${autoMessages.length} automation reply sent, skipping AI`);
     }
 
     // ── AI reply ──────────────────────────────────────────────────────────────────
-    const hasContent = !!text || ['image', 'audio'].includes(mediaType ?? '');
-    if (contact.aiEnabled && autoMessages.length === 0 && hasContent) {
-      const aiConfig = await this.prisma.whatsAppAIConfig.findFirst({ where: { userId, businessId } });
-      const hasAgentConfig = !!aiConfig?.systemPrompt?.trim() && aiConfig.enabled;
-      const kbCount = await this.prisma.whatsAppKBEntry.count({ where: { userId, businessId, enabled: true } });
-      if (!hasAgentConfig || kbCount === 0) return;
+    if (!batch.aiEnabled || autoMessages.length > 0 || !batch.hasContent) {
+      this.logger.log(`[engage] ${contactKey}: AI skipped (aiEnabled=${batch.aiEnabled}, autoSent=${autoMessages.length}, hasContent=${batch.hasContent})`);
+      return;
+    }
 
-      const delay = Math.floor(Math.random() * 7000) + 3000; // 3–10s random
+    const aiConfig = await this.prisma.whatsAppAIConfig.findFirst({ where: { userId, businessId } });
+    const hasAgentConfig = !!aiConfig?.systemPrompt?.trim() && aiConfig.enabled;
+    const kbCount = await this.prisma.whatsAppKBEntry.count({ where: { userId, businessId, enabled: true } });
+    if (!hasAgentConfig || kbCount === 0) {
+      this.logger.log(`[engage] ${contactKey}: AI not configured (hasAgentConfig=${hasAgentConfig}, kbCount=${kbCount}) — no reply`);
+      return;
+    }
 
-      await sock.sendPresenceUpdate('composing', jid).catch(() => {});
-      await new Promise(r => setTimeout(r, delay));
-      await sock.sendPresenceUpdate('paused', jid).catch(() => {});
+    const delay = Math.floor(Math.random() * 7000) + 3000; // 3–10s "typing" on top of the quiet window above
 
-      // History from in-memory cache (excludes current message)
-      const history = this.getCache(userId, businessId, phone).slice(0, -1).map(m => ({
-        direction: m.direction,
-        content: m.content,
-      }));
+    await sock.sendPresenceUpdate('composing', jid).catch(() => {});
+    await new Promise(r => setTimeout(r, delay));
+    await sock.sendPresenceUpdate('paused', jid).catch(() => {});
 
-      const aiResult = await this.aiService.reply(
-        userId, businessId, phone, history, text,
-        mediaBase64 ?? undefined, mediaMimetype ?? undefined,
-        contact.leadStatus ?? undefined,
-      );
+    // History excludes this batch's own messages — they become the new turn below.
+    const fullCache = this.getCache(userId, businessId, phone);
+    const history = fullCache.slice(0, -batch.texts.length).map(m => ({
+      direction: m.direction,
+      content: m.content,
+    }));
 
-      if (aiResult?.text) {
-        await this.sendMessageViaSocket(userId, businessId, sock, jid, phone, aiResult.text, contact.id, true);
+    const aiResult = await this.aiService.reply(
+      userId, businessId, phone, history, combinedText,
+      batch.mediaBase64, batch.mediaMimetype,
+      batch.leadStatus ?? undefined,
+    );
 
-        if (aiResult.imageUrl) {
-          await this.sendImageViaSocket(sock, jid, aiResult.imageUrl).catch(() => {});
-        }
+    if (!aiResult?.text) {
+      this.logger.log(`[engage] ${contactKey}: aiService.reply returned no text — nothing to send`);
+      return;
+    }
+    this.logger.log(`[engage] ${contactKey}: sending AI reply (${aiResult.text.length} chars)`);
 
-        if (aiResult.shouldEscalate) {
-          await this.prisma.whatsAppContact.update({ where: { id: contact.id }, data: { aiEnabled: false } });
-          this.emit('contact-updated', userId, businessId, { contactId: contact.id, aiEnabled: false });
-        }
+    await this.sendMessageViaSocket(userId, businessId, sock, jid, phone, aiResult.text, batch.contactId, true);
 
-        const qualifyHistory = [
-          ...history,
-          { direction: 'in', content: text },
-          { direction: 'out', content: aiResult.text },
-        ];
-        const qualification = await this.aiService.qualify(userId, qualifyHistory);
-        if (qualification && Object.keys(qualification).length > 0) {
-          await this.prisma.whatsAppContact.update({
-            where: { id: contact.id },
-            data: {
-              ...(qualification.leadName && { leadName: qualification.leadName }),
-              ...(qualification.leadNeed && { leadNeed: qualification.leadNeed }),
-              ...(qualification.leadBudget && { leadBudget: qualification.leadBudget }),
-              ...(qualification.leadCity && { leadCity: qualification.leadCity }),
-              ...(qualification.leadUrgency && { leadUrgency: qualification.leadUrgency }),
-              ...(qualification.leadProduct && { leadProduct: qualification.leadProduct }),
-              ...(qualification.leadScore !== undefined && { leadScore: qualification.leadScore }),
-              ...(qualification.leadStatus && { leadStatus: qualification.leadStatus }),
-            },
-          });
-          this.emit('lead-updated', userId, businessId, { contactId: contact.id, ...qualification });
+    if (aiResult.imageUrl) {
+      await this.sendImageViaSocket(sock, jid, aiResult.imageUrl).catch(() => {});
+    }
 
-          if (qualification.leadStatus === 'hot' && contact.leadStatus !== 'hot') {
-            await this.automationService.process(userId, contact.id, 'lead_status', { status: 'hot' });
-          }
-          if (qualification.leadStatus === 'converted' && contact.leadStatus !== 'converted') {
-            const recap = await this.aiService.generateOrderRecap(qualifyHistory, aiConfig?.primaryLanguage ?? 'fr');
-            if (recap) await this.sendMessageViaSocket(userId, businessId, sock, jid, phone, recap, contact.id, true);
-            // Mark all product mentions for this contact as converted
-            await this.prisma.whatsAppProductMention.updateMany({
-              where: { contactId: contact.id, isConverted: false },
-              data: { isConverted: true },
-            }).catch(() => {});
-          }
-        }
+    if (aiResult.shouldEscalate) {
+      await this.prisma.whatsAppContact.update({ where: { id: batch.contactId }, data: { aiEnabled: false } });
+      this.emit('contact-updated', userId, businessId, { contactId: batch.contactId, aiEnabled: false });
+    }
+
+    const qualifyHistory = [
+      ...history,
+      { direction: 'in', content: combinedText },
+      { direction: 'out', content: aiResult.text },
+    ];
+    const qualification = await this.aiService.qualify(userId, qualifyHistory);
+    if (qualification && Object.keys(qualification).length > 0) {
+      await this.prisma.whatsAppContact.update({
+        where: { id: batch.contactId },
+        data: {
+          ...(qualification.leadName && { leadName: qualification.leadName }),
+          ...(qualification.leadNeed && { leadNeed: qualification.leadNeed }),
+          ...(qualification.leadBudget && { leadBudget: qualification.leadBudget }),
+          ...(qualification.leadCity && { leadCity: qualification.leadCity }),
+          ...(qualification.leadUrgency && { leadUrgency: qualification.leadUrgency }),
+          ...(qualification.leadProduct && { leadProduct: qualification.leadProduct }),
+          ...(qualification.leadScore !== undefined && { leadScore: qualification.leadScore }),
+          ...(qualification.leadStatus && { leadStatus: qualification.leadStatus }),
+        },
+      });
+      this.emit('lead-updated', userId, businessId, { contactId: batch.contactId, ...qualification });
+
+      if (qualification.leadStatus === 'hot' && batch.leadStatus !== 'hot') {
+        await this.automationService.process(userId, batch.contactId, 'lead_status', { status: 'hot' });
+      }
+      if (qualification.leadStatus === 'converted' && batch.leadStatus !== 'converted') {
+        const recap = await this.aiService.generateOrderRecap(qualifyHistory, aiConfig?.primaryLanguage ?? 'fr');
+        if (recap) await this.sendMessageViaSocket(userId, businessId, sock, jid, phone, recap, batch.contactId, true);
+        // Mark all product mentions for this contact as converted
+        await this.prisma.whatsAppProductMention.updateMany({
+          where: { contactId: batch.contactId, isConverted: false },
+          data: { isConverted: true },
+        }).catch(() => {});
       }
     }
   }
@@ -1581,8 +1762,25 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
 
     await this.markSession(userId, businessId, { connected: false }).catch(() => {});
 
+    const pendingReconnect = this.reconnectTimers.get(key);
+    if (pendingReconnect) { clearTimeout(pendingReconnect); this.reconnectTimers.delete(key); }
+    this.connecting.delete(key);
+
     this.pendingSendIds.delete(key);
+    this.clearPendingEngagements(key);
     this.emit('disconnected', userId, businessId, {});
+  }
+
+  // Drop any queued "reply after the burst goes quiet" work for one business — its
+  // socket is gone, so engageContact would only no-op anyway; this just skips the wait.
+  private clearPendingEngagements(businessKey: string): void {
+    const prefix = `${businessKey}:`;
+    for (const [contactKey, timer] of this.engagementTimers) {
+      if (!contactKey.startsWith(prefix)) continue;
+      clearTimeout(timer);
+      this.engagementTimers.delete(contactKey);
+      this.pendingBatches.delete(contactKey);
+    }
   }
 
   async getStatus(userId: string, businessId: string | null) {
@@ -1606,6 +1804,12 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
   onModuleDestroy() {
     for (const [, timer] of this.keepAliveTimers) clearInterval(timer);
     this.keepAliveTimers.clear();
+    for (const [, timer] of this.engagementTimers) clearTimeout(timer);
+    this.engagementTimers.clear();
+    this.pendingBatches.clear();
+    for (const [, timer] of this.reconnectTimers) clearTimeout(timer);
+    this.reconnectTimers.clear();
+    this.connecting.clear();
     for (const [, sock] of this.sockets) {
       (sock.ev as any).removeAllListeners();
       sock.end(new Error('shutdown'));
