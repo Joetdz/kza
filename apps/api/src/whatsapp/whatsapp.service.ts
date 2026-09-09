@@ -18,6 +18,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import pino from 'pino';
 import { useDbAuthState, clearDbAuth } from './wa-auth-state';
+import { CustomerHistoryService } from '../common/customer-history.service';
 
 // Normalize a phone number to DRC format (0XXXXXXXXX or +243XXXXXXXXX)
 function normalizeDrcPhone(raw: string | null): string | null {
@@ -142,6 +143,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
     private prisma: PrismaService,
     private aiService: AiService,
     private automationService: AutomationService,
+    private customerHistory: CustomerHistoryService,
     @Optional() private pushService: PushService,
   ) {}
 
@@ -964,17 +966,50 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
   // Called from the HTTP endpoint (user clicks "Générer le QR Code" or "Connecter").
   // Always starts fresh: kills any stale socket and wipes the stored auth so Baileys
   // emits a new QR / pairing code instead of silently trying to reuse an old session.
-  async connectFresh(userId: string, businessId: string | null): Promise<void> {
-    const key = this.waKey(userId, businessId);
-    this.loggedOut.delete(key);
+  // Tear down whatever is holding this session so an explicit user-initiated connect
+  // can proceed. Clearing `connecting` matters: a background reconnect caught mid-flight
+  // would otherwise make connect() return early and no QR/pairing code would ever appear.
+  private releaseSession(key: string): void {
+    const pendingReconnect = this.reconnectTimers.get(key);
+    if (pendingReconnect) { clearTimeout(pendingReconnect); this.reconnectTimers.delete(key); }
+    this.reconnectDelay.delete(key);
+    this.connecting.delete(key);
 
-    if (this.sockets.has(key)) {
-      const sock = this.sockets.get(key)!;
+    const sock = this.sockets.get(key);
+    if (sock) {
       this.sockets.delete(key);
       this.connectedUsers.delete(key);
       (sock.ev as any).removeAllListeners();
       sock.end(new Error('reset'));
     }
+  }
+
+  // Refuse a number already linked to another business of the same account, before the
+  // user goes through pairing only to be rejected once the session opens.
+  private async assertNumberFree(userId: string, businessId: string | null, phone: string): Promise<void> {
+    const digits = phone.replace(/\D/g, '');
+    if (!digits) return;
+
+    const taken = await this.prisma.whatsAppSession.findFirst({
+      where: { userId, phone: digits, NOT: { businessId } },
+      select: { businessId: true },
+    });
+    if (!taken) return;
+
+    const owner = await this.prisma.business.findUnique({
+      where: { id: taken.businessId ?? '' },
+      select: { name: true },
+    });
+    throw new HttpException(
+      `Ce numéro est déjà connecté à « ${owner?.name ?? 'un autre business'} ». Chaque business doit avoir son propre numéro WhatsApp.`,
+      HttpStatus.CONFLICT,
+    );
+  }
+
+  async connectFresh(userId: string, businessId: string | null): Promise<void> {
+    const key = this.waKey(userId, businessId);
+    this.loggedOut.delete(key);
+    this.releaseSession(key);
 
     await clearDbAuth(userId, businessId, this.prisma);
     this.logger.log(`Cleared stale auth for ${key} — fresh QR connect`);
@@ -984,17 +1019,15 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
   async connectWithPairingCode(userId: string, businessId: string | null, phone: string): Promise<void> {
     const key = this.waKey(userId, businessId);
     const normalized = phone.replace(/[^0-9]/g, '');
+
+    // Checked up front: pairing this number would otherwise run to completion and only
+    // then be rejected when the session opens.
+    await this.assertNumberFree(userId, businessId, normalized);
+
     this.pairingPhones.set(key, normalized);
     this.clearPairingTimeout(userId, businessId);
     this.loggedOut.delete(key); // allow fresh connection even after a previous logout
-
-    if (this.sockets.has(key)) {
-      const sock = this.sockets.get(key)!;
-      this.sockets.delete(key);
-      this.connectedUsers.delete(key);
-      (sock.ev as any).removeAllListeners();
-      sock.end(new Error('reset'));
-    }
+    this.releaseSession(key);
 
     // Always wipe stale auth so WhatsApp generates a fresh QR/pairing code
     await clearDbAuth(userId, businessId, this.prisma);
@@ -1215,10 +1248,23 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
       content: m.content,
     }));
 
+    // Brief the AI when this person has bought before — otherwise it greets a loyal
+    // customer as a stranger and asks for details they've already given us.
+    let returningBrief: string | undefined;
+    const past = await this.customerHistory
+      .forPhone(userId, businessId, phone)
+      .catch(() => null);
+    if (past && past.orderCount > 0) {
+      const product = past.lastProduct ? `, dernier achat : ${past.lastProduct}` : '';
+      returningBrief = `Ce client a déjà passé ${past.orderCount} commande${past.orderCount > 1 ? 's' : ''} chez nous${product}.`;
+      this.logger.log(`[engage] ${contactKey}: returning customer (${past.orderCount} past order(s))`);
+    }
+
     const aiResult = await this.aiService.reply(
       userId, businessId, phone, history, combinedText,
       batch.mediaBase64, batch.mediaMimetype,
       batch.leadStatus ?? undefined,
+      returningBrief,
     );
 
     if (!aiResult?.text) {

@@ -3,6 +3,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CurrentUser, AuthUser } from '../auth/current-user.decorator';
 import { WhatsAppService } from '../whatsapp/whatsapp.service';
 import { FollowUpService } from './followup.service';
+import { CustomerHistoryService } from '../common/customer-history.service';
+import { phoneKey } from '../common/phone';
 import { join } from 'path';
 
 @Controller()
@@ -13,6 +15,7 @@ export class LogisticsController {
     private prisma: PrismaService,
     private whatsapp: WhatsAppService,
     private followUp: FollowUpService,
+    private history: CustomerHistoryService,
   ) {}
 
   private where(user: AuthUser) {
@@ -201,12 +204,48 @@ export class LogisticsController {
   // ── Commandes manuelles ───────────────────────────────────────
 
   @Get('my/logistics/orders')
-  getOrders(@CurrentUser() user: AuthUser) {
-    return this.prisma.manualOrder.findMany({
+  async getOrders(@CurrentUser() user: AuthUser) {
+    const orders = await this.prisma.manualOrder.findMany({
       where: this.where(user),
       include: { items: { include: { product: true } }, partner: true, location: true },
       orderBy: { createdAt: 'desc' },
     });
+
+    // Tag each order with where it sits in that customer's history: `customerOrderCount`
+    // is their confirmed-order total, `customerOrderRank` is this order's position in it
+    // (1 = first purchase). Counts come from a single grouped query, not one per row.
+    const counts = await this.history.countsForBusiness(user.ownerId, user.businessId || null);
+    const seen = new Map<string, number>();
+
+    // Oldest first so rank increments naturally, then restore the newest-first order.
+    const ranked = [...orders].reverse().map(o => {
+      const key = phoneKey(o.customerPhone);
+      let customerOrderRank: number | null = null;
+      if (key && !o.isDraft) {
+        customerOrderRank = (seen.get(key) ?? 0) + 1;
+        seen.set(key, customerOrderRank);
+      }
+      return {
+        ...o,
+        customerOrderRank,
+        customerOrderCount: key ? (counts.get(key) ?? 0) : 0,
+      };
+    });
+
+    return ranked.reverse();
+  }
+
+  // Purchase history for one customer, matched on a normalized phone so every spelling
+  // of the number resolves to the same person.
+  @Get('my/logistics/customer-history')
+  getCustomerHistory(@CurrentUser() user: AuthUser, @Query('phone') phone: string) {
+    return this.history.purchaseHistory(user.ownerId, user.businessId || null, phone);
+  }
+
+  // Prefill for the new-order form: known name/address behind a phone number.
+  @Get('my/logistics/customer-lookup')
+  lookupCustomer(@CurrentUser() user: AuthUser, @Query('phone') phone: string) {
+    return this.history.lookupForNewOrder(user.ownerId, user.businessId || null, phone);
   }
 
   @Post('my/logistics/orders')

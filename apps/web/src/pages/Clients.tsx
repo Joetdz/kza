@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Phone, MessageCircle, Package, Search, RefreshCw } from 'lucide-react';
+import { Phone, MessageCircle, Package, Search, RefreshCw, History } from 'lucide-react';
 import { logisticsApi, type ManualOrder } from '../api/logistics';
+import { CustomerHistoryPanel } from '../components/CustomerHistoryPanel';
 
 const FILTERS: { value: string; label: string; color: string }[] = [
   { value: 'all',           label: 'Tous',            color: 'bg-gray-100 text-gray-700' },
@@ -37,6 +38,7 @@ export function Clients() {
   const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
+  const [historyPhone, setHistoryPhone] = useState<string | null>(null);
 
   useEffect(() => { load(); }, []);
 
@@ -54,6 +56,25 @@ export function Clients() {
       map[key] = (map[key] ?? 0) + 1;
     }
     return map;
+  }, [orders]);
+
+  // Repeat rate: share of customers who came back at least once. Built from the ranks
+  // the server computed, so it uses the same normalized-phone matching.
+  const repeat = useMemo(() => {
+    const totalPerCustomer = new Map<string, number>();
+    for (const o of orders) {
+      if (o.isDraft || !o.customerOrderCount) continue;
+      // customerOrderCount is identical for every order of the same customer, so keying
+      // on phone collapses them to one entry.
+      totalPerCustomer.set(o.customerPhone ?? o.id, o.customerOrderCount);
+    }
+    const customers = totalPerCustomer.size;
+    const returning = [...totalPerCustomer.values()].filter(n => n > 1).length;
+    return {
+      customers,
+      returning,
+      rate: customers > 0 ? Math.round((returning / customers) * 100) : 0,
+    };
   }, [orders]);
 
   const filtered = useMemo(() => {
@@ -87,6 +108,24 @@ export function Clients() {
             <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
           </button>
         </div>
+
+        {/* Repeat-purchase summary */}
+        {repeat.customers > 0 && (
+          <div className="grid grid-cols-3 gap-3 mb-5">
+            <div className="bg-white rounded-2xl border border-gray-100 px-4 py-3">
+              <p className="text-[11px] text-gray-400 font-semibold">Clients</p>
+              <p className="text-xl font-black text-gray-900">{repeat.customers}</p>
+            </div>
+            <div className="bg-white rounded-2xl border border-gray-100 px-4 py-3">
+              <p className="text-[11px] text-gray-400 font-semibold">Ont recommandé</p>
+              <p className="text-xl font-black text-amber-600">{repeat.returning}</p>
+            </div>
+            <div className="bg-white rounded-2xl border border-gray-100 px-4 py-3">
+              <p className="text-[11px] text-gray-400 font-semibold">Taux de réachat</p>
+              <p className="text-xl font-black text-indigo-600">{repeat.rate}%</p>
+            </div>
+          </div>
+        )}
 
         {/* Search */}
         <div className="relative mb-4">
@@ -142,6 +181,15 @@ export function Clients() {
                               📅 {new Date(o.scheduledAt!).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}
                             </span>
                           )}
+                          {/* Rank in this customer's history — only worth showing past the first */}
+                          {!!o.customerOrderRank && o.customerOrderRank > 1 && (
+                            <span
+                              className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700"
+                              title={`${o.customerOrderCount} commande${(o.customerOrderCount ?? 0) > 1 ? 's' : ''} au total pour ce client`}
+                            >
+                              🔁 {o.customerOrderRank}ᵉ commande
+                            </span>
+                          )}
                         </div>
 
                         {/* Phone */}
@@ -180,6 +228,11 @@ export function Clients() {
                             title="WhatsApp">
                             <MessageCircle size={14} />
                           </a>
+                          <button onClick={() => setHistoryPhone(o.customerPhone!)}
+                            className="p-2 rounded-xl bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition-colors"
+                            title="Historique d'achat">
+                            <History size={14} />
+                          </button>
                         </div>
                       )}
                     </div>
@@ -196,6 +249,10 @@ export function Clients() {
           </>
         )}
       </div>
+
+      {historyPhone && (
+        <CustomerHistoryPanel phone={historyPhone} onClose={() => setHistoryPhone(null)} />
+      )}
     </div>
   );
 }

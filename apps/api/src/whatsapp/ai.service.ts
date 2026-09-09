@@ -145,7 +145,7 @@ export class AiService {
   }
 
   // ── Build the system prompt ───────────────────────────────────────────────────
-  private buildSystemPrompt(aiConfig: any, kb: string, leadStatus?: string): string {
+  private buildSystemPrompt(aiConfig: any, kb: string, leadStatus?: string, returning?: string): string {
     const agentIdentity = aiConfig.systemPrompt?.trim()
       ? aiConfig.systemPrompt.trim()
       : 'Tu es un agent commercial.';
@@ -196,7 +196,7 @@ Si le client aborde ces sujets, réponds poliment que tu ne peux pas en parler.`
 12. SCRIPT DE CLOSING : Utilise le script de closing d'un produit UNIQUEMENT si le client a nommé ou décrit CE produit précis dans les messages récents de CETTE conversation. Ne jamais utiliser un script de closing d'un produit que le client n'a pas mentionné dans cet échange.
 13. IMAGES : Si le client demande une photo, un visuel ou que tu juges utile de montrer un produit, inclus exactement [IMAGE: url] à la fin de ton message texte (une seule image par réponse). N'invente jamais d'URL — utilise uniquement les URLs marquées "IMAGE DISPONIBLE" dans le catalogue.
 14. Ne répète pas ce que tu viens de dire dans le même échange.
-${leadStatus === 'converted' ? `\n⚠️ STATUT CLIENT : VENTE ACQUISE. La commande est confirmée. Ne propose plus aucun produit. Réponds uniquement aux questions logistiques (livraison, délai, suivi).` : ''}`);
+${leadStatus === 'converted' ? `\n⚠️ STATUT CLIENT : VENTE ACQUISE. La commande est confirmée. Ne propose plus aucun produit. Réponds uniquement aux questions logistiques (livraison, délai, suivi).` : ''}${returning ? `\n\n# CLIENT DÉJÀ CONNU\n${returning}\nTraite-le comme un client fidèle : remercie-le brièvement de son retour, ne redemande pas les informations qu'un habitué s'attend à ce que tu aies (son nom, sa ville). Ne mentionne jamais de numéro de commande ni de date exacte — reste naturel, comme un vendeur qui reconnaît un visage.` : ''}`);
 
     return parts.join('\n\n');
   }
@@ -211,6 +211,8 @@ ${leadStatus === 'converted' ? `\n⚠️ STATUT CLIENT : VENTE ACQUISE. La comma
     mediaBase64?: string,
     mediaMimetype?: string,
     leadStatus?: string,
+    /** Short brief about the customer's past orders, when they've bought before. */
+    returningCustomer?: string,
   ): Promise<{ text: string; shouldEscalate: boolean; imageUrl?: string } | null> {
     const aiConfig = await this.getConfig(userId, businessId);
     if (!aiConfig.enabled) return null;
@@ -227,7 +229,7 @@ ${leadStatus === 'converted' ? `\n⚠️ STATUT CLIENT : VENTE ACQUISE. La comma
     }
 
     const kb = await this.buildKnowledgeBlock(userId, businessId);
-    const systemPrompt = this.buildSystemPrompt(aiConfig, kb, leadStatus);
+    const systemPrompt = this.buildSystemPrompt(aiConfig, kb, leadStatus, returningCustomer);
 
     // Full conversation history — Barbara must always have complete context
     const history = messages.slice(-30).map(m => ({

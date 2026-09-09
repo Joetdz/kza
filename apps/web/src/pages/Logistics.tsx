@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, Trash2, MapPin, Truck, ShoppingBag, ChevronRight, X, Package, MessageCircle, BarChart2, Link, Printer, Edit2, Check, Calendar, DollarSign, FileText, Bell, RefreshCw, Phone, Search } from 'lucide-react';
+import { Plus, Trash2, MapPin, Truck, ShoppingBag, ChevronRight, X, Package, MessageCircle, BarChart2, Link, Printer, Edit2, Check, Calendar, DollarSign, FileText, Bell, RefreshCw, Phone, Search, History } from 'lucide-react';
+import { CustomerHistoryPanel } from '../components/CustomerHistoryPanel';
 import { useStore } from '../store/useStore';
-import { logisticsApi, type StockLocation, type DeliveryPartner, type ManualOrder, type PartnerReport, type PartnerPayment, type FollowUpConfig, type FollowUpEntry } from '../api/logistics';
+import { logisticsApi, type StockLocation, type DeliveryPartner, type ManualOrder, type PartnerReport, type PartnerPayment, type FollowUpConfig, type FollowUpEntry, type CustomerLookup } from '../api/logistics';
 import { ScrollLock } from '../components/ui/ScrollLock';
 import { CitySelect } from '../components/CitySelect';
 import { waApi } from '../api/whatsapp';
@@ -52,6 +53,7 @@ export function Logistics() {
   const { products } = useStore();
 
   const [tab, setTab] = useState<'locations' | 'partners' | 'orders' | 'payments' | 'relance'>('locations');
+  const [historyPhone, setHistoryPhone] = useState<string | null>(null);
   const [locations, setLocations] = useState<StockLocation[]>([]);
   const [partners, setPartners] = useState<DeliveryPartner[]>([]);
   const [orders, setOrders] = useState<ManualOrder[]>([]);
@@ -107,6 +109,8 @@ export function Logistics() {
   const [orderItems, setOrderItems] = useState<{ productId: string; quantity: string; unitPrice: string }[]>([
     { productId: '', quantity: '1', unitPrice: '' },
   ]);
+  // Known customer behind the phone typed in the new-order form
+  const [knownCustomer, setKnownCustomer] = useState<CustomerLookup | null>(null);
 
   // Dispatch modal (partner selection at assignment time)
   const [dispatchModal, setDispatchModal] = useState<{ orderId: string } | null>(null);
@@ -341,6 +345,44 @@ export function Logistics() {
 
   // ── Orders ───────────────────────────────────────────────────────
 
+  // Recognise a returning customer as the phone is typed and prefill what we already
+  // know. Only empty fields are filled — anything already typed is left alone, since
+  // an address can legitimately differ from the last delivery.
+  useEffect(() => {
+    const phone = orderForm.customerPhone.trim();
+    if (!showOrderModal || phone.replace(/\D/g, '').length < 6) {
+      setKnownCustomer(null);
+      return;
+    }
+
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const found = await logisticsApi.lookupCustomer(phone);
+        if (cancelled) return;
+        setKnownCustomer(found);
+        if (!found) return;
+
+        setOrderForm(f => {
+          // Split "commune, détail" back into the two inputs the form uses.
+          const [maybeCommune, ...rest] = found.address.split(',').map(s => s.trim());
+          const communes: string[] = CITY_COMMUNES[found.city] ?? [];
+          const isCommune = communes.includes(maybeCommune);
+          return {
+            ...f,
+            customerName: f.customerName || found.customerName,
+            city: f.city || found.city,
+            commune: f.commune || (isCommune ? maybeCommune : ''),
+            addressDetail: f.addressDetail || (isCommune ? rest.join(', ') : found.address),
+            deliveryFee: f.deliveryFee || (found.deliveryFee ? String(found.deliveryFee) : ''),
+          };
+        });
+      } catch { /* lookup is a convenience — a failure must not block the form */ }
+    }, 400);
+
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [orderForm.customerPhone, showOrderModal]);
+
   async function handleCreateOrder() {
     const validItems = orderItems.filter(i => i.productId && Number(i.quantity) > 0);
     if (!orderForm.customerName || !orderForm.city || !orderForm.addressDetail || validItems.length === 0) return;
@@ -370,6 +412,7 @@ export function Logistics() {
   function resetOrderForm() {
     setOrderForm({ customerName: '', customerPhone: '', city: '', commune: '', addressDetail: '', deliveryFee: '', scheduledAt: '' });
     setOrderItems([{ productId: '', quantity: '1', unitPrice: '' }]);
+    setKnownCustomer(null);
   }
 
   async function handleStatusChange(id: string, status: string, personName?: string) {
@@ -982,6 +1025,15 @@ export function Logistics() {
                             ? <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">Brouillon IA</span>
                             : <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${st.color}`}>{st.label}</span>
                           }
+                          {/* Rank in this customer's history — only worth showing past the first */}
+                          {!!o.customerOrderRank && o.customerOrderRank > 1 && (
+                            <span
+                              className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700"
+                              title={`${o.customerOrderCount} commande${(o.customerOrderCount ?? 0) > 1 ? 's' : ''} au total pour ce client`}
+                            >
+                              🔁 {o.customerOrderRank}ᵉ commande
+                            </span>
+                          )}
                         </div>
                         <p className="text-xs text-gray-400 mb-1">
                           {new Date(o.createdAt).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })}
@@ -998,6 +1050,10 @@ export function Logistics() {
                               className="flex items-center gap-1 px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded-lg text-[11px] font-semibold hover:bg-emerald-100">
                               <MessageCircle size={10} /> WhatsApp
                             </a>
+                            <button onClick={() => setHistoryPhone(o.customerPhone!)}
+                              className="flex items-center gap-1 px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded-lg text-[11px] font-semibold hover:bg-indigo-100">
+                              <History size={10} /> Historique
+                            </button>
                           </div>
                         )}
 
@@ -1528,6 +1584,17 @@ export function Logistics() {
               <Field label="Téléphone" value={orderForm.customerPhone} onChange={v => setOrderForm(f => ({ ...f, customerPhone: v }))} placeholder="+243..." />
             </div>
 
+            {knownCustomer && (
+              <div className="flex items-start gap-2 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2">
+                <History size={13} className="text-amber-600 shrink-0 mt-0.5" />
+                <p className="text-xs text-amber-800">
+                  Client connu — <strong>{knownCustomer.orderCount} commande{knownCustomer.orderCount > 1 ? 's' : ''}</strong>,
+                  dernière le {new Date(knownCustomer.lastOrderAt).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })}.
+                  Les champs vides ont été pré-remplis.
+                </p>
+              </div>
+            )}
+
             {/* Ville + Commune + Frais */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <CitySelect value={orderForm.city} onChange={v => setOrderForm(f => ({ ...f, city: v, commune: '' }))} required />
@@ -1899,6 +1966,10 @@ export function Logistics() {
             </button>
           </div>
         </Modal>
+      )}
+
+      {historyPhone && (
+        <CustomerHistoryPanel phone={historyPhone} onClose={() => setHistoryPhone(null)} />
       )}
     </div>
   );

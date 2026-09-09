@@ -77,6 +77,40 @@ export interface ManualOrderItem {
   product: { id: string; name: string; sellingPrice: number; imageUrl: string | null };
 }
 
+export interface CustomerLookup {
+  customerName: string;
+  city: string;
+  /** Stored as "commune, détail" by the order form. */
+  address: string;
+  deliveryFee: number;
+  orderCount: number;
+  lastOrderAt: string;
+}
+
+export interface CustomerPurchaseHistory {
+  customerName: string;
+  customerPhone: string | null;
+  city: string;
+  orderCount: number;
+  deliveredCount: number;
+  /** Delivered orders only — money actually earned. */
+  totalSpent: number;
+  firstOrderAt: string;
+  lastOrderAt: string;
+  topProducts: { name: string; imageUrl: string | null; quantity: number; orders: number }[];
+  orders: {
+    id: string;
+    orderNumber: number;
+    status: string;
+    city: string;
+    address: string;
+    totalAmount: number;
+    deliveryFee: number;
+    createdAt: string;
+    items: { name: string; imageUrl: string | null; quantity: number; unitPrice: number }[];
+  }[];
+}
+
 export interface ManualOrder {
   id: string;
   orderNumber: number;
@@ -89,6 +123,10 @@ export interface ManualOrder {
   status: string;
   isDraft: boolean;
   sourceContactId: string | null;
+  /** Position of this order in the customer's history (1 = first purchase). */
+  customerOrderRank?: number | null;
+  /** Confirmed orders this customer has placed in total. */
+  customerOrderCount?: number;
   notes: string | null;
   agentId: string | null;
   agent: DeliveryAgent | null;
@@ -229,6 +267,10 @@ export const logisticsApi = {
 
   // Orders
   getOrders: () => req<ManualOrder[]>('/my/logistics/orders'),
+  getCustomerHistory: (phone: string) =>
+    req<CustomerPurchaseHistory | null>(`/my/logistics/customer-history?phone=${encodeURIComponent(phone)}`),
+  lookupCustomer: (phone: string) =>
+    req<CustomerLookup | null>(`/my/logistics/customer-lookup?phone=${encodeURIComponent(phone)}`),
   createOrder: (body: {
     customerName: string;
     customerPhone?: string;

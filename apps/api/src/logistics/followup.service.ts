@@ -2,6 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { WhatsAppService } from '../whatsapp/whatsapp.service';
+import { CustomerHistoryService } from '../common/customer-history.service';
+import { phoneKey } from '../common/phone';
 
 @Injectable()
 export class FollowUpService {
@@ -10,6 +12,7 @@ export class FollowUpService {
   constructor(
     private prisma: PrismaService,
     private whatsapp: WhatsAppService,
+    private customerHistory: CustomerHistoryService,
   ) {}
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
@@ -138,6 +141,10 @@ export class FollowUpService {
       include: { items: { include: { product: true } } },
     });
 
+    // How many confirmed orders each customer has — lets the template thank a
+    // returning buyer differently from a first-timer via {{nb_commandes}}.
+    const counts = await this.customerHistory.countsForBusiness(userId, businessId);
+
     let sent = 0;
     for (const order of orders) {
       if (sent >= DAILY_CAP) {
@@ -147,10 +154,14 @@ export class FollowUpService {
       const phone = order.customerPhone!;
       const productName = this.firstProductName(order.items as any[]);
       const num = String(order.orderNumber).padStart(4, '0');
+      const orderCount = counts.get(phoneKey(phone) ?? '') ?? 1;
       const message = this.fillTemplate(template, {
         nom: order.customerName,
         numero_commande: num,
         produit: productName,
+        nb_commandes: String(orderCount),
+        // Ready-made phrase so a template can stay a single line
+        fidelite: orderCount > 1 ? `C'est déjà votre ${orderCount}e commande chez nous 🙏` : '',
       });
 
       const ok = await this.whatsapp.notifyOrder(userId, order.businessId ?? null, phone, message).catch(() => false);

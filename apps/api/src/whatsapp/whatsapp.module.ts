@@ -6,11 +6,12 @@ import { AiService } from './ai.service';
 import { AutomationService } from './automation.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { PushModule } from '../push/push.module';
+import { CustomerHistoryService } from '../common/customer-history.service';
 
 @Module({
   imports: [PrismaModule, PushModule],
   controllers: [WhatsAppController],
-  providers: [WhatsAppService, WhatsAppGateway, AiService, AutomationService],
+  providers: [WhatsAppService, WhatsAppGateway, AiService, AutomationService, CustomerHistoryService],
   exports: [WhatsAppService],
 })
 export class WhatsAppModule {}
