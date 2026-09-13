@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Bot, Save, Plus, X, Clock } from 'lucide-react';
+import { Bot, Save, Plus, X, Clock, Globe, Facebook, Instagram, Loader2, Download } from 'lucide-react';
 import { waApi } from '../../api/whatsapp';
 
 const DAYS = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
@@ -10,6 +10,8 @@ export function AIConfig() {
   const [saved, setSaved] = useState(false);
   const [newBlacklist, setNewBlacklist] = useState('');
   const [newEscalation, setNewEscalation] = useState('');
+  const [importing, setImporting] = useState<'website' | 'facebook' | 'instagram' | null>(null);
+  const [importMsg, setImportMsg] = useState<string | null>(null);
 
   useEffect(() => {
     waApi.getAiConfig().then(setConfig).catch(() => {});
@@ -44,6 +46,26 @@ export function AIConfig() {
     const idx = hours.findIndex((h: any) => h.day === day);
     if (idx >= 0) hours[idx] = { ...hours[idx], [field]: value };
     setConfig({ ...config, activeHours: hours });
+  };
+
+  const runImport = async (kind: 'website' | 'facebook' | 'instagram', url?: string) => {
+    if (!url?.trim()) return;
+    setImporting(kind);
+    setImportMsg(null);
+    try {
+      const res = await waApi.importKb(url.trim(), kind);
+      if (res.created === 0) {
+        setImportMsg("Rien n'a pu être récupéré à cette adresse — vérifie le lien, ou colle le contenu à la main dans la base de connaissance.");
+      } else if (res.thin) {
+        setImportMsg(`1 fiche créée depuis le titre/la description publics de la page. Facebook et Instagram bloquent le reste du contenu sans connexion officielle.`);
+      } else {
+        setImportMsg(`${res.created} fiche${res.created > 1 ? 's' : ''} créée${res.created > 1 ? 's' : ''} dans la base de connaissance.`);
+      }
+    } catch {
+      setImportMsg("Échec de l'import — vérifie que le lien est accessible publiquement.");
+    } finally {
+      setImporting(null);
+    }
   };
 
   if (!config) return (
@@ -269,7 +291,70 @@ export function AIConfig() {
             />
             <div className="text-xs text-gray-400 mt-1">Score minimum pour répondre</div>
           </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Mode silencieux à la connexion (h)</label>
+            <input
+              type="number" min={0} max={240}
+              value={config.silentOnboardingHours ?? 48}
+              onChange={e => setConfig({ ...config, silentOnboardingHours: +e.target.value })}
+              className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-400"
+            />
+            <div className="text-xs text-gray-400 mt-1">L'IA lit mais ne répond pas juste après un nouvel appairage (0 = désactivé)</div>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Pause après réponse manuelle (h)</label>
+            <input
+              type="number" min={0} max={72}
+              value={config.humanPauseHours ?? 6}
+              onChange={e => setConfig({ ...config, humanPauseHours: +e.target.value })}
+              className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-400"
+            />
+            <div className="text-xs text-gray-400 mt-1">Quand tu réponds toi-même à un client, l'IA se tait pour ce contact (0 = désactivé)</div>
+          </div>
         </div>
+      </div>
+
+      {/* Apprentissage */}
+      <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-4">
+        <div>
+          <h3 className="font-semibold text-gray-900 text-sm">Apprentissage depuis tes contenus</h3>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Comme l'agent IA officiel de WhatsApp Business, importe ton site web et tes réseaux sociaux dans la base de connaissance.
+          </p>
+        </div>
+
+        {([
+          { kind: 'website' as const, icon: Globe, label: 'Site web', field: 'websiteUrl', placeholder: 'https://tonsite.com' },
+          { kind: 'facebook' as const, icon: Facebook, label: 'Page Facebook', field: 'facebookUrl', placeholder: 'https://facebook.com/tapage' },
+          { kind: 'instagram' as const, icon: Instagram, label: 'Instagram', field: 'instagramUrl', placeholder: 'https://instagram.com/toncompte' },
+        ]).map(({ kind, icon: Icon, label, field, placeholder }) => (
+          <div key={kind} className="flex items-center gap-2">
+            <Icon size={16} className="text-gray-400 shrink-0" />
+            <input
+              value={config[field] ?? ''}
+              onChange={e => setConfig({ ...config, [field]: e.target.value })}
+              placeholder={placeholder}
+              className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-400"
+            />
+            <button
+              onClick={() => runImport(kind, config[field])}
+              disabled={importing !== null || !config[field]?.trim()}
+              title={`Importer depuis ${label}`}
+              className="flex items-center gap-1.5 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 text-gray-700 px-3 py-2 rounded-xl text-xs font-medium transition-colors shrink-0"
+            >
+              {importing === kind ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+              Importer
+            </button>
+          </div>
+        ))}
+
+        {importMsg && (
+          <p className="text-xs text-gray-600 bg-gray-50 rounded-lg px-3 py-2">{importMsg}</p>
+        )}
+
+        <p className="text-xs text-gray-400">
+          Facebook et Instagram ne rendent publics que le titre et la description de la page à un import automatique — pour aller plus loin, ajoute des fiches manuellement dans la Base de connaissance.
+        </p>
       </div>
     </div>
   );

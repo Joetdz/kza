@@ -4,11 +4,15 @@ import { waApi } from '../../api/whatsapp';
 import { productsApi, resolveImageUrl } from '../../api';
 
 const CATEGORIES = [
-  { value: 'faq',     label: 'FAQ',       color: 'bg-blue-100 text-blue-700' },
-  { value: 'product', label: 'Produit',   color: 'bg-purple-100 text-purple-700' },
-  { value: 'policy',  label: 'Politique', color: 'bg-orange-100 text-orange-700' },
-  { value: 'script',  label: 'Script',    color: 'bg-green-100 text-green-700' },
-  { value: 'snippet', label: 'Snippet',   color: 'bg-pink-100 text-pink-700' },
+  { value: 'faq',        label: 'FAQ',         color: 'bg-blue-100 text-blue-700' },
+  { value: 'product',    label: 'Produit',     color: 'bg-purple-100 text-purple-700' },
+  { value: 'policy',     label: 'Politique',   color: 'bg-orange-100 text-orange-700' },
+  { value: 'script',     label: 'Script',      color: 'bg-green-100 text-green-700' },
+  { value: 'snippet',    label: 'Snippet',     color: 'bg-pink-100 text-pink-700' },
+  { value: 'correction', label: 'Correction',  color: 'bg-amber-100 text-amber-700' },
+  { value: 'website',    label: 'Site web',    color: 'bg-cyan-100 text-cyan-700' },
+  { value: 'social',     label: 'Réseaux sociaux', color: 'bg-sky-100 text-sky-700' },
+  { value: 'history',    label: 'Historique WA', color: 'bg-teal-100 text-teal-700' },
 ];
 
 const BLANK = {

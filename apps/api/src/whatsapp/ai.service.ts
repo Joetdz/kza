@@ -120,6 +120,23 @@ export class AiService {
       }
     }
 
+    // ── Réponses rapides WhatsApp Business (rédigées par le commerçant) ─────────
+    // Guarded: a missing table must not break the whole knowledge block.
+    const quickReplies = await this.prisma.waQuickReply
+      .findMany({ where: { userId, businessId }, orderBy: { shortcut: 'asc' } })
+      .catch(() => []);
+    if (quickReplies.length > 0) {
+      lines.push('## RÉPONSES RAPIDES VALIDÉES');
+      lines.push("(Réponses rédigées par le commerçant lui-même. Quand la question du client correspond à l'une d'elles, reprends-en le fond — prix, conditions, délais exacts — en l'adaptant naturellement à la conversation. N'ajoute jamais d'information qui n'y figure pas.)");
+      lines.push('');
+      for (const q of quickReplies) {
+        const kw = q.keywords.length ? ` (mots-clés : ${q.keywords.join(', ')})` : '';
+        lines.push(`### /${q.shortcut}${kw}`);
+        lines.push(q.message);
+        lines.push('');
+      }
+    }
+
     return lines.join('\n');
   }
 
@@ -145,7 +162,7 @@ export class AiService {
   }
 
   // ── Build the system prompt ───────────────────────────────────────────────────
-  private buildSystemPrompt(aiConfig: any, kb: string, leadStatus?: string, returning?: string): string {
+  private buildSystemPrompt(aiConfig: any, kb: string, leadStatus?: string, returning?: string, ad?: string): string {
     const agentIdentity = aiConfig.systemPrompt?.trim()
       ? aiConfig.systemPrompt.trim()
       : 'Tu es un agent commercial.';
@@ -173,6 +190,19 @@ Réponds toujours dans la langue utilisée par le client. Langue par défaut : $
 ${kb.trim()}`);
     }
 
+    if (ad?.trim()) {
+      parts.push(`# ORIGINE DE LA CONVERSATION — PUBLICITÉ
+Ce client vient de cliquer sur cette publicité :
+${ad.trim()}
+
+Son premier message est un texte pré-rempli par WhatsApp ("Bonjour, puis-je en savoir plus ?") : il ne dit PAS quel produit l'intéresse. C'est la publicité ci-dessus qui le dit.
+
+- Identifie dans le catalogue le produit correspondant à cette publicité et réponds directement dessus.
+- Ne demande JAMAIS "quel produit vous intéresse ?" alors que la publicité le nomme — c'est la faute la plus agaçante pour un client qui vient de cliquer.
+- Si la publicité ne correspond à aucun produit du catalogue avec certitude, pose une question de clarification courte plutôt que de deviner.
+- Ne mentionne jamais la publicité ni le lien explicitement. Enchaîne naturellement, comme un vendeur qui sait de quoi le client parle.`);
+    }
+
     if (aiConfig.blacklistTopics?.length > 0) {
       parts.push(`# SUJETS INTERDITS
 Ne réponds jamais aux sujets suivants : ${aiConfig.blacklistTopics.join(', ')}.
@@ -184,7 +214,7 @@ Si le client aborde ces sujets, réponds poliment que tu ne peux pas en parler.`
 ⛔ FORMAT OBLIGATOIRE : Réponds TOUJOURS en texte naturel conversationnel. JAMAIS de JSON, JAMAIS de XML, JAMAIS de markdown, JAMAIS de listes structurées. Une réponse qui commence par { ou [ sera considérée comme une erreur grave.
 2. CONTEXTE OBLIGATOIRE : Avant de répondre, lis TOUTE la conversation depuis le début. Tu dois connaître exactement quel produit le client a demandé, ce qui a déjà été dit, et où en est la discussion. Ne réponds JAMAIS sans avoir analysé l'intégralité de l'historique de cet échange.
 ⛔ NE JAMAIS REDEMANDER une information que le client a déjà donnée dans cette conversation (produit, quantité, adresse, préférence de livraison, etc.). Si le client a déjà dit "1 pièce", "je veux X", ou "mon adresse est Y" → ces informations sont acquises. Utilise-les directement. Redemander une info déjà donnée est une faute grave.
-3. ANTI-HALLUCINATION : Ne cite JAMAIS une information qui ne figure pas dans la base de connaissance ou le catalogue ci-dessus.
+3. ANTI-HALLUCINATION : Ne cite JAMAIS une information qui ne figure pas dans la base de connaissance ou le catalogue ci-dessus. Ceci s'applique en particulier aux PRIX, PROMOTIONS, STOCK et FRAIS DE LIVRAISON — si l'information nécessaire à la réponse n'existe pas dans la fiche produit ou dans les données fournies ci-dessus, ne l'invente JAMAIS, même une estimation plausible. Dans ce cas : pose une question de clarification, ou indique clairement que cette information doit être confirmée avant de t'engager.
 4. QUANTITÉS EN STOCK : Ne mentionne JAMAIS les quantités disponibles (ex: "il en reste 5", "3 unités", etc.). Dis simplement "c'est disponible" ou "c'est en stock".
 5. PRIX : Si le script de closing ou le contenu de la fiche KB mentionne un prix → utilise CE prix en priorité. N'utilise le prix catalogue (fallback) que si aucun prix n'est mentionné dans la KB.
 6. ⛔ SUBSTITUTION INTERDITE : Si le client demande un produit précis, réponds UNIQUEMENT sur CE produit. Ne propose JAMAIS un autre produit à la place, même si tu penses qu'il conviendrait mieux. Si le produit est en rupture de stock, dis-le et laisse le client choisir. Tu n'as pas le droit de rediriger le client vers un produit différent de celui qu'il a demandé.
@@ -213,6 +243,8 @@ ${leadStatus === 'converted' ? `\n⚠️ STATUT CLIENT : VENTE ACQUISE. La comma
     leadStatus?: string,
     /** Short brief about the customer's past orders, when they've bought before. */
     returningCustomer?: string,
+    /** The Click-to-WhatsApp ad this conversation started from, when there is one. */
+    adContext?: string,
   ): Promise<{ text: string; shouldEscalate: boolean; imageUrl?: string } | null> {
     const aiConfig = await this.getConfig(userId, businessId);
     if (!aiConfig.enabled) return null;
@@ -229,7 +261,7 @@ ${leadStatus === 'converted' ? `\n⚠️ STATUT CLIENT : VENTE ACQUISE. La comma
     }
 
     const kb = await this.buildKnowledgeBlock(userId, businessId);
-    const systemPrompt = this.buildSystemPrompt(aiConfig, kb, leadStatus, returningCustomer);
+    const systemPrompt = this.buildSystemPrompt(aiConfig, kb, leadStatus, returningCustomer, adContext);
 
     // Full conversation history — Barbara must always have complete context
     const history = messages.slice(-30).map(m => ({
@@ -270,6 +302,10 @@ ${leadStatus === 'converted' ? `\n⚠️ STATUT CLIENT : VENTE ACQUISE. La comma
     }
 
     try {
+      // Tried the whole GPT-5.6 family (Luna, Terra, Sol) here — all three reject a
+      // custom temperature and the anti-repetition penalties outright (tested directly
+      // against the API, confirmed 400 on every tier). That guardrail matters more than
+      // the model name, so this stays on gpt-4o, which still honors it.
       const response = await this.openai.chat.completions.create({
         model: 'gpt-4o',
         messages: [
@@ -418,6 +454,83 @@ Réponds UNIQUEMENT en JSON, rien d'autre.`;
       };
     } catch {
       return { productId: null, productName: null };
+    }
+  }
+
+  // ── Curate historical WhatsApp conversations into KB-ready entries ────────────
+  // Used only for a one-time import right after a fresh pairing (see
+  // WhatsAppService.ingestHistoryForKb). A strong model, grounded in this business's
+  // *current* rules, decides what old Q&A pairs are still worth keeping and rewrites
+  // them cleanly — instead of copy-pasting raw chat text (stale prices, one-off deals,
+  // personal details, chit-chat) straight into the knowledge base.
+  async curateHistoryBatch(
+    userId: string,
+    businessId: string | null,
+    pairs: { question: string; answer: string }[],
+    products: { id: string; name: string }[],
+  ): Promise<Array<{ keep: boolean; content: string; productId: string | null; productName: string | null }>> {
+    if (pairs.length === 0) return [];
+    const aiConfig = await this.getConfig(userId, businessId);
+
+    const productList = products.length > 0 ? products.map(p => `- ${p.name}`).join('\n') : '(aucun produit enregistré)';
+    const pairsBlock = pairs.map((p, i) => `${i}. CLIENT: "${p.question}"\n   RÉPONSE DE L'ENTREPRISE: "${p.answer}"`).join('\n\n');
+
+    const prompt = `Tu tries d'anciennes conversations WhatsApp d'une entreprise pour en tirer une base de connaissance réutilisable par un agent IA.
+
+RÈGLES ACTUELLES DE L'ENTREPRISE — une réponse historique qui les contredit doit être rejetée ou réécrite pour s'y conformer :
+- Objectif business : ${aiConfig.businessObjective || '(non précisé)'}
+- Personnalité de marque : ${aiConfig.brandPersonality || '(non précisé)'}
+- Langue : ${aiConfig.primaryLanguage}
+- Sujets interdits : ${aiConfig.blacklistTopics?.join(', ') || 'aucun'}
+- Instructions système : ${aiConfig.systemPrompt || '(aucune)'}
+
+PRODUITS DE L'ENTREPRISE :
+${productList}
+
+Pour chaque paire ci-dessous, décide si elle mérite de devenir une fiche de connaissance permanente.
+
+REJETTE (keep=false) si : ce n'est que du bavardage/remerciement ; c'est une négociation ou un arrangement valable pour un seul client (prix négocié, adresse, délai particulier) ; ça contient des informations personnelles (nom, adresse, numéro) ; ça contredit une règle actuelle ci-dessus ; ou ça n'apporte aucune information réutilisable.
+
+GARDE (keep=true) sinon, et réécris la réponse : ton de marque ci-dessus, propre et générale, sans changer le sens ni inventer un fait absent de la réponse d'origine.
+
+Paires à trier :
+${pairsBlock}
+
+Réponds UNIQUEMENT en JSON strict, un objet par paire dans le même ordre, aucun manquant :
+{"results":[{"index":0,"keep":true,"content":"réponse réécrite ou vide si keep=false","productName":"nom exact d'un produit de la liste, ou null"}]}`;
+
+    try {
+      // A one-time, latency-insensitive batch job (runs once per pairing) is exactly
+      // where a slower, pricier reasoning-tier model earns its cost — unlike the live
+      // reply path, nobody is waiting on a WhatsApp thread for this to finish.
+      // GPT-5.6 Sol rejects a custom temperature (locked to its default) and wants
+      // max_completion_tokens instead of max_tokens — hence no temperature/max_tokens here.
+      const response = await this.openai.chat.completions.create({
+        model: 'gpt-5.6-sol',
+        messages: [{ role: 'user', content: prompt }],
+        response_format: { type: 'json_object' },
+      });
+      const raw = response.choices[0]?.message?.content ?? '{"results":[]}';
+      const parsed = JSON.parse(raw);
+      const results: any[] = Array.isArray(parsed.results) ? parsed.results : [];
+
+      return pairs.map((_, i) => {
+        const r = results.find((x: any) => x.index === i);
+        if (!r?.keep || !String(r.content ?? '').trim()) {
+          return { keep: false, content: '', productId: null, productName: null };
+        }
+        const product = products.find(p => p.name === r.productName);
+        return {
+          keep: true,
+          content: String(r.content).slice(0, 1500),
+          productId: product?.id ?? null,
+          productName: product?.name ?? r.productName ?? null,
+        };
+      });
+    } catch (err: any) {
+      this.logger.warn(`curateHistoryBatch failed: ${err?.message}`);
+      // Fail closed — better to keep nothing than to insert unreviewed raw text.
+      return pairs.map(() => ({ keep: false, content: '', productId: null, productName: null }));
     }
   }
 

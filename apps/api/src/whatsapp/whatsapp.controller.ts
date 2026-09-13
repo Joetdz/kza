@@ -12,10 +12,18 @@ import { AiConfigDto } from './dto/ai-config.dto';
 import { KbEntryDto, UpdateKbEntryDto } from './dto/kb-entry.dto';
 import { AutomationDto, UpdateAutomationDto } from './dto/automation.dto';
 import { UpdateAudienceContactDto, UpdateUserProfileDto } from './dto/audience.dto';
-import { IsOptional, IsString, IsPhoneNumber } from 'class-validator';
+import { IsIn, IsOptional, IsString, IsPhoneNumber, IsUrl } from 'class-validator';
 
 class CreateNoteDto {
   @IsString() content: string;
+}
+
+class ImportKbDto {
+  @IsUrl({ require_protocol: true })
+  url: string;
+
+  @IsIn(['website', 'facebook', 'instagram'])
+  kind: 'website' | 'facebook' | 'instagram';
 }
 
 class ConnectPairingDto {
@@ -145,7 +153,12 @@ export class WhatsAppController {
     @CurrentUser() user: AuthUser,
   ) {
     const contact = await this.resolveContact(id, user);
-    return this.prisma.whatsAppContact.update({ where: { id: contact.id }, data: dto });
+    const { aiPausedUntil, ...rest } = dto;
+    const data: any = { ...rest };
+    // dto.aiPausedUntil arrives as an ISO string (or null to reactivate the AI early) —
+    // Prisma's DateTime column needs an actual Date.
+    if ('aiPausedUntil' in dto) data.aiPausedUntil = aiPausedUntil ? new Date(aiPausedUntil) : null;
+    return this.prisma.whatsAppContact.update({ where: { id: contact.id }, data });
   }
 
   @Delete('contacts/:id')
@@ -174,6 +187,8 @@ export class WhatsAppController {
     } else {
       await this.wa.sendMessage(user.ownerId, this.biz(user), contact.phone, dto.message, contact.id, false);
     }
+    // A human just took this conversation over by hand — hold the AI back for a while.
+    await this.wa.pauseAiForContact(user.ownerId, this.biz(user), contact.id);
     return { ok: true };
   }
 
@@ -222,6 +237,20 @@ export class WhatsAppController {
   async deleteNote(@Param('noteId') noteId: string, @CurrentUser() user: AuthUser) {
     await this.prisma.whatsAppNote.deleteMany({ where: { id: noteId, userId: user.ownerId } });
     return { id: noteId };
+  }
+
+  // ── Réponses rapides ─────────────────────────────────────────────────────────
+  // Mirrored from the WhatsApp Business app, read-only here: they are edited on the phone.
+
+  @Get('quick-replies')
+  getQuickReplies(@CurrentUser() user: AuthUser) {
+    return this.prisma.waQuickReply
+      .findMany({
+        where: { userId: user.ownerId, businessId: this.biz(user) },
+        select: { id: true, shortcut: true, message: true, keywords: true },
+        orderBy: { shortcut: 'asc' },
+      })
+      .catch(() => []);
   }
 
   // ── Tags ─────────────────────────────────────────────────────────────────────
@@ -336,6 +365,13 @@ export class WhatsAppController {
     if (!entry) throw new NotFoundException();
     await this.prisma.whatsAppKBEntry.delete({ where: { id } });
     return { id };
+  }
+
+  // Seeds the knowledge base from the business's own website / Facebook / Instagram
+  // page — mirrors how Meta's own Business Agent learns from those same sources.
+  @Post('kb/import')
+  async importKb(@Body() dto: ImportKbDto, @CurrentUser() user: AuthUser) {
+    return this.wa.importKbFromUrl(user.ownerId, this.biz(user), dto.url, dto.kind);
   }
 
   @Post('kb/generate-script')

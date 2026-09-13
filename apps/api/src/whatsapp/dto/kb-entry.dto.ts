@@ -1,7 +1,7 @@
 import { IsArray, IsBoolean, IsIn, IsOptional, IsString } from 'class-validator';
 
 export class KbEntryDto {
-  @IsIn(['faq', 'product', 'policy', 'script', 'snippet'])
+  @IsIn(['faq', 'product', 'policy', 'script', 'snippet', 'correction', 'website', 'social', 'history'])
   category: string;
 
   @IsString()

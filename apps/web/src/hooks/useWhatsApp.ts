@@ -25,6 +25,7 @@ export interface WaContact {
   leadUrgency?: string;
   leadProduct?: string;
   aiEnabled: boolean;
+  aiPausedUntil?: string | null;
   source?: string;
   tags: Array<{ tag: { id: string; name: string; color: string } }>;
 }

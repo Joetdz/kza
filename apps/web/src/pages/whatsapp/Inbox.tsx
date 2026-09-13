@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Search, Bot, BotOff, X, Send, Paperclip, Smile,
   Info, Phone, Video,
   Reply, CheckCheck, Check, Clock, Mic, Image, FileText,
   Plus, ChevronLeft, Copy, Check as CheckIcon, Hash,
-  BarChart2, ShoppingCart, TrendingUp,
+  BarChart2, ShoppingCart, TrendingUp, PauseCircle, PlayCircle, Wand2,
 } from 'lucide-react';
 import { useWhatsApp, WaContact, WaMessage } from '../../hooks/useWhatsApp';
 import { waApi } from '../../api/whatsapp';
@@ -47,6 +48,11 @@ function initials(c: WaContact): string {
 
 function displayName(c: WaContact): string {
   return c.displayName || c.leadName || formatPhone(c.phone);
+}
+
+// True while a human's manual reply is still holding the AI back on this contact.
+function isAiPaused(c: WaContact): boolean {
+  return !!c.aiPausedUntil && new Date(c.aiPausedUntil).getTime() > Date.now();
 }
 
 function formatTime(iso?: string): string {
@@ -305,6 +311,22 @@ export function Inbox() {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('');
   const [msgText, setMsgText] = useState('');
+
+  // Quick replies mirrored from WhatsApp Business: typing "/" in the composer offers them.
+  const [quickReplies, setQuickReplies] = useState<Array<{ id: string; shortcut: string; message: string; keywords: string[] }>>([]);
+  const qrBusinessId = useStore(s => s.currentBusinessId);
+  useEffect(() => {
+    waApi.getQuickReplies().then(setQuickReplies).catch(() => setQuickReplies([]));
+  }, [qrBusinessId]);
+  const qrQuery = msgText.startsWith('/') ? msgText.slice(1).trim().toLowerCase() : null;
+  const qrMatches = qrQuery === null ? [] : quickReplies.filter(q =>
+    q.shortcut.toLowerCase().startsWith(qrQuery) ||
+    q.keywords.some(k => k.toLowerCase().includes(qrQuery)),
+  ).slice(0, 6);
+  const applyQuickReply = (message: string) => {
+    setMsgText(message);
+    inputRef.current?.focus();
+  };
   const [sending, setSending] = useState(false);
   const [repliedTo, setRepliedTo] = useState<WaMessage | null>(null);
   const [showCrmPanel, setShowCrmPanel] = useState(false);
@@ -319,6 +341,9 @@ export function Inbox() {
   // Draft order creation
   const [creatingDraft, setCreatingDraft] = useState(false);
   const [draftCreated, setDraftCreated] = useState(false);
+  // Correcting an AI reply → feeds the knowledge base
+  const [correctionDraft, setCorrectionDraft] = useState<{ question: string; text: string } | null>(null);
+  const [savingCorrection, setSavingCorrection] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -357,6 +382,24 @@ export function Inbox() {
       console.error('Draft creation failed', e);
     } finally {
       setCreatingDraft(false);
+    }
+  };
+
+  const saveCorrection = async () => {
+    if (!correctionDraft?.text.trim() || savingCorrection) return;
+    setSavingCorrection(true);
+    try {
+      await waApi.createKb({
+        category: 'correction',
+        title: (correctionDraft.question || 'Correction').slice(0, 80),
+        content: correctionDraft.text.trim(),
+        tags: ['correction'],
+      });
+      setCorrectionDraft(null);
+    } catch (e) {
+      console.error('Correction save failed', e);
+    } finally {
+      setSavingCorrection(false);
     }
   };
 
@@ -411,6 +454,7 @@ export function Inbox() {
   }
 
   return (
+    <>
     <div className="flex h-[calc(100vh-64px)] overflow-hidden rounded-xl shadow-2xl" style={{ background: C.chatBg }}>
 
       {/* ── LEFT PANEL — Contact list ──────────────────────────────────────────── */}
@@ -596,13 +640,22 @@ export function Inbox() {
                 </p>
               </div>
               <div className="flex items-center gap-1.5">
-                <button title={selectedContact.aiEnabled ? 'Désactiver IA' : 'Activer IA'}
-                  onClick={() => updateContact(selectedContact.id, { aiEnabled: !selectedContact.aiEnabled })}
-                  className="p-2 rounded-full hover:bg-[#2a3942] transition-colors">
-                  {selectedContact.aiEnabled
-                    ? <Bot size={20} style={{ color: '#00a884' }} />
-                    : <BotOff size={20} style={{ color: C.icon }} />}
-                </button>
+                {selectedContact.aiEnabled && isAiPaused(selectedContact) ? (
+                  <button
+                    title="Tu as répondu toi-même — l'IA est en pause pour ce contact. Cliquer pour la réactiver."
+                    onClick={() => updateContact(selectedContact.id, { aiPausedUntil: null })}
+                    className="p-2 rounded-full hover:bg-[#2a3942] transition-colors">
+                    <PauseCircle size={20} style={{ color: '#f0b429' }} />
+                  </button>
+                ) : (
+                  <button title={selectedContact.aiEnabled ? 'Désactiver IA' : 'Activer IA'}
+                    onClick={() => updateContact(selectedContact.id, { aiEnabled: !selectedContact.aiEnabled })}
+                    className="p-2 rounded-full hover:bg-[#2a3942] transition-colors">
+                    {selectedContact.aiEnabled
+                      ? <Bot size={20} style={{ color: '#00a884' }} />
+                      : <BotOff size={20} style={{ color: C.icon }} />}
+                  </button>
+                )}
 
                 {/* Create draft order — shortcut visible directly in chat header */}
                 {draftCreated ? (
@@ -653,13 +706,28 @@ export function Inbox() {
                     )}
                     <div className={`flex ${isOut ? 'justify-end' : 'justify-start'} group`}>
                       <div className="relative max-w-[65%]">
-                        {/* Reply button on hover */}
-                        <button
-                          onClick={() => { setRepliedTo(m); inputRef.current?.focus(); }}
-                          className="absolute -left-8 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-full"
-                          style={{ background: C.panelHover }}>
-                          <Reply size={14} style={{ color: C.icon }} />
-                        </button>
+                        {/* Reply / correct buttons on hover */}
+                        <div className="absolute -left-8 top-1/2 -translate-y-1/2 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            onClick={() => { setRepliedTo(m); inputRef.current?.focus(); }}
+                            title="Répondre"
+                            className="p-1 rounded-full"
+                            style={{ background: C.panelHover }}>
+                            <Reply size={14} style={{ color: C.icon }} />
+                          </button>
+                          {m.fromAi && (
+                            <button
+                              onClick={() => {
+                                const question = [...selectedMessages.slice(0, i)].reverse().find(x => x.direction === 'in')?.content ?? '';
+                                setCorrectionDraft({ question, text: m.content });
+                              }}
+                              title="Corriger cette réponse — l'IA s'en souviendra"
+                              className="p-1 rounded-full"
+                              style={{ background: C.panelHover }}>
+                              <Wand2 size={14} style={{ color: '#f0b429' }} />
+                            </button>
+                          )}
+                        </div>
 
                         <div className="rounded-lg px-3 py-1.5 shadow"
                           style={{
@@ -725,13 +793,31 @@ export function Inbox() {
               <button className="p-2 rounded-full hover:bg-[#2a3942] transition-colors">
                 <Paperclip size={24} style={{ color: C.icon }} />
               </button>
-              <div className="flex-1 flex items-center rounded-lg px-4 py-2" style={{ background: C.inputBg }}>
+              <div className="relative flex-1 flex items-center rounded-lg px-4 py-2" style={{ background: C.inputBg }}>
+                {qrMatches.length > 0 && (
+                  <div className="absolute bottom-full left-0 right-0 mb-2 rounded-lg overflow-hidden shadow-xl z-20"
+                    style={{ background: C.headerBg, border: `1px solid ${C.divider}` }}>
+                    {qrMatches.map(q => (
+                      <button key={q.id} type="button" onClick={() => applyQuickReply(q.message)}
+                        className="w-full text-left px-3 py-2 hover:bg-[#2a3942] transition-colors">
+                        <p className="text-xs font-semibold" style={{ color: '#00a884' }}>/{q.shortcut}</p>
+                        <p className="text-xs truncate" style={{ color: C.textSub }}>{q.message}</p>
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <input
                   ref={inputRef}
                   value={msgText}
                   onChange={e => setMsgText(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleSend()}
-                  placeholder="Écrire un message"
+                  onKeyDown={e => {
+                    if (e.key !== 'Enter' || e.shiftKey) return;
+                    // With the shortcut list open, Enter picks the top match instead of
+                    // sending the raw "/prix" text to the customer.
+                    if (qrMatches.length > 0) { e.preventDefault(); applyQuickReply(qrMatches[0].message); return; }
+                    handleSend();
+                  }}
+                  placeholder={quickReplies.length > 0 ? 'Écrire un message — « / » pour les réponses rapides' : 'Écrire un message'}
                   className="flex-1 bg-transparent outline-none text-sm"
                   style={{ color: C.text }}
                 />
@@ -865,6 +951,22 @@ export function Inbox() {
               </div>
             </div>
 
+            {/* AI paused after a manual reply */}
+            {selectedContact.aiEnabled && isAiPaused(selectedContact) && (
+              <div className="flex items-center justify-between gap-2 rounded-lg p-3" style={{ background: '#f0b42920' }}>
+                <span className="text-xs flex items-center gap-2" style={{ color: '#f0b429' }}>
+                  <PauseCircle size={14} />
+                  IA en pause jusqu'à {selectedContact.aiPausedUntil && new Date(selectedContact.aiPausedUntil).toLocaleTimeString('fr', { hour: '2-digit', minute: '2-digit' })} (tu as répondu toi-même)
+                </span>
+                <button
+                  onClick={() => updateContact(selectedContact.id, { aiPausedUntil: null })}
+                  className="flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-md shrink-0"
+                  style={{ background: '#f0b42930', color: '#f0b429' }}>
+                  <PlayCircle size={12} /> Réactiver
+                </button>
+              </div>
+            )}
+
             {/* Agent */}
             <div>
               <p className="text-xs mb-1" style={{ color: C.textSub }}>Agent assigné</p>
@@ -914,5 +1016,51 @@ export function Inbox() {
         </div>
       )}
     </div>
+
+    {/* Correction modal — corrects an AI reply and feeds it back into the knowledge base */}
+    {correctionDraft && createPortal(
+      <div className="fixed inset-0 z-[999] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.6)' }}
+        onClick={() => setCorrectionDraft(null)}>
+        <div className="w-full max-w-md rounded-2xl p-5 space-y-3" style={{ background: C.headerBg }}
+          onClick={e => e.stopPropagation()}>
+          <div className="flex items-center gap-2">
+            <Wand2 size={18} style={{ color: '#f0b429' }} />
+            <h3 className="font-semibold text-sm" style={{ color: C.text }}>Corriger cette réponse</h3>
+          </div>
+          {correctionDraft.question && (
+            <div>
+              <p className="text-xs mb-1" style={{ color: C.textSub }}>Question du client</p>
+              <p className="text-xs rounded-lg px-3 py-2" style={{ background: C.inputBg, color: C.textSub }}>
+                {correctionDraft.question}
+              </p>
+            </div>
+          )}
+          <div>
+            <p className="text-xs mb-1" style={{ color: C.textSub }}>Bonne réponse — l'IA s'en servira la prochaine fois</p>
+            <textarea
+              value={correctionDraft.text}
+              onChange={e => setCorrectionDraft({ ...correctionDraft, text: e.target.value })}
+              rows={5}
+              autoFocus
+              className="w-full text-sm rounded-lg px-3 py-2 outline-none resize-none"
+              style={{ background: C.inputBg, color: C.text, border: 'none' }}
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-1">
+            <button onClick={() => setCorrectionDraft(null)}
+              className="text-xs px-3 py-1.5 rounded-lg font-medium" style={{ color: C.textSub }}>
+              Annuler
+            </button>
+            <button onClick={saveCorrection} disabled={savingCorrection || !correctionDraft.text.trim()}
+              className="text-xs px-3 py-1.5 rounded-lg font-medium disabled:opacity-60"
+              style={{ background: '#00a884', color: 'white' }}>
+              {savingCorrection ? 'Enregistrement…' : 'Enregistrer la correction'}
+            </button>
+          </div>
+        </div>
+      </div>,
+      document.body,
+    )}
+    </>
   );
 }

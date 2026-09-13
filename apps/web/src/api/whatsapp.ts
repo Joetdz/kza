@@ -56,6 +56,10 @@ export const waApi = {
     req<any>(`/whatsapp/contacts/${contactId}/notes`, { method: 'POST', body: JSON.stringify({ content }) }),
   deleteNote: (noteId: string) => req<void>(`/whatsapp/notes/${noteId}`, { method: 'DELETE' }),
 
+  // Réponses rapides (miroir de WhatsApp Business — lecture seule)
+  getQuickReplies: () =>
+    req<Array<{ id: string; shortcut: string; message: string; keywords: string[] }>>('/whatsapp/quick-replies'),
+
   // Tags
   getTags: () => req<any[]>('/whatsapp/tags'),
   createTag: (name: string, color?: string) =>
@@ -118,5 +122,12 @@ export const waApi = {
   // Créer un brouillon de commande depuis une conversation
   createDraftOrder: (contactId: string) =>
     req<any>(`/whatsapp/contacts/${contactId}/create-draft-order`, { method: 'POST' }),
+
+  // Importer le site web / la page Facebook / Instagram comme base de connaissance
+  importKb: (url: string, kind: 'website' | 'facebook' | 'instagram') =>
+    req<{ created: number; thin: boolean }>('/whatsapp/kb/import', {
+      method: 'POST',
+      body: JSON.stringify({ url, kind }),
+    }),
 
 };

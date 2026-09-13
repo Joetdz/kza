@@ -36,4 +36,19 @@ export class AiConfigDto {
 
   @IsOptional() @IsNumber() @Min(0) @Max(1)
   confidenceThreshold?: number;
+
+  @IsOptional() @IsInt() @Min(0)
+  silentOnboardingHours?: number;
+
+  @IsOptional() @IsInt() @Min(0)
+  humanPauseHours?: number;
+
+  @IsOptional() @IsString()
+  websiteUrl?: string;
+
+  @IsOptional() @IsString()
+  facebookUrl?: string;
+
+  @IsOptional() @IsString()
+  instagramUrl?: string;
 }

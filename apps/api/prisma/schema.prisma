@@ -198,6 +198,10 @@ model WhatsAppSession {
   authState  Json?    @map("auth_state")
   connected  Boolean  @default(false)
   phone      String?
+  // Stamped only when a fresh pairing completes (not on every reconnect) — lets the
+  // AI stay silent for a while on a just-linked number instead of replying right away,
+  // the way Meta's own "paused but learning" onboarding mode does.
+  linkedAt   DateTime? @map("linked_at")
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
 
@@ -240,6 +244,10 @@ model WhatsAppContact {
   leadUrgency     String?   @map("lead_urgency")
   leadProduct     String?   @map("lead_product")
   aiEnabled       Boolean   @default(true) @map("ai_enabled")
+  // Set whenever the owner (or a team member) replies to this contact by hand from the
+  // Inbox — the AI stays quiet on this contact until it elapses, mirroring how a human
+  // taking over a WhatsApp Business conversation pauses Meta's own agent.
+  aiPausedUntil   DateTime? @map("ai_paused_until")
   source          String?
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
@@ -336,6 +344,18 @@ model WhatsAppAIConfig {
   confidenceThreshold Float    @default(0.7) @map("confidence_threshold")
   deliveryAgentName   String   @default("") @map("delivery_agent_name")
   deliveryAgentPhone  String   @default("") @map("delivery_agent_phone")
+  // Hours a freshly-paired number stays silent (reads/logs but never sends an AI
+  // reply) before going live. 0 disables the onboarding window.
+  silentOnboardingHours Int    @default(48) @map("silent_onboarding_hours")
+  // Hours the AI stays paused on a contact after a human replies to them manually.
+  // 0 disables the pause.
+  humanPauseHours     Int      @default(6) @map("human_pause_hours")
+  // Sources used to seed the knowledge base (see WhatsAppKBEntry categories
+  // 'website'/'social'). Purely informational — kept so a future re-import knows
+  // what was last used.
+  websiteUrl          String?  @map("website_url")
+  facebookUrl         String?  @map("facebook_url")
+  instagramUrl        String?  @map("instagram_url")
   createdAt           DateTime @default(now()) @map("created_at")
   updatedAt           DateTime @updatedAt @map("updated_at")
 
@@ -382,6 +402,25 @@ model WhatsAppKBEntry {
   @@index([userId])
   @@index([businessId])
   @@map("wa_kb_entries")
+}
+
+// Quick replies configured in the WhatsApp Business app (/prix, /livraison…).
+// Mirrored from the phone's app-state sync — the phone stays the source of truth,
+// so they are read-only on our side.
+model WaQuickReply {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String   @map("user_id")
+  businessId String?  @map("business_id") @db.Uuid
+  waId       String   @map("wa_id")
+  shortcut   String
+  message    String
+  keywords   String[] @default([])
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@unique([userId, businessId, waId])
+  @@index([businessId])
+  @@map("wa_quick_replies")
 }
 
 model WhatsAppAutomation {
