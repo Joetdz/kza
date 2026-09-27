@@ -8,6 +8,7 @@
     "build": "prisma generate && nest build",
     "start": "nest start",
     "start:dev": "nest start --watch",
+    "start:dev:branch": "cross-env NODE_ENV=development NODE_OPTIONS=--require=./preload-dev-env.js nest start --watch",
     "start:prod": "node dist/main",
     "migrate": "prisma migrate dev",
     "migrate:deploy": "prisma migrate deploy",
@@ -47,6 +48,7 @@
     "@types/node": "^20.14.0",
     "@types/passport-jwt": "^4.0.1",
     "@types/qrcode": "^1.5.6",
+    "cross-env": "^7.0.3",
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
     "typescript": "^5.4.5"
