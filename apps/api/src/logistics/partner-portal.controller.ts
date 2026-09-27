@@ -116,6 +116,30 @@ export class PartnerPortalController {
     });
 
     if (body.status === 'delivered' && order.status !== 'delivered') {
+      // Same stock decrement as the owner-side path (logistics.controller.ts) — without
+      // this, a delivery confirmed by the partner (rather than the business owner) left
+      // Product.quantity untouched, so the public store's stock never reflected reality.
+      const today = new Date().toISOString().split('T')[0];
+      for (const item of order.items) {
+        await Promise.all([
+          this.prisma.stockMovement.create({
+            data: {
+              userId: order.userId,
+              businessId: order.businessId ?? null,
+              productId: item.productId,
+              type: 'out',
+              quantity: item.quantity,
+              reason: `Commande #${order.orderNumber.toString().padStart(4, '0')} livrée`,
+              date: new Date(today),
+            },
+          }),
+          this.prisma.product.update({
+            where: { id: item.productId },
+            data: { quantity: { decrement: item.quantity } },
+          }),
+        ]).catch(() => {});
+      }
+
       const locationId = order.locationId ?? partner.location?.id ?? null;
       if (locationId) {
         for (const item of order.items) {
