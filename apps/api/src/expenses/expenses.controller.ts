@@ -1,13 +1,38 @@
 import { Controller, Get, Post, Patch, Delete, Body, Param } from '@nestjs/common';
 import { ExpensesService } from './expenses.service';
+import { RecurringExpenseService } from './recurring-expense.service';
 import { CreateExpenseDto } from './dto/create-expense.dto';
+import { CreateRecurringExpenseDto } from './dto/create-recurring-expense.dto';
 import { CurrentUser, AuthUser } from '../auth/current-user.decorator';
 import { Roles } from '../auth/roles.guard';
 
 @Controller('expenses')
 @Roles('owner', 'manager')
 export class ExpensesController {
-  constructor(private readonly service: ExpensesService) {}
+  constructor(
+    private readonly service: ExpensesService,
+    private readonly recurring: RecurringExpenseService,
+  ) {}
+
+  @Get('recurring')
+  findAllRecurring(@CurrentUser() user: AuthUser) {
+    return this.recurring.findAll(user.ownerId, user.businessId || undefined);
+  }
+
+  @Post('recurring')
+  createRecurring(@Body() dto: CreateRecurringExpenseDto, @CurrentUser() user: AuthUser) {
+    return this.recurring.create(dto, user.ownerId, user.businessId || undefined);
+  }
+
+  @Patch('recurring/:id')
+  updateRecurring(@Param('id') id: string, @Body() dto: Partial<CreateRecurringExpenseDto>, @CurrentUser() user: AuthUser) {
+    return this.recurring.update(id, dto, user.ownerId, user.businessId || undefined);
+  }
+
+  @Delete('recurring/:id')
+  removeRecurring(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.recurring.remove(id, user.ownerId, user.businessId || undefined);
+  }
 
   @Get()
   findAll(@CurrentUser() user: AuthUser) {

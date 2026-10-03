@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.BusinessSchema = exports.UpdateBusinessSchema = exports.CreateBusinessSchema = exports.SUPPORTED_CURRENCIES = exports.GoalSchema = exports.UpdateGoalSchema = exports.CreateGoalSchema = exports.ExpenseSchema = exports.UpdateExpenseSchema = exports.CreateExpenseSchema = exports.SaleSchema = exports.CreateSaleSchema = exports.SaleItemSchema = exports.MovementSchema = exports.CreateMovementSchema = exports.ProductSchema = exports.UpdateProductSchema = exports.CreateProductSchema = exports.DELIVERY_ZONES = exports.RDC_VILLES = exports.KINSHASA_COMMUNES = exports.SALE_STATUSES = exports.MOVEMENT_TYPES = exports.EXPENSE_CATEGORIES = exports.SALE_CHANNELS = void 0;
+exports.BusinessSchema = exports.UpdateBusinessSchema = exports.CreateBusinessSchema = exports.SUPPORTED_CURRENCIES = exports.GoalSchema = exports.UpdateGoalSchema = exports.CreateGoalSchema = exports.RecurringExpenseSchema = exports.UpdateRecurringExpenseSchema = exports.CreateRecurringExpenseSchema = exports.ExpenseSchema = exports.UpdateExpenseSchema = exports.CreateExpenseSchema = exports.SaleSchema = exports.CreateSaleSchema = exports.SaleItemSchema = exports.MovementSchema = exports.CreateMovementSchema = exports.ProductSchema = exports.UpdateProductSchema = exports.CreateProductSchema = exports.DELIVERY_ZONES = exports.RDC_VILLES = exports.KINSHASA_COMMUNES = exports.SALE_STATUSES = exports.MOVEMENT_TYPES = exports.EXPENSE_CATEGORIES = exports.SALE_CHANNELS = void 0;
 const zod_1 = require("zod");
 // ─── Constantes ──────────────────────────────────────────────────────────────
 exports.SALE_CHANNELS = ['WhatsApp', 'Meta Ads', 'TikTok', 'Instagram', 'Boutique', 'Autre'];
@@ -95,6 +95,23 @@ exports.UpdateExpenseSchema = exports.CreateExpenseSchema.partial();
 exports.ExpenseSchema = exports.CreateExpenseSchema.extend({
     id: zod_1.z.string().uuid(),
     createdAt: zod_1.z.string(),
+});
+// ─── Recurring Expense ──────────────────────────────────────────────────────────
+exports.CreateRecurringExpenseSchema = zod_1.z.object({
+    category: zod_1.z.string().min(1),
+    description: zod_1.z.string().default(''),
+    amount: zod_1.z.number().min(0),
+    dayOfMonth: zod_1.z.number().int().min(1).max(28).default(1),
+    startDate: zod_1.z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    endDate: zod_1.z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    active: zod_1.z.boolean().default(true),
+});
+exports.UpdateRecurringExpenseSchema = exports.CreateRecurringExpenseSchema.partial();
+exports.RecurringExpenseSchema = exports.CreateRecurringExpenseSchema.extend({
+    id: zod_1.z.string().uuid(),
+    lastGeneratedMonth: zod_1.z.string().nullable(),
+    createdAt: zod_1.z.string(),
+    updatedAt: zod_1.z.string(),
 });
 // ─── Goal ─────────────────────────────────────────────────────────────────────
 exports.CreateGoalSchema = zod_1.z.object({

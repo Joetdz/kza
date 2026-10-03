@@ -11,6 +11,9 @@ import {
   ExpenseSchema,
   CreateExpenseSchema,
   UpdateExpenseSchema,
+  RecurringExpenseSchema,
+  CreateRecurringExpenseSchema,
+  UpdateRecurringExpenseSchema,
   GoalSchema,
   CreateGoalSchema,
   UpdateGoalSchema,
@@ -43,6 +46,9 @@ export type CreateSaleDto = z.infer<typeof CreateSaleSchema>;
 export type Expense = z.infer<typeof ExpenseSchema>;
 export type CreateExpenseDto = z.infer<typeof CreateExpenseSchema>;
 export type UpdateExpenseDto = z.infer<typeof UpdateExpenseSchema>;
+export type RecurringExpense = z.infer<typeof RecurringExpenseSchema>;
+export type CreateRecurringExpenseDto = z.infer<typeof CreateRecurringExpenseSchema>;
+export type UpdateRecurringExpenseDto = z.infer<typeof UpdateRecurringExpenseSchema>;
 
 export type SalesGoal = z.infer<typeof GoalSchema>;
 export type CreateGoalDto = z.infer<typeof CreateGoalSchema>;

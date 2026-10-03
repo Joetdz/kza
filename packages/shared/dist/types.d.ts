@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ProductSchema, CreateProductSchema, UpdateProductSchema, MovementSchema, CreateMovementSchema, SaleSchema, SaleItemSchema, CreateSaleSchema, ExpenseSchema, CreateExpenseSchema, UpdateExpenseSchema, GoalSchema, CreateGoalSchema, UpdateGoalSchema } from './schemas';
+import { ProductSchema, CreateProductSchema, UpdateProductSchema, MovementSchema, CreateMovementSchema, SaleSchema, SaleItemSchema, CreateSaleSchema, ExpenseSchema, CreateExpenseSchema, UpdateExpenseSchema, RecurringExpenseSchema, CreateRecurringExpenseSchema, UpdateRecurringExpenseSchema, GoalSchema, CreateGoalSchema, UpdateGoalSchema } from './schemas';
 import type { SALE_CHANNELS, MOVEMENT_TYPES, SALE_STATUSES } from './schemas';
 export type SaleChannel = typeof SALE_CHANNELS[number];
 export type ExpenseCategory = string;
@@ -16,6 +16,9 @@ export type CreateSaleDto = z.infer<typeof CreateSaleSchema>;
 export type Expense = z.infer<typeof ExpenseSchema>;
 export type CreateExpenseDto = z.infer<typeof CreateExpenseSchema>;
 export type UpdateExpenseDto = z.infer<typeof UpdateExpenseSchema>;
+export type RecurringExpense = z.infer<typeof RecurringExpenseSchema>;
+export type CreateRecurringExpenseDto = z.infer<typeof CreateRecurringExpenseSchema>;
+export type UpdateRecurringExpenseDto = z.infer<typeof UpdateRecurringExpenseSchema>;
 export type SalesGoal = z.infer<typeof GoalSchema>;
 export type CreateGoalDto = z.infer<typeof CreateGoalSchema>;
 export type UpdateGoalDto = z.infer<typeof UpdateGoalSchema>;

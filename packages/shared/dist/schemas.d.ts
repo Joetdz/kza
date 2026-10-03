@@ -362,6 +362,94 @@ export declare const ExpenseSchema: z.ZodObject<{
     channel?: "WhatsApp" | "Meta Ads" | "TikTok" | "Instagram" | "Boutique" | "Autre" | undefined;
     description?: string | undefined;
 }>;
+export declare const CreateRecurringExpenseSchema: z.ZodObject<{
+    category: z.ZodString;
+    description: z.ZodDefault<z.ZodString>;
+    amount: z.ZodNumber;
+    dayOfMonth: z.ZodDefault<z.ZodNumber>;
+    startDate: z.ZodString;
+    endDate: z.ZodOptional<z.ZodString>;
+    active: z.ZodDefault<z.ZodBoolean>;
+}, "strip", z.ZodTypeAny, {
+    category: string;
+    amount: number;
+    description: string;
+    dayOfMonth: number;
+    startDate: string;
+    active: boolean;
+    endDate?: string | undefined;
+}, {
+    category: string;
+    amount: number;
+    startDate: string;
+    description?: string | undefined;
+    dayOfMonth?: number | undefined;
+    endDate?: string | undefined;
+    active?: boolean | undefined;
+}>;
+export declare const UpdateRecurringExpenseSchema: z.ZodObject<{
+    category: z.ZodOptional<z.ZodString>;
+    description: z.ZodOptional<z.ZodDefault<z.ZodString>>;
+    amount: z.ZodOptional<z.ZodNumber>;
+    dayOfMonth: z.ZodOptional<z.ZodDefault<z.ZodNumber>>;
+    startDate: z.ZodOptional<z.ZodString>;
+    endDate: z.ZodOptional<z.ZodOptional<z.ZodString>>;
+    active: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+}, "strip", z.ZodTypeAny, {
+    category?: string | undefined;
+    amount?: number | undefined;
+    description?: string | undefined;
+    dayOfMonth?: number | undefined;
+    startDate?: string | undefined;
+    endDate?: string | undefined;
+    active?: boolean | undefined;
+}, {
+    category?: string | undefined;
+    amount?: number | undefined;
+    description?: string | undefined;
+    dayOfMonth?: number | undefined;
+    startDate?: string | undefined;
+    endDate?: string | undefined;
+    active?: boolean | undefined;
+}>;
+export declare const RecurringExpenseSchema: z.ZodObject<{
+    category: z.ZodString;
+    description: z.ZodDefault<z.ZodString>;
+    amount: z.ZodNumber;
+    dayOfMonth: z.ZodDefault<z.ZodNumber>;
+    startDate: z.ZodString;
+    endDate: z.ZodOptional<z.ZodString>;
+    active: z.ZodDefault<z.ZodBoolean>;
+} & {
+    id: z.ZodString;
+    lastGeneratedMonth: z.ZodNullable<z.ZodString>;
+    createdAt: z.ZodString;
+    updatedAt: z.ZodString;
+}, "strip", z.ZodTypeAny, {
+    category: string;
+    id: string;
+    createdAt: string;
+    updatedAt: string;
+    amount: number;
+    description: string;
+    dayOfMonth: number;
+    startDate: string;
+    active: boolean;
+    lastGeneratedMonth: string | null;
+    endDate?: string | undefined;
+}, {
+    category: string;
+    id: string;
+    createdAt: string;
+    updatedAt: string;
+    amount: number;
+    startDate: string;
+    lastGeneratedMonth: string | null;
+    description?: string | undefined;
+    dayOfMonth?: number | undefined;
+    endDate?: string | undefined;
+    active?: boolean | undefined;
+}>;
 export declare const CreateGoalSchema: z.ZodObject<{
     productId: z.ZodString;
     targetQty: z.ZodNumber;

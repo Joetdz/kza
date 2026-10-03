@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react';
-import { Plus, Trash2, Edit2, Check } from 'lucide-react';
+import { useState, useMemo, useEffect } from 'react';
+import { Plus, Trash2, Edit2, Check, Repeat, Pause, Play } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { Modal } from '../components/ui/Modal';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
@@ -9,7 +9,8 @@ import { NumberInput } from '../components/ui/NumberInput';
 import { ListSkeleton } from '../components/ui/Skeleton';
 import { useCurrency } from '../hooks/useCurrency';
 import { formatDate, EXPENSE_LABELS, EXPENSE_COLORS, SALE_CHANNELS } from '../utils/formatters';
-import type { Expense, ExpenseCategory, SaleChannel } from '../types';
+import { recurringExpensesApi } from '../api';
+import type { Expense, ExpenseCategory, SaleChannel, RecurringExpense } from '../types';
 
 // The 4 built-in categories, always shown first. Not exhaustive anymore — a business
 // can add its own on top of these (see customCategories below); category is free text
@@ -59,6 +60,97 @@ export function Expenses() {
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
   const [newCategoryName, setNewCategoryName] = useState('');
   const [addingCategory, setAddingCategory] = useState(false);
+
+  // ─── Recurring expenses (salaires, loyers, créances...) ─────────────────────
+  const [recurring, setRecurring] = useState<RecurringExpense[]>([]);
+  const [recurringLoading, setRecurringLoading] = useState(true);
+  const [recurringModalOpen, setRecurringModalOpen] = useState(false);
+  const [editingRecurring, setEditingRecurring] = useState<RecurringExpense | null>(null);
+  const [deleteRecurringId, setDeleteRecurringId] = useState<string | null>(null);
+  const [recurringForm, setRecurringForm] = useState({
+    category: 'other' as string,
+    description: '',
+    amount: 0,
+    dayOfMonth: 1,
+    startDate: new Date().toISOString().split('T')[0],
+    endDate: '',
+  });
+
+  useEffect(() => {
+    recurringExpensesApi.getAll()
+      .then(setRecurring)
+      .catch(() => {})
+      .finally(() => setRecurringLoading(false));
+  }, []);
+
+  const openAddRecurring = () => {
+    setEditingRecurring(null);
+    setRecurringForm({ category: 'other', description: '', amount: 0, dayOfMonth: 1, startDate: new Date().toISOString().split('T')[0], endDate: '' });
+    setRecurringModalOpen(true);
+  };
+
+  const openEditRecurring = (r: RecurringExpense) => {
+    setEditingRecurring(r);
+    setRecurringForm({
+      category: r.category,
+      description: r.description,
+      amount: r.amount,
+      dayOfMonth: r.dayOfMonth,
+      startDate: r.startDate.slice(0, 10),
+      endDate: r.endDate ? r.endDate.slice(0, 10) : '',
+    });
+    setRecurringModalOpen(true);
+  };
+
+  const handleSaveRecurring = async () => {
+    if (!recurringForm.amount || !recurringForm.category.trim()) return;
+    setSubmitting(true);
+    try {
+      const payload = {
+        category: recurringForm.category,
+        description: recurringForm.description,
+        amount: recurringForm.amount,
+        dayOfMonth: recurringForm.dayOfMonth,
+        startDate: recurringForm.startDate,
+        endDate: recurringForm.endDate || undefined,
+      };
+      if (editingRecurring) {
+        const updated = await recurringExpensesApi.update(editingRecurring.id, payload);
+        setRecurring(prev => prev.map(r => r.id === updated.id ? updated : r));
+      } else {
+        const created = await recurringExpensesApi.create(payload as any);
+        setRecurring(prev => [created, ...prev]);
+      }
+      setRecurringModalOpen(false);
+    } catch (e: any) {
+      alert('Erreur : ' + (e?.message ?? 'Impossible de sauvegarder'));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const toggleRecurringActive = async (r: RecurringExpense) => {
+    try {
+      const updated = await recurringExpensesApi.update(r.id, { active: !r.active });
+      setRecurring(prev => prev.map(x => x.id === updated.id ? updated : x));
+    } catch (e: any) {
+      alert('Erreur : ' + (e?.message ?? 'Impossible de mettre à jour'));
+    }
+  };
+
+  const handleDeleteRecurring = async () => {
+    if (!deleteRecurringId) return;
+    try {
+      await recurringExpensesApi.remove(deleteRecurringId);
+      setRecurring(prev => prev.filter(r => r.id !== deleteRecurringId));
+    } catch (e: any) {
+      alert('Erreur : ' + (e?.message ?? 'Impossible de supprimer'));
+    } finally {
+      setDeleteRecurringId(null);
+    }
+  };
+
+  const currentMonthKey = new Date().toISOString().slice(0, 7);
 
   // Built-ins first, then whatever custom category names already exist on this
   // business's own expenses — no separate table, category is just a string on Expense.
@@ -166,6 +258,61 @@ export function Expenses() {
         >
           <Plus size={16} /><span className="hidden sm:inline">Ajouter</span>
         </button>
+      </div>
+
+      {/* Recurring expenses — salaires, loyers, créances... auto-posted monthly */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <Repeat size={16} className="text-indigo-500" />
+            <h2 className="font-semibold text-gray-900 text-sm">Dépenses récurrentes</h2>
+            <span className="text-xs text-gray-400">salaires, loyers, créances...</span>
+          </div>
+          <button
+            onClick={openAddRecurring}
+            className="flex items-center gap-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-xl text-xs font-medium transition-colors"
+          >
+            <Plus size={14} /> Nouvelle récurrente
+          </button>
+        </div>
+
+        {recurringLoading ? (
+          <p className="text-xs text-gray-400 py-2">Chargement...</p>
+        ) : recurring.length === 0 ? (
+          <p className="text-xs text-gray-400 py-2">Aucune dépense récurrente — ajoute un salaire, un loyer ou un remboursement pour qu'il se crée automatiquement chaque mois.</p>
+        ) : (
+          <div className="space-y-1.5">
+            {recurring.map(r => {
+              const generatedThisMonth = r.lastGeneratedMonth === currentMonthKey;
+              return (
+                <div key={r.id} className={`flex items-center gap-3 p-2.5 rounded-xl ${r.active ? 'bg-gray-50' : 'bg-gray-50 opacity-50'}`}>
+                  <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: catColor(r.category) }} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-medium text-gray-800">{catLabel(r.category)}</span>
+                      {r.description && <span className="text-xs text-gray-400 truncate">{r.description}</span>}
+                      {!r.active && <Badge color="gray" size="sm">En pause</Badge>}
+                      {r.active && generatedThisMonth && <Badge color="green" size="sm">Généré ce mois</Badge>}
+                    </div>
+                    <div className="text-xs text-gray-400">Le {r.dayOfMonth} de chaque mois{r.endDate ? ` · jusqu'au ${formatDate(r.endDate)}` : ''}</div>
+                  </div>
+                  <div className="text-sm font-bold text-gray-900 shrink-0">{MAD(r.amount)}</div>
+                  <div className="flex gap-1 shrink-0">
+                    <button onClick={() => toggleRecurringActive(r)} className="p-1.5 rounded-lg bg-gray-100 text-gray-500 hover:bg-gray-200" title={r.active ? 'Mettre en pause' : 'Réactiver'}>
+                      {r.active ? <Pause size={12} /> : <Play size={12} />}
+                    </button>
+                    <button onClick={() => openEditRecurring(r)} className="p-1.5 rounded-lg bg-gray-100 text-gray-500 hover:bg-gray-200">
+                      <Edit2 size={12} />
+                    </button>
+                    <button onClick={() => setDeleteRecurringId(r.id)} className="p-1.5 rounded-lg bg-red-50 text-red-400 hover:bg-red-100">
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Category summary cards */}
@@ -389,6 +536,87 @@ export function Expenses() {
         message="Cette dépense sera définitivement supprimée."
         onConfirm={() => { if (deleteId) deleteExpense(deleteId); setDeleteId(null); }}
         onCancel={() => setDeleteId(null)}
+      />
+
+      {/* Recurring expense modal */}
+      <Modal open={recurringModalOpen} onClose={() => setRecurringModalOpen(false)} title={editingRecurring ? 'Modifier la dépense récurrente' : 'Nouvelle dépense récurrente'} size="md">
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs font-medium text-gray-600 mb-1 block">Catégorie *</label>
+              <select
+                value={recurringForm.category}
+                onChange={e => setRecurringForm(f => ({ ...f, category: e.target.value }))}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300"
+              >
+                {allCategories.map(c => <option key={c} value={c}>{catLabel(c)}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-600 mb-1 block">Montant ({currency}) *</label>
+              <NumberInput
+                value={recurringForm.amount}
+                onChange={val => setRecurringForm(f => ({ ...f, amount: val }))}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-600 mb-1 block">Jour du mois *</label>
+              <input
+                type="number" min={1} max={28}
+                value={recurringForm.dayOfMonth}
+                onChange={e => setRecurringForm(f => ({ ...f, dayOfMonth: Math.min(28, Math.max(1, +e.target.value)) }))}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300"
+              />
+              <div className="text-xs text-gray-400 mt-1">1 à 28 — pour tomber dans tous les mois</div>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-600 mb-1 block">Début *</label>
+              <input
+                type="date"
+                value={recurringForm.startDate}
+                onChange={e => setRecurringForm(f => ({ ...f, startDate: e.target.value }))}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-600 mb-1 block">Fin (optionnel)</label>
+              <input
+                type="date"
+                value={recurringForm.endDate}
+                onChange={e => setRecurringForm(f => ({ ...f, endDate: e.target.value }))}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300"
+              />
+              <div className="text-xs text-gray-400 mt-1">Ex: fin d'un remboursement de créance</div>
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-gray-600 mb-1 block">Description</label>
+            <input
+              type="text"
+              value={recurringForm.description}
+              onChange={e => setRecurringForm(f => ({ ...f, description: e.target.value }))}
+              placeholder="Ex: Salaire — Jean Mbuyi"
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300"
+            />
+          </div>
+
+          <div className="flex gap-3 pt-2">
+            <Button variant="secondary" onClick={() => setRecurringModalOpen(false)} className="flex-1" disabled={submitting}>Annuler</Button>
+            <Button onClick={handleSaveRecurring} loading={submitting} className="flex-1">
+              {editingRecurring ? 'Enregistrer' : 'Créer'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <ConfirmDialog
+        open={!!deleteRecurringId}
+        title="Supprimer la dépense récurrente"
+        message="Elle ne se générera plus les mois suivants. Les dépenses déjà créées restent intactes."
+        onConfirm={handleDeleteRecurring}
+        onCancel={() => setDeleteRecurringId(null)}
       />
     </div>
   );

@@ -117,6 +117,27 @@ export const ExpenseSchema = CreateExpenseSchema.extend({
   createdAt: z.string(),
 });
 
+// ─── Recurring Expense ──────────────────────────────────────────────────────────
+
+export const CreateRecurringExpenseSchema = z.object({
+  category: z.string().min(1),
+  description: z.string().default(''),
+  amount: z.number().min(0),
+  dayOfMonth: z.number().int().min(1).max(28).default(1),
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  active: z.boolean().default(true),
+});
+
+export const UpdateRecurringExpenseSchema = CreateRecurringExpenseSchema.partial();
+
+export const RecurringExpenseSchema = CreateRecurringExpenseSchema.extend({
+  id: z.string().uuid(),
+  lastGeneratedMonth: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
 // ─── Goal ─────────────────────────────────────────────────────────────────────
 
 export const CreateGoalSchema = z.object({

@@ -1,4 +1,4 @@
-import type { Product, Sale, Expense, SalesGoal, StockMovement } from '../types';
+import type { Product, Sale, Expense, SalesGoal, StockMovement, RecurringExpense } from '../types';
 import { supabase } from '../lib/supabase';
 
 const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api';
@@ -77,6 +77,17 @@ export const expensesApi = {
     req<Expense>(`/expenses/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   remove: (id: string) =>
     req<{ id: string }>(`/expenses/${id}`, { method: 'DELETE' }),
+};
+
+// ─── Recurring Expenses (salaires, loyers, créances...) ────────
+export const recurringExpensesApi = {
+  getAll: () => req<RecurringExpense[]>('/expenses/recurring'),
+  create: (body: Omit<RecurringExpense, 'id' | 'createdAt' | 'updatedAt' | 'lastGeneratedMonth'>) =>
+    req<RecurringExpense>('/expenses/recurring', { method: 'POST', body: JSON.stringify(body) }),
+  update: (id: string, body: Partial<RecurringExpense>) =>
+    req<RecurringExpense>(`/expenses/recurring/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  remove: (id: string) =>
+    req<{ id: string }>(`/expenses/recurring/${id}`, { method: 'DELETE' }),
 };
 
 // ─── Upload ──────────────────────────────────────────────────
