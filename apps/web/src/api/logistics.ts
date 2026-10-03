@@ -15,7 +15,12 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
       ...(init?.headers ?? {}),
     },
   });
-  if (!res.ok) throw new Error(`API ${res.status}`);
+  if (!res.ok) {
+    const raw = await res.text().catch(() => '');
+    let message = `API ${res.status}`;
+    try { message = JSON.parse(raw)?.message ?? message; } catch { if (raw) message = raw; }
+    throw new Error(message);
+  }
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
 }

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, Query, Logger } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CurrentUser, AuthUser } from '../auth/current-user.decorator';
 import { WhatsAppService } from '../whatsapp/whatsapp.service';
@@ -89,6 +89,33 @@ export class LogisticsController {
     @Param('id') id: string,
     @Body() body: { productId: string; quantity: number },
   ) {
+    if (body.quantity < 0) throw new BadRequestException('Quantité invalide');
+
+    const location = await this.prisma.stockLocation.findFirst({ where: { id, ...this.where(user) } });
+    if (!location) throw new NotFoundException('Emplacement introuvable');
+
+    const product = await this.prisma.product.findFirst({ where: { id: body.productId, ...this.where(user) } });
+    if (!product) throw new NotFoundException('Produit introuvable');
+
+    // Can't affect more than what's actually left to give out: total stock minus whatever
+    // is already affected to every OTHER location for this product. This location's own
+    // current affectation is excluded on purpose — resizing it (even down to 0) is always
+    // allowed, it's only a NET increase across locations that must not exceed real stock.
+    const otherLocations = await this.prisma.locationStock.aggregate({
+      _sum: { quantity: true },
+      where: { productId: body.productId, locationId: { not: id } },
+    });
+    const alreadyAffectedElsewhere = otherLocations._sum.quantity ?? 0;
+    const available = product.quantity - alreadyAffectedElsewhere;
+
+    if (body.quantity > available) {
+      throw new BadRequestException(
+        available <= 0
+          ? `Stock de "${product.name}" déjà entièrement affecté ailleurs — aucune quantité disponible.`
+          : `Quantité disponible insuffisante pour "${product.name}" : ${available} restant(s) à affecter.`
+      );
+    }
+
     return this.prisma.locationStock.upsert({
       where: { locationId_productId: { locationId: id, productId: body.productId } },
       create: { locationId: id, productId: body.productId, quantity: body.quantity },

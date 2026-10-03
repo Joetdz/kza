@@ -263,12 +263,16 @@ export function Logistics() {
     setSubmitting(true);
     try {
       const entries = Object.entries(stockAllocations).filter(([, q]) => q !== '' && Number(q) >= 0);
-      await Promise.all(entries.map(([productId, quantity]) =>
-        logisticsApi.setLocationStock(stockModal.id, { productId, quantity: Number(quantity) })
-      ));
+      // Sequential, not Promise.all: if one allocation is rejected (not enough stock left
+      // to affect), the others already sent would otherwise still silently go through.
+      for (const [productId, quantity] of entries) {
+        await logisticsApi.setLocationStock(stockModal.id, { productId, quantity: Number(quantity) });
+      }
       setStockModal(null);
       setLocations(await logisticsApi.getLocations());
-    } catch { /* ignore */ }
+    } catch (e: any) {
+      alert('Erreur : ' + (e?.message ?? 'Impossible de sauvegarder l\'affectation'));
+    }
     finally { setSubmitting(false); }
   }
 
