@@ -118,6 +118,9 @@ export class LogisticsService {
         date: new Date(),
         note: `Logistique #${String(order.orderNumber).padStart(4, '0')} — ${order.customerName} | Livraison: ${Number(order.deliveryFee).toLocaleString('fr-FR')} FC (partenaire)`,
         status: 'paid',
+        // The order already carries its own delivery city — every logistics-sourced sale
+        // should be classifiable by zone, not fall into "Non spécifiée" in Analytics.
+        deliveryZone: order.city || null,
         customerName: order.customerName,
         customerPhone: order.customerPhone ?? null,
         userId: order.userId,
