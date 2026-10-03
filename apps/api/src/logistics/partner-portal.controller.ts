@@ -3,12 +3,14 @@ import { join } from 'path';
 import { PrismaService } from '../prisma/prisma.service';
 import { Public } from '../auth/public.decorator';
 import { WhatsAppService } from '../whatsapp/whatsapp.service';
+import { LogisticsService } from './logistics.service';
 
 @Controller('partner-portal')
 export class PartnerPortalController {
   constructor(
     private prisma: PrismaService,
     @Inject(forwardRef(() => WhatsAppService)) private whatsapp: WhatsAppService,
+    private logisticsService: LogisticsService,
   ) {}
 
   // ── Auth ──────────────────────────────────────────────────────────
@@ -105,70 +107,24 @@ export class PartnerPortalController {
     });
     if (!order) return null;
 
+    // willDeliver: LogisticsService.markDelivered() is the one place that flips the
+    // status to 'delivered' and moves stock, atomically — omit status here in that case
+    // so the two don't race/double-write (same pattern as the owner-side controller).
+    const willDeliver = body.status === 'delivered' && order.status !== 'delivered';
+
     const updated = await this.prisma.manualOrder.update({
       where: { id: orderId },
       data: {
-        status: body.status,
+        ...(willDeliver ? {} : { status: body.status }),
         ...(body.deliveryPersonName ? { deliveryPersonName: body.deliveryPersonName } : {}),
         ...(body.status === 'delivered' && body.collectedUsd != null ? { collectedUsd: body.collectedUsd } : {}),
         ...(body.status === 'delivered' && body.collectedCdf != null ? { collectedCdf: body.collectedCdf } : {}),
       },
     });
 
-    if (body.status === 'delivered' && order.status !== 'delivered') {
-      // Same stock decrement as the owner-side path (logistics.controller.ts) — without
-      // this, a delivery confirmed by the partner (rather than the business owner) left
-      // Product.quantity untouched, so the public store's stock never reflected reality.
-      const today = new Date().toISOString().split('T')[0];
-      for (const item of order.items) {
-        await Promise.all([
-          this.prisma.stockMovement.create({
-            data: {
-              userId: order.userId,
-              businessId: order.businessId ?? null,
-              productId: item.productId,
-              type: 'out',
-              quantity: item.quantity,
-              reason: `Commande #${order.orderNumber.toString().padStart(4, '0')} livrée`,
-              date: new Date(today),
-            },
-          }),
-          this.prisma.product.update({
-            where: { id: item.productId },
-            data: { quantity: { decrement: item.quantity } },
-          }),
-        ]).catch(() => {});
-      }
-
-      const locationId = order.locationId ?? partner.location?.id ?? null;
-      if (locationId) {
-        for (const item of order.items) {
-          await this.prisma.locationStock.updateMany({
-            where: { locationId, productId: item.productId },
-            data: { quantity: { decrement: item.quantity } },
-          });
-        }
-      }
-
-      await this.prisma.sale.create({
-        data: {
-          channel: 'logistics',
-          date: new Date(),
-          note: `Logistique #${String(order.orderNumber).padStart(4, '0')} — ${order.customerName} | Livraison: ${Number(order.deliveryFee).toLocaleString('fr-FR')} FC (partenaire)`,
-          status: 'paid',
-          customerName: order.customerName,
-          customerPhone: order.customerPhone ?? null,
-          userId: order.userId,
-          businessId: order.businessId ?? null,
-          items: {
-            create: order.items.map(i => ({
-              productId: i.productId,
-              quantity: i.quantity,
-              unitPrice: Number(i.unitPrice),
-            })),
-          },
-        },
-      });
+    if (willDeliver) {
+      await this.logisticsService.markDelivered(orderId);
+      return { ...updated, status: 'delivered' };
     }
 
     return updated;

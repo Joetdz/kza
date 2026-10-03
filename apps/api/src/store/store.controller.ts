@@ -5,6 +5,7 @@ import { WhatsAppService } from '../whatsapp/whatsapp.service';
 import { PushService } from '../push/push.service';
 import { CurrentUser, AuthUser } from '../auth/current-user.decorator';
 import { Public } from '../auth/public.decorator';
+import { LogisticsService } from '../logistics/logistics.service';
 import OpenAI from 'openai';
 
 interface StoreConfigDto {
@@ -62,6 +63,7 @@ export class StoreController {
     private prisma: PrismaService,
     private whatsapp: WhatsAppService,
     private push: PushService,
+    private logisticsService: LogisticsService,
   ) {}
 
   // Each business owns its own store — scope every lookup by (userId, businessId)
@@ -302,8 +304,18 @@ Règles :
     const store = await this.prisma.onlineStore.findFirst({ where: this.storeWhere(user) });
     if (!store) throw new NotFoundException('Boutique introuvable');
 
-    await this.prisma.storeOrder.updateMany({
-      where: { id: orderId, storeId: store.id },
+    const order = await this.prisma.storeOrder.findFirst({ where: { id: orderId, storeId: store.id } });
+    if (!order) throw new NotFoundException('Commande introuvable');
+
+    // "Livrée" here now actually moves stock — previously this only updated the
+    // storefront's own cosmetic status, with zero effect on Product.quantity/Sale,
+    // because StoreOrder and ManualOrder were two parallel, unlinked records.
+    if (body.status === 'delivered' && order.manualOrderId) {
+      await this.logisticsService.markDelivered(order.manualOrderId);
+    }
+
+    await this.prisma.storeOrder.update({
+      where: { id: orderId },
       data: { status: body.status },
     });
     return { ok: true };
@@ -629,6 +641,10 @@ Règles:
         },
         select: { id: true, orderNumber: true },
       });
+      // Link the two so a later status change on either side (storefront dashboard or
+      // Logistics) can move stock through the single shared path instead of two
+      // disconnected records that happened to be created in the same request.
+      await this.prisma.storeOrder.update({ where: { id: order.id }, data: { manualOrderId: draft.id } }).catch(() => {});
       // Notify logistics dashboard via socket + push — same businessId as the row above,
       // so the real-time event and the persisted order can no longer disagree.
       this.whatsapp.emitDraftOrderCreated(store.userId, store.businessId ?? null, draft.id, draft.orderNumber);
