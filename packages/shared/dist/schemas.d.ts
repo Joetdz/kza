@@ -290,21 +290,21 @@ export declare const SaleSchema: z.ZodObject<{
     customerPhone?: string | undefined;
 }>;
 export declare const CreateExpenseSchema: z.ZodObject<{
-    category: z.ZodEnum<["pub", "transport", "stock", "other"]>;
+    category: z.ZodString;
     productId: z.ZodOptional<z.ZodString>;
     channel: z.ZodOptional<z.ZodEnum<["WhatsApp", "Meta Ads", "TikTok", "Instagram", "Boutique", "Autre"]>>;
     amount: z.ZodNumber;
     description: z.ZodDefault<z.ZodString>;
     date: z.ZodString;
 }, "strip", z.ZodTypeAny, {
-    category: "pub" | "transport" | "stock" | "other";
+    category: string;
     date: string;
     amount: number;
     description: string;
     productId?: string | undefined;
     channel?: "WhatsApp" | "Meta Ads" | "TikTok" | "Instagram" | "Boutique" | "Autre" | undefined;
 }, {
-    category: "pub" | "transport" | "stock" | "other";
+    category: string;
     date: string;
     amount: number;
     productId?: string | undefined;
@@ -312,21 +312,21 @@ export declare const CreateExpenseSchema: z.ZodObject<{
     description?: string | undefined;
 }>;
 export declare const UpdateExpenseSchema: z.ZodObject<{
-    category: z.ZodOptional<z.ZodEnum<["pub", "transport", "stock", "other"]>>;
+    category: z.ZodOptional<z.ZodString>;
     productId: z.ZodOptional<z.ZodOptional<z.ZodString>>;
     channel: z.ZodOptional<z.ZodOptional<z.ZodEnum<["WhatsApp", "Meta Ads", "TikTok", "Instagram", "Boutique", "Autre"]>>>;
     amount: z.ZodOptional<z.ZodNumber>;
     description: z.ZodOptional<z.ZodDefault<z.ZodString>>;
     date: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
-    category?: "pub" | "transport" | "stock" | "other" | undefined;
+    category?: string | undefined;
     productId?: string | undefined;
     date?: string | undefined;
     channel?: "WhatsApp" | "Meta Ads" | "TikTok" | "Instagram" | "Boutique" | "Autre" | undefined;
     amount?: number | undefined;
     description?: string | undefined;
 }, {
-    category?: "pub" | "transport" | "stock" | "other" | undefined;
+    category?: string | undefined;
     productId?: string | undefined;
     date?: string | undefined;
     channel?: "WhatsApp" | "Meta Ads" | "TikTok" | "Instagram" | "Boutique" | "Autre" | undefined;
@@ -334,7 +334,7 @@ export declare const UpdateExpenseSchema: z.ZodObject<{
     description?: string | undefined;
 }>;
 export declare const ExpenseSchema: z.ZodObject<{
-    category: z.ZodEnum<["pub", "transport", "stock", "other"]>;
+    category: z.ZodString;
     productId: z.ZodOptional<z.ZodString>;
     channel: z.ZodOptional<z.ZodEnum<["WhatsApp", "Meta Ads", "TikTok", "Instagram", "Boutique", "Autre"]>>;
     amount: z.ZodNumber;
@@ -344,7 +344,7 @@ export declare const ExpenseSchema: z.ZodObject<{
     id: z.ZodString;
     createdAt: z.ZodString;
 }, "strip", z.ZodTypeAny, {
-    category: "pub" | "transport" | "stock" | "other";
+    category: string;
     id: string;
     createdAt: string;
     date: string;
@@ -353,7 +353,7 @@ export declare const ExpenseSchema: z.ZodObject<{
     productId?: string | undefined;
     channel?: "WhatsApp" | "Meta Ads" | "TikTok" | "Instagram" | "Boutique" | "Autre" | undefined;
 }, {
-    category: "pub" | "transport" | "stock" | "other";
+    category: string;
     id: string;
     createdAt: string;
     date: string;

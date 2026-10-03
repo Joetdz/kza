@@ -1,11 +1,14 @@
 import { Type } from 'class-transformer';
-import { IsString, IsNumber, IsOptional, IsDateString, IsIn, Min } from 'class-validator';
+import { IsString, IsNumber, IsOptional, IsDateString, IsIn, IsNotEmpty, Min } from 'class-validator';
 import type { CreateExpenseDto as ICreateExpenseDto } from '@kza/shared';
-import { EXPENSE_CATEGORIES, SALE_CHANNELS } from '@kza/shared';
+import { SALE_CHANNELS } from '@kza/shared';
 
 export class CreateExpenseDto implements ICreateExpenseDto {
-  @IsIn(EXPENSE_CATEGORIES)
-  category: typeof EXPENSE_CATEGORIES[number];
+  // Free text — EXPENSE_CATEGORIES are just the built-in suggestions shown in the UI,
+  // a business can type its own category name too.
+  @IsString()
+  @IsNotEmpty()
+  category: string;
 
   @IsString()
   @IsOptional()

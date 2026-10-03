@@ -82,7 +82,9 @@ exports.SaleSchema = exports.CreateSaleSchema.extend({
 });
 // ─── Expense ──────────────────────────────────────────────────────────────────
 exports.CreateExpenseSchema = zod_1.z.object({
-    category: zod_1.z.enum(exports.EXPENSE_CATEGORIES),
+    // Free text, not z.enum(EXPENSE_CATEGORIES) — EXPENSE_CATEGORIES stays as the built-in
+    // suggestions, but a business can create its own on top of those.
+    category: zod_1.z.string().min(1),
     productId: zod_1.z.string().uuid().optional(),
     channel: zod_1.z.enum(exports.SALE_CHANNELS).optional(),
     amount: zod_1.z.number().min(0),

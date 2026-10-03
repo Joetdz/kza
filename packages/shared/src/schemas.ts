@@ -100,7 +100,9 @@ export const SaleSchema = CreateSaleSchema.extend({
 // ─── Expense ──────────────────────────────────────────────────────────────────
 
 export const CreateExpenseSchema = z.object({
-  category: z.enum(EXPENSE_CATEGORIES),
+  // Free text, not z.enum(EXPENSE_CATEGORIES) — EXPENSE_CATEGORIES stays as the built-in
+  // suggestions, but a business can create its own on top of those.
+  category: z.string().min(1),
   productId: z.string().uuid().optional(),
   channel: z.enum(SALE_CHANNELS).optional(),
   amount: z.number().min(0),

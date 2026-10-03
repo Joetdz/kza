@@ -15,12 +15,14 @@ import {
   CreateGoalSchema,
   UpdateGoalSchema,
 } from './schemas';
-import type { SALE_CHANNELS, EXPENSE_CATEGORIES, MOVEMENT_TYPES, SALE_STATUSES } from './schemas';
+import type { SALE_CHANNELS, MOVEMENT_TYPES, SALE_STATUSES } from './schemas';
 
 // ─── Enums ───────────────────────────────────────────────────────────────────
 
 export type SaleChannel = typeof SALE_CHANNELS[number];
-export type ExpenseCategory = typeof EXPENSE_CATEGORIES[number];
+// Free text — EXPENSE_CATEGORIES are the built-in suggestions, not an exhaustive set;
+// a business can create its own category name on top of those.
+export type ExpenseCategory = string;
 export type MovementType = typeof MOVEMENT_TYPES[number];
 export type SaleStatus = typeof SALE_STATUSES[number];
 // DeliveryZone already exported from schemas.ts

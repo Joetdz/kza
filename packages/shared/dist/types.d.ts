@@ -1,8 +1,8 @@
 import { z } from 'zod';
 import { ProductSchema, CreateProductSchema, UpdateProductSchema, MovementSchema, CreateMovementSchema, SaleSchema, SaleItemSchema, CreateSaleSchema, ExpenseSchema, CreateExpenseSchema, UpdateExpenseSchema, GoalSchema, CreateGoalSchema, UpdateGoalSchema } from './schemas';
-import type { SALE_CHANNELS, EXPENSE_CATEGORIES, MOVEMENT_TYPES, SALE_STATUSES } from './schemas';
+import type { SALE_CHANNELS, MOVEMENT_TYPES, SALE_STATUSES } from './schemas';
 export type SaleChannel = typeof SALE_CHANNELS[number];
-export type ExpenseCategory = typeof EXPENSE_CATEGORIES[number];
+export type ExpenseCategory = string;
 export type MovementType = typeof MOVEMENT_TYPES[number];
 export type SaleStatus = typeof SALE_STATUSES[number];
 export type Product = z.infer<typeof ProductSchema>;

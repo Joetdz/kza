@@ -11,14 +11,21 @@ import { useCurrency } from '../hooks/useCurrency';
 import { formatDate, EXPENSE_LABELS, EXPENSE_COLORS, SALE_CHANNELS } from '../utils/formatters';
 import type { Expense, ExpenseCategory, SaleChannel } from '../types';
 
-const CATEGORIES: ExpenseCategory[] = ['pub', 'transport', 'stock', 'other'];
+// The 4 built-in categories, always shown first. Not exhaustive anymore — a business
+// can add its own on top of these (see customCategories below); category is free text
+// end to end (shared schema, API DTO, DB column).
+const BUILT_IN_CATEGORIES: ExpenseCategory[] = ['pub', 'transport', 'stock', 'other'];
+const NEW_CATEGORY = '__new__';
 
-const CAT_BADGE: Record<ExpenseCategory, 'indigo' | 'amber' | 'green' | 'gray'> = {
+const CAT_BADGE: Record<string, 'indigo' | 'amber' | 'green' | 'gray'> = {
   pub: 'indigo',
   transport: 'amber',
   stock: 'green',
   other: 'gray',
 };
+const catLabel = (cat: string) => EXPENSE_LABELS[cat] ?? cat;
+const catColor = (cat: string) => EXPENSE_COLORS[cat] ?? '#94a3b8';
+const catBadge = (cat: string): 'indigo' | 'amber' | 'green' | 'gray' => CAT_BADGE[cat] ?? 'gray';
 
 interface FormState {
   category: ExpenseCategory;
@@ -50,16 +57,29 @@ export function Expenses() {
   const [form, setForm] = useState<FormState>(emptyForm());
   // Multi-product selection (only for new expenses, not editing)
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [addingCategory, setAddingCategory] = useState(false);
+
+  // Built-ins first, then whatever custom category names already exist on this
+  // business's own expenses — no separate table, category is just a string on Expense.
+  const allCategories = useMemo(() => {
+    const custom = [...new Set(expenses.map(e => e.category))]
+      .filter(c => !BUILT_IN_CATEGORIES.includes(c as ExpenseCategory))
+      .sort((a, b) => a.localeCompare(b));
+    return [...BUILT_IN_CATEGORIES, ...custom];
+  }, [expenses]);
 
   const openAdd = () => {
     setEditing(null);
     setForm(emptyForm());
     setSelectedProductIds([]);
+    setAddingCategory(false);
     setModalOpen(true);
   };
 
   const openEdit = (e: Expense) => {
     setEditing(e);
+    setAddingCategory(false);
     setForm({
       category: e.category,
       productId: e.productId,
@@ -83,7 +103,7 @@ export function Expenses() {
     : form.amount;
 
   const handleSave = async () => {
-    if (!form.amount || !form.description) return;
+    if (!form.amount || !form.description || !form.category.trim()) return;
     setSubmitting(true);
     try {
     if (editing) {
@@ -150,14 +170,14 @@ export function Expenses() {
 
       {/* Category summary cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {CATEGORIES.map(cat => (
+        {allCategories.map(cat => (
           <button
             key={cat}
             onClick={() => setCatFilter(catFilter === cat ? '' : cat)}
             className={`text-left p-4 rounded-2xl border transition-all ${catFilter === cat ? 'ring-2 ring-indigo-400' : ''}`}
-            style={{ borderColor: catFilter === cat ? EXPENSE_COLORS[cat] : '#e5e7eb', backgroundColor: catFilter === cat ? `${EXPENSE_COLORS[cat]}15` : '#fff' }}
+            style={{ borderColor: catFilter === cat ? catColor(cat) : '#e5e7eb', backgroundColor: catFilter === cat ? `${catColor(cat)}15` : '#fff' }}
           >
-            <div className="text-xs font-medium text-gray-500 mb-1">{EXPENSE_LABELS[cat]}</div>
+            <div className="text-xs font-medium text-gray-500 mb-1">{catLabel(cat)}</div>
             <div className="text-xl font-bold text-gray-900">{MAD(catSummary[cat] ?? 0)}</div>
             <div className="text-xs text-gray-400 mt-1">
               {expenses.filter(e => e.category === cat).length} entrées
@@ -171,7 +191,7 @@ export function Expenses() {
         {loading && expenses.length === 0 && <ListSkeleton count={4} />}
         {catFilter && (
           <div className="flex items-center justify-between px-1">
-            <div className="text-sm text-gray-500">Filtre: <strong>{EXPENSE_LABELS[catFilter as ExpenseCategory]}</strong></div>
+            <div className="text-sm text-gray-500">Filtre: <strong>{catLabel(catFilter)}</strong></div>
             <div className="flex items-center gap-3">
               <span className="text-sm font-semibold">{MAD(filteredTotal)}</span>
               <button onClick={() => setCatFilter('')} className="text-xs text-indigo-600 hover:underline">Effacer</button>
@@ -185,11 +205,11 @@ export function Expenses() {
             <div key={e.id} className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 flex items-center gap-3">
               <div
                 className="w-2 rounded-full self-stretch"
-                style={{ backgroundColor: EXPENSE_COLORS[e.category] }}
+                style={{ backgroundColor: catColor(e.category) }}
               />
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap mb-1">
-                  <Badge color={CAT_BADGE[e.category]} size="sm">{EXPENSE_LABELS[e.category]}</Badge>
+                  <Badge color={catBadge(e.category)} size="sm">{catLabel(e.category)}</Badge>
                   {e.channel && <Badge color="gray" size="sm">{e.channel}</Badge>}
                   {product && <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">{product.name}</span>}
                 </div>
@@ -226,12 +246,37 @@ export function Expenses() {
             <div>
               <label className="text-xs font-medium text-gray-600 mb-1 block">Catégorie *</label>
               <select
-                value={form.category}
-                onChange={e => setForm(f => ({ ...f, category: e.target.value as ExpenseCategory }))}
+                value={addingCategory ? NEW_CATEGORY : form.category}
+                onChange={e => {
+                  const v = e.target.value;
+                  if (v === NEW_CATEGORY) {
+                    setAddingCategory(true);
+                    setNewCategoryName('');
+                    setForm(f => ({ ...f, category: '' }));
+                  } else {
+                    setAddingCategory(false);
+                    setForm(f => ({ ...f, category: v }));
+                  }
+                }}
                 className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300"
               >
-                {CATEGORIES.map(c => <option key={c} value={c}>{EXPENSE_LABELS[c]}</option>)}
+                {allCategories.map(c => <option key={c} value={c}>{catLabel(c)}</option>)}
+                <option value={NEW_CATEGORY}>+ Nouvelle catégorie...</option>
               </select>
+              {addingCategory && (
+                <input
+                  type="text"
+                  autoFocus
+                  value={newCategoryName}
+                  onChange={e => {
+                    const v = e.target.value;
+                    setNewCategoryName(v);
+                    setForm(f => ({ ...f, category: v.trim() }));
+                  }}
+                  placeholder="Nom de la catégorie..."
+                  className="mt-2 w-full border border-indigo-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300"
+                />
+              )}
             </div>
             <div>
               <label className="text-xs font-medium text-gray-600 mb-1 block">Montant total ({currency}) *</label>
