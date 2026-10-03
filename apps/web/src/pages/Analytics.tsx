@@ -4,15 +4,18 @@ import {
   CartesianGrid, Cell, Legend,
 } from 'recharts';
 import { useStore } from '../store/useStore';
-import { computeProductAnalytics } from '../utils/calculations';
+import { computeProductAnalytics, computeGlobalKpis } from '../utils/calculations';
 import { useCurrency } from '../hooks/useCurrency';
-import { pct, CLASS_CONFIG, CHART_COLORS } from '../utils/formatters';
+import { pct, CLASS_CONFIG, CHART_COLORS, EXPENSE_LABELS } from '../utils/formatters';
 import { Badge } from '../components/ui/Badge';
 import { TrendingUp, TrendingDown, AlertTriangle, Clock, Zap, MapPin, ChevronDown, ChevronRight } from 'lucide-react';
 import type { ProductClassification, ProductAnalytics } from '../types';
 
 type SortKey = 'totalRevenue' | 'netProfit' | 'grossMarginPct' | 'roi' | 'cpa' | 'stockRotationDays';
-type Tab = 'table' | 'strategy' | 'zones';
+type Tab = 'table' | 'strategy' | 'zones' | 'pnl';
+
+const MONTH_LABELS = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Jun', 'Jul', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc'];
+const pnlCatLabel = (cat: string) => EXPENSE_LABELS[cat] ?? cat;
 
 const CLASSES: ProductClassification[] = ['scale', 'profitable', 'monitor', 'stop'];
 const CLASS_ICONS = { scale: TrendingUp, profitable: Zap, monitor: Clock, stop: AlertTriangle };
@@ -172,6 +175,67 @@ export function Analytics() {
   const totalZoneRevenue = zoneStats.reduce((s, z) => s + z.revenue, 0);
   const [expandedZone, setExpandedZone] = useState<string | null>(null);
 
+  // ─── Compte de résultat (P&L) — mensuel et annuel ──────────────────────────
+  const availableYears = useMemo(() => {
+    const years = new Set<number>();
+    [...sales, ...expenses].forEach(r => {
+      const y = parseInt(r.date.slice(0, 4), 10);
+      if (!isNaN(y)) years.add(y);
+    });
+    const currentYear = new Date().getFullYear();
+    years.add(currentYear);
+    return [...years].sort((a, b) => b - a);
+  }, [sales, expenses]);
+
+  const [pnlView, setPnlView] = useState<'monthly' | 'annual'>('monthly');
+  const [pnlYear, setPnlYear] = useState<number>(availableYears[0] ?? new Date().getFullYear());
+
+  // One P&L line per period (month of the selected year, or each year that has data),
+  // reusing computeGlobalKpis so these numbers always agree with the rest of the app's
+  // KPIs — only the OPEX-by-category breakdown is computed here, since that split isn't
+  // part of GlobalKpis's return shape.
+  const pnlPeriods = useMemo(() => {
+    const periods = pnlView === 'monthly'
+      ? MONTH_LABELS.map((label, i) => {
+          const m = String(i + 1).padStart(2, '0');
+          const lastDay = new Date(pnlYear, i + 1, 0).getDate();
+          return { label, from: `${pnlYear}-${m}-01`, to: `${pnlYear}-${m}-${String(lastDay).padStart(2, '0')}` };
+        })
+      : availableYears.slice().sort((a, b) => a - b).map(y => ({ label: String(y), from: `${y}-01-01`, to: `${y}-12-31` }));
+
+    return periods.map(period => {
+      const kpis = computeGlobalKpis(products, sales, expenses, period.from, period.to);
+      const opexByCategory: Record<string, number> = {};
+      expenses.forEach(e => {
+        const d = e.date.slice(0, 10);
+        if (d < period.from || d > period.to) return;
+        opexByCategory[e.category] = (opexByCategory[e.category] ?? 0) + Number(e.amount);
+      });
+      return { ...period, ...kpis, opexByCategory };
+    });
+  }, [pnlView, pnlYear, availableYears, products, sales, expenses]);
+
+  const pnlOpexCategories = useMemo(() => {
+    const cats = new Set<string>();
+    pnlPeriods.forEach(p => Object.keys(p.opexByCategory).forEach(c => cats.add(c)));
+    return [...cats].sort((a, b) => pnlCatLabel(a).localeCompare(pnlCatLabel(b)));
+  }, [pnlPeriods]);
+
+  const pnlTotal = useMemo(() => {
+    const t = { totalRevenue: 0, totalCOGS: 0, grossProfit: 0, totalExpenses: 0, netProfit: 0, opexByCategory: {} as Record<string, number> };
+    pnlPeriods.forEach(p => {
+      t.totalRevenue += p.totalRevenue;
+      t.totalCOGS += p.totalCOGS;
+      t.grossProfit += p.grossProfit;
+      t.totalExpenses += p.totalExpenses;
+      t.netProfit += p.netProfit;
+      Object.entries(p.opexByCategory).forEach(([cat, amt]) => {
+        t.opexByCategory[cat] = (t.opexByCategory[cat] ?? 0) + amt;
+      });
+    });
+    return t;
+  }, [pnlPeriods]);
+
   return (
     <div className="space-y-6 overflow-x-hidden">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -244,11 +308,11 @@ export function Analytics() {
       </div>
 
       {/* Tab switcher */}
-      <div className="flex gap-2 bg-gray-100 p-1 rounded-xl w-fit">
-        {(['table', 'strategy', 'zones'] as Tab[]).map(t => (
+      <div className="flex gap-2 bg-gray-100 p-1 rounded-xl w-fit overflow-x-auto">
+        {(['table', 'strategy', 'zones', 'pnl'] as Tab[]).map(t => (
           <button key={t} onClick={() => setTab(t)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${tab === t ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
-            {t === 'table' ? '📊 Tableau' : t === 'strategy' ? '🎯 Stratégie' : '📍 Zones'}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${tab === t ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+            {t === 'table' ? '📊 Tableau' : t === 'strategy' ? '🎯 Stratégie' : t === 'zones' ? '📍 Zones' : '📒 Compte de résultat'}
           </button>
         ))}
       </div>
@@ -575,6 +639,92 @@ export function Analytics() {
                   );
                 })}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* PNL TAB — Compte de résultat */}
+      {tab === 'pnl' && (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="p-5 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="font-semibold text-gray-900">Compte de résultat</h2>
+              <p className="text-xs text-gray-500">Revenus, coût des marchandises, marge brute, OPEX et EBITDA</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="flex gap-1 bg-gray-100 p-1 rounded-lg">
+                {(['monthly', 'annual'] as const).map(v => (
+                  <button key={v} onClick={() => setPnlView(v)}
+                    className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${pnlView === v ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+                    {v === 'monthly' ? 'Mensuel' : 'Annuel'}
+                  </button>
+                ))}
+              </div>
+              {pnlView === 'monthly' && (
+                <select value={pnlYear} onChange={e => setPnlYear(+e.target.value)}
+                  className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-indigo-300">
+                  {availableYears.map(y => <option key={y} value={y}>{y}</option>)}
+                </select>
+              )}
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-100">
+                  <th className="text-left font-medium text-gray-500 px-5 py-3 sticky left-0 bg-white">Ligne</th>
+                  {pnlPeriods.map(p => (
+                    <th key={p.label} className="text-right font-medium text-gray-500 px-3 py-3 whitespace-nowrap min-w-[90px]">{p.label}</th>
+                  ))}
+                  <th className="text-right font-semibold text-gray-700 px-5 py-3 whitespace-nowrap min-w-[100px] bg-gray-50">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr className="border-b border-gray-50">
+                  <td className="px-5 py-2.5 font-medium text-gray-800 sticky left-0 bg-white">Chiffre d'affaires</td>
+                  {pnlPeriods.map(p => <td key={p.label} className="text-right px-3 py-2.5 text-gray-800">{MAD(p.totalRevenue)}</td>)}
+                  <td className="text-right px-5 py-2.5 font-semibold text-gray-900 bg-gray-50">{MAD(pnlTotal.totalRevenue)}</td>
+                </tr>
+                <tr className="border-b border-gray-50">
+                  <td className="px-5 py-2.5 text-gray-600 sticky left-0 bg-white">Coût des marchandises vendues</td>
+                  {pnlPeriods.map(p => <td key={p.label} className="text-right px-3 py-2.5 text-red-600">−{MAD(p.totalCOGS)}</td>)}
+                  <td className="text-right px-5 py-2.5 font-semibold text-red-600 bg-gray-50">−{MAD(pnlTotal.totalCOGS)}</td>
+                </tr>
+                <tr className="border-b border-gray-100 bg-indigo-50/40">
+                  <td className="px-5 py-2.5 font-semibold text-gray-900 sticky left-0 bg-indigo-50/40">Marge brute</td>
+                  {pnlPeriods.map(p => <td key={p.label} className={`text-right px-3 py-2.5 font-semibold ${p.grossProfit >= 0 ? 'text-gray-900' : 'text-red-600'}`}>{MAD(p.grossProfit)}</td>)}
+                  <td className={`text-right px-5 py-2.5 font-bold bg-gray-50 ${pnlTotal.grossProfit >= 0 ? 'text-gray-900' : 'text-red-600'}`}>{MAD(pnlTotal.grossProfit)}</td>
+                </tr>
+
+                {pnlOpexCategories.map(cat => (
+                  <tr key={cat} className="border-b border-gray-50">
+                    <td className="px-5 py-2 pl-8 text-gray-500 text-xs sticky left-0 bg-white">{pnlCatLabel(cat)}</td>
+                    {pnlPeriods.map(p => (
+                      <td key={p.label} className="text-right px-3 py-2 text-gray-500 text-xs">
+                        {p.opexByCategory[cat] ? `−${MAD(p.opexByCategory[cat])}` : '—'}
+                      </td>
+                    ))}
+                    <td className="text-right px-5 py-2 text-gray-600 text-xs font-medium bg-gray-50">
+                      {pnlTotal.opexByCategory[cat] ? `−${MAD(pnlTotal.opexByCategory[cat])}` : '—'}
+                    </td>
+                  </tr>
+                ))}
+                <tr className="border-b border-gray-100">
+                  <td className="px-5 py-2.5 font-medium text-gray-700 sticky left-0 bg-white">Total OPEX</td>
+                  {pnlPeriods.map(p => <td key={p.label} className="text-right px-3 py-2.5 font-medium text-red-600">−{MAD(p.totalExpenses)}</td>)}
+                  <td className="text-right px-5 py-2.5 font-semibold text-red-600 bg-gray-50">−{MAD(pnlTotal.totalExpenses)}</td>
+                </tr>
+
+                <tr className={`${pnlTotal.netProfit >= 0 ? 'bg-emerald-50' : 'bg-red-50'}`}>
+                  <td className={`px-5 py-3 font-bold sticky left-0 ${pnlTotal.netProfit >= 0 ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-700'}`}>Bénéfice (EBITDA)</td>
+                  {pnlPeriods.map(p => (
+                    <td key={p.label} className={`text-right px-3 py-3 font-bold ${p.netProfit >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{MAD(p.netProfit)}</td>
+                  ))}
+                  <td className={`text-right px-5 py-3 font-bold ${pnlTotal.netProfit >= 0 ? 'text-emerald-800' : 'text-red-700'}`}>{MAD(pnlTotal.netProfit)}</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
       )}
