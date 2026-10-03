@@ -5,6 +5,7 @@ import { WhatsAppService } from '../whatsapp/whatsapp.service';
 import { PushService } from '../push/push.service';
 import { CurrentUser, AuthUser } from '../auth/current-user.decorator';
 import { Public } from '../auth/public.decorator';
+import { LogisticsService } from '../logistics/logistics.service';
 import OpenAI from 'openai';
 
 interface StoreConfigDto {
@@ -62,6 +63,7 @@ export class StoreController {
     private prisma: PrismaService,
     private whatsapp: WhatsAppService,
     private push: PushService,
+    private logisticsService: LogisticsService,
   ) {}
 
   // Each business owns its own store — scope every lookup by (userId, businessId)
@@ -139,29 +141,40 @@ export class StoreController {
       });
     }
 
-    const slug = buildSlug(dto.name);
-    return this.prisma.onlineStore.create({
-      data: {
-        userId: user.ownerId,
-        businessId: user.businessId || null,
-        slug,
-        name: dto.name.trim(),
-        description: dto.description ?? null,
-        whatsappPhone: dto.whatsappPhone.trim(),
-        primaryColor: dto.primaryColor ?? '#6366f1',
-        currency: dto.currency ?? 'CDF',
-        metaPixelId: dto.metaPixelId?.trim() || null,
-        deliveryZones: dto.deliveryZones ?? [
-          { city: 'Kinshasa', fee: 8000 },
-          { city: 'Lubumbashi', fee: 7500 },
-          { city: 'Kolwezi', fee: 7000 },
-          { city: 'Matadi', fee: 5500 },
-          { city: 'Boma', fee: 7000 },
-          { city: 'Muanda', fee: 7500 },
-        ],
-        active: dto.active ?? true,
-      },
-    });
+    // buildSlug's random suffix is only 4 base36 chars (~1.7M combos) — rare but real
+    // collision risk. Retry a few times with a fresh suffix rather than 500ing on P2002.
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const slug = buildSlug(dto.name);
+      try {
+        return await this.prisma.onlineStore.create({
+          data: {
+            userId: user.ownerId,
+            businessId: user.businessId || null,
+            slug,
+            name: dto.name.trim(),
+            description: dto.description ?? null,
+            whatsappPhone: dto.whatsappPhone.trim(),
+            primaryColor: dto.primaryColor ?? '#6366f1',
+            currency: dto.currency ?? 'CDF',
+            metaPixelId: dto.metaPixelId?.trim() || null,
+            deliveryZones: dto.deliveryZones ?? [
+              { city: 'Kinshasa', fee: 8000 },
+              { city: 'Lubumbashi', fee: 7500 },
+              { city: 'Kolwezi', fee: 7000 },
+              { city: 'Matadi', fee: 5500 },
+              { city: 'Boma', fee: 7000 },
+              { city: 'Muanda', fee: 7500 },
+            ],
+            active: dto.active ?? true,
+          },
+        });
+      } catch (err: any) {
+        if (err?.code === 'P2002' && attempt < 4) continue; // slug collision — retry with a new suffix
+        throw err;
+      }
+    }
+    // Unreachable (loop always returns or throws), but keeps TS happy.
+    throw new BadRequestException('Impossible de créer la boutique — réessaie.');
   }
 
   // ── SET visible products (auth) ───────────────────────────────────────────
@@ -170,6 +183,19 @@ export class StoreController {
   async setStoreProducts(@CurrentUser() user: AuthUser, @Body() body: { productIds: string[] }) {
     const store = await this.prisma.onlineStore.findFirst({ where: this.storeWhere(user) });
     if (!store) throw new NotFoundException('Créez votre boutique d\'abord');
+
+    // Never trust productIds as given — without this check, any authenticated business
+    // can attach another business's private product to its own public storefront,
+    // which getPublicStore then republishes (name, price, stock, images) to anyone.
+    const requestedIds = body.productIds ?? [];
+    const owned = requestedIds.length
+      ? await this.prisma.product.findMany({
+          where: { id: { in: requestedIds }, userId: user.ownerId, businessId: user.businessId || null },
+          select: { id: true },
+        })
+      : [];
+    const ownedIds = new Set(owned.map(p => p.id));
+    const productIds = requestedIds.filter(id => ownedIds.has(id));
 
     // Preserve existing store prices before replacing
     const existing = await this.prisma.storeProduct.findMany({
@@ -180,9 +206,9 @@ export class StoreController {
 
     await this.prisma.storeProduct.deleteMany({ where: { storeId: store.id } });
 
-    if (body.productIds?.length) {
+    if (productIds.length) {
       await this.prisma.storeProduct.createMany({
-        data: body.productIds.map(productId => ({
+        data: productIds.map(productId => ({
           storeId: store.id,
           productId,
           storePrice: configMap[productId]?.storePrice ?? null,
@@ -195,7 +221,7 @@ export class StoreController {
       });
     }
 
-    return { ok: true };
+    return { ok: true, skipped: requestedIds.length - productIds.length };
   }
 
   // ── SET store price / description per product (auth) ────────────────────────
@@ -278,8 +304,18 @@ Règles :
     const store = await this.prisma.onlineStore.findFirst({ where: this.storeWhere(user) });
     if (!store) throw new NotFoundException('Boutique introuvable');
 
-    await this.prisma.storeOrder.updateMany({
-      where: { id: orderId, storeId: store.id },
+    const order = await this.prisma.storeOrder.findFirst({ where: { id: orderId, storeId: store.id } });
+    if (!order) throw new NotFoundException('Commande introuvable');
+
+    // "Livrée" here now actually moves stock — previously this only updated the
+    // storefront's own cosmetic status, with zero effect on Product.quantity/Sale,
+    // because StoreOrder and ManualOrder were two parallel, unlinked records.
+    if (body.status === 'delivered' && order.manualOrderId) {
+      await this.logisticsService.markDelivered(order.manualOrderId);
+    }
+
+    await this.prisma.storeOrder.update({
+      where: { id: orderId },
       data: { status: body.status },
     });
     return { ok: true };
@@ -558,52 +594,66 @@ Règles:
       },
     });
 
-    // Create draft order in logistics
+    // Create draft order in logistics — attributed to THIS store's own business, not
+    // whichever business happens to be the account's default. A multi-business account
+    // otherwise gets orders from store B's public page silently filed under business A's
+    // Logistics queue (and disagreeing with the businessId used for the socket event below).
     let businessWaPhone: string | null = null;
     try {
-      const business = await this.prisma.business.findFirst({
-        where: { userId: store.userId },
-        orderBy: { isDefault: 'desc' },
-        select: { id: true, whatsappPhone: true },
-      });
+      // store.businessId is the source of truth when set (the normal, post-migration case).
+      // Only fall back to "the account's default business" for a legacy store never
+      // backfilled with a businessId — same fallback chain used elsewhere in this codebase
+      // (e.g. the WhatsApp label-triggered draft handler) when no business row resolves at all.
+      const business = store.businessId
+        ? await this.prisma.business.findUnique({ where: { id: store.businessId }, select: { id: true, whatsappPhone: true } })
+        : await this.prisma.business.findFirst({
+            where: { userId: store.userId },
+            orderBy: { createdAt: 'asc' },
+            select: { id: true, whatsappPhone: true },
+          });
+      const orderBusinessId = store.businessId ?? business?.id ?? store.userId;
       if (business?.whatsappPhone) businessWaPhone = business.whatsappPhone;
-      if (business) {
-        const addressParts = [dto.commune, dto.avenue, dto.reference].filter(Boolean);
-        const address = addressParts.join(', ') || dto.deliveryZone;
-        const maxResult = await this.prisma.manualOrder.aggregate({
-          where: { userId: store.userId },
-          _max: { orderNumber: true },
-        });
-        const draft = await this.prisma.manualOrder.create({
-          data: {
-            userId: store.userId,
-            businessId: business.id,
-            orderNumber: (maxResult._max.orderNumber ?? 0) + 1,
-            customerName: dto.customerName.trim(),
-            customerPhone: dto.customerPhone.trim(),
-            city: dto.deliveryZone,
-            address,
-            deliveryFee,
-            totalAmount: total,
-            isDraft: true,
-            notes: dto.notes ?? null,
-            items: {
-              create: dto.items
-                .filter(i => i.productId)
-                .map(i => ({ productId: i.productId, quantity: i.qty, unitPrice: i.unitPrice })),
-            },
+
+      const addressParts = [dto.commune, dto.avenue, dto.reference].filter(Boolean);
+      const address = addressParts.join(', ') || dto.deliveryZone;
+      const maxResult = await this.prisma.manualOrder.aggregate({
+        where: { userId: store.userId, businessId: orderBusinessId },
+        _max: { orderNumber: true },
+      });
+      const draft = await this.prisma.manualOrder.create({
+        data: {
+          userId: store.userId,
+          businessId: orderBusinessId,
+          orderNumber: (maxResult._max.orderNumber ?? 0) + 1,
+          customerName: dto.customerName.trim(),
+          customerPhone: dto.customerPhone.trim(),
+          city: dto.deliveryZone,
+          address,
+          deliveryFee,
+          totalAmount: total,
+          isDraft: true,
+          notes: dto.notes ?? null,
+          items: {
+            create: dto.items
+              .filter(i => i.productId)
+              .map(i => ({ productId: i.productId, quantity: i.qty, unitPrice: i.unitPrice })),
           },
-          select: { id: true, orderNumber: true },
-        });
-        // Notify logistics dashboard via socket + push
-        this.whatsapp.emitDraftOrderCreated(store.userId, store.businessId ?? null, draft.id, draft.orderNumber);
-        this.push.sendToUser(store.userId, {
-          title: '🛒 Nouvelle commande !',
-          body: `${dto.customerName} vient de commander sur ${store.name}`,
-          url: '/#/logistics',
-          tag: 'draft-order',
-        }).catch(() => {});
-      }
+        },
+        select: { id: true, orderNumber: true },
+      });
+      // Link the two so a later status change on either side (storefront dashboard or
+      // Logistics) can move stock through the single shared path instead of two
+      // disconnected records that happened to be created in the same request.
+      await this.prisma.storeOrder.update({ where: { id: order.id }, data: { manualOrderId: draft.id } }).catch(() => {});
+      // Notify logistics dashboard via socket + push — same businessId as the row above,
+      // so the real-time event and the persisted order can no longer disagree.
+      this.whatsapp.emitDraftOrderCreated(store.userId, store.businessId ?? null, draft.id, draft.orderNumber);
+      this.push.sendToUser(store.userId, {
+        title: '🛒 Nouvelle commande !',
+        body: `${dto.customerName} vient de commander sur ${store.name}`,
+        url: '/#/logistics',
+        tag: 'draft-order',
+      }).catch(() => {});
     } catch { /* non-blocking */ }
 
     // Build order message text

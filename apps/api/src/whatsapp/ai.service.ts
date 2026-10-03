@@ -500,14 +500,10 @@ Réponds UNIQUEMENT en JSON strict, un objet par paire dans le même ordre, aucu
 {"results":[{"index":0,"keep":true,"content":"réponse réécrite ou vide si keep=false","productName":"nom exact d'un produit de la liste, ou null"}]}`;
 
     try {
-      // A one-time, latency-insensitive batch job (runs once per pairing) is exactly
-      // where a slower, pricier reasoning-tier model earns its cost — unlike the live
-      // reply path, nobody is waiting on a WhatsApp thread for this to finish.
-      // GPT-5.6 Sol rejects a custom temperature (locked to its default) and wants
-      // max_completion_tokens instead of max_tokens — hence no temperature/max_tokens here.
       const response = await this.openai.chat.completions.create({
-        model: 'gpt-5.6-sol',
+        model: 'gpt-4o',
         messages: [{ role: 'user', content: prompt }],
+        temperature: 0.2,
         response_format: { type: 'json_object' },
       });
       const raw = response.choices[0]?.message?.content ?? '{"results":[]}';

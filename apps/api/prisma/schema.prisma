@@ -515,7 +515,11 @@ model StoreOrder {
   status        String   @default("pending")
   createdAt     DateTime @default(now()) @map("created_at")
 
-  store OnlineStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  store         OnlineStore  @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  // The draft ManualOrder created alongside this order in the same request — the single
+  // source of truth for fulfillment/stock. Nullable: historical rows predate this link.
+  manualOrderId String?      @unique @map("manual_order_id") @db.Uuid
+  manualOrder   ManualOrder? @relation(fields: [manualOrderId], references: [id])
 
   @@index([storeId])
   @@map("store_orders")
@@ -722,6 +726,7 @@ model ManualOrder {
   collectedCdf          Decimal?        @map("collected_cdf") @db.Decimal(10, 2)
 
   items              ManualOrderItem[]
+  storeOrder         StoreOrder?     // inverse side of StoreOrder.manualOrderId — unused directly, required by Prisma
   createdAt          DateTime        @default(now()) @map("created_at")
   updatedAt          DateTime        @default(now()) @updatedAt @map("updated_at")
 

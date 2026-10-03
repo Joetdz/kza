@@ -4,6 +4,7 @@ import { CurrentUser, AuthUser } from '../auth/current-user.decorator';
 import { WhatsAppService } from '../whatsapp/whatsapp.service';
 import { FollowUpService } from './followup.service';
 import { CustomerHistoryService } from '../common/customer-history.service';
+import { LogisticsService } from './logistics.service';
 import { phoneKey } from '../common/phone';
 import { join } from 'path';
 
@@ -16,6 +17,7 @@ export class LogisticsController {
     private whatsapp: WhatsAppService,
     private followUp: FollowUpService,
     private history: CustomerHistoryService,
+    private logisticsService: LogisticsService,
   ) {}
 
   private where(user: AuthUser) {
@@ -341,10 +343,15 @@ export class LogisticsController {
       deliveryNum = todayCount + 1;
     }
 
+    // willDeliver: let LogisticsService.markDelivered() be the one place that flips the
+    // status to 'delivered' (it also does the stock movement atomically) — omit status
+    // here in that case so the two don't race/double-write.
+    const willDeliver = body.status === 'delivered' && order.status !== 'delivered';
+
     const updated = await this.prisma.manualOrder.update({
       where: { id },
       data: {
-        status: body.status,
+        ...(willDeliver ? {} : { status: body.status }),
         ...(body.partnerId ? { partnerId: body.partnerId } : {}),
         ...(isNewDispatch ? { dispatchedAt: new Date() } : {}),
         ...(isUnassign ? { dispatchedAt: null, partnerId: null } : {}),
@@ -416,60 +423,9 @@ export class LogisticsController {
       }
     }
 
-    if (body.status === 'delivered' && order.status !== 'delivered') {
-      // Decrement product stock + create movement when delivered (not at order creation)
-      const today = new Date().toISOString().split('T')[0];
-      for (const item of order.items) {
-        await Promise.all([
-          this.prisma.stockMovement.create({
-            data: {
-              userId: order.userId,
-              businessId: order.businessId ?? null,
-              productId: item.productId,
-              type: 'out',
-              quantity: item.quantity,
-              reason: `Commande #${order.orderNumber.toString().padStart(4, '0')} livrée`,
-              date: new Date(today),
-            },
-          }),
-          this.prisma.product.update({
-            where: { id: item.productId },
-            data: { quantity: { decrement: item.quantity } },
-          }),
-        ]).catch(() => {});
-      }
-
-      // Decrement location stock — use order's locationId or fall back to partner's location
-      const locationId = order.locationId ?? (order.partner as any)?.location?.id ?? null;
-      if (locationId) {
-        for (const item of order.items) {
-          await this.prisma.locationStock.updateMany({
-            where: { locationId, productId: item.productId },
-            data: { quantity: { decrement: item.quantity } },
-          });
-        }
-      }
-
-      // Auto-create sale
-      await this.prisma.sale.create({
-        data: {
-          channel: 'logistics',
-          date: new Date(),
-          note: `Logistique #${String(order.orderNumber).padStart(4, '0')} — ${order.customerName} | Livraison: ${Number(order.deliveryFee).toLocaleString('fr-FR')} FC (partenaire)`,
-          status: 'paid',
-          customerName: order.customerName,
-          customerPhone: order.customerPhone ?? null,
-          userId: order.userId,
-          businessId: order.businessId ?? null,
-          items: {
-            create: order.items.map(i => ({
-              productId: i.productId,
-              quantity: i.quantity,
-              unitPrice: Number(i.unitPrice),
-            })),
-          },
-        },
-      });
+    if (willDeliver) {
+      await this.logisticsService.markDelivered(id);
+      return { ...updated, status: 'delivered' };
     }
 
     return updated;

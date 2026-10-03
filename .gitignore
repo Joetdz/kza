@@ -6,8 +6,10 @@ apps/api/dist/
 
 # Variables d'environnement — NE JAMAIS COMMITTER
 .env
+.env.*
 apps/web/.env.local
 apps/api/.env
+apps/api/.env.*
 
 # Vite
 apps/web/.vite/

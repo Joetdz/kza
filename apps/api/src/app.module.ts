@@ -23,6 +23,11 @@ import { PushModule } from './push/push.module';
 
 @Module({
   imports: [
+    // DATABASE_URL/DIRECT_URL for the develop branch's database come from
+    // preload-dev-env.js (run via `npm run start:dev:branch`), not from here — by the
+    // time this runs, @prisma/client has already auto-loaded plain .env on its own, and
+    // dotenv-style loaders never override an already-set process.env key. See that
+    // file's header comment for the full explanation.
     ConfigModule.forRoot({ isGlobal: true }),
     ScheduleModule.forRoot(),
     PrismaModule,
