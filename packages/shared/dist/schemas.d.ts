@@ -362,11 +362,15 @@ export declare const ExpenseSchema: z.ZodObject<{
     channel?: "WhatsApp" | "Meta Ads" | "TikTok" | "Instagram" | "Boutique" | "Autre" | undefined;
     description?: string | undefined;
 }>;
+export declare const RECURRING_FREQUENCIES: readonly ["daily", "weekly", "monthly", "annual"];
 export declare const CreateRecurringExpenseSchema: z.ZodObject<{
     category: z.ZodString;
     description: z.ZodDefault<z.ZodString>;
     amount: z.ZodNumber;
-    dayOfMonth: z.ZodDefault<z.ZodNumber>;
+    frequency: z.ZodDefault<z.ZodEnum<["daily", "weekly", "monthly", "annual"]>>;
+    dayOfWeek: z.ZodOptional<z.ZodNumber>;
+    dayOfMonth: z.ZodOptional<z.ZodNumber>;
+    month: z.ZodOptional<z.ZodNumber>;
     startDate: z.ZodString;
     endDate: z.ZodOptional<z.ZodString>;
     active: z.ZodDefault<z.ZodBoolean>;
@@ -374,16 +378,22 @@ export declare const CreateRecurringExpenseSchema: z.ZodObject<{
     category: string;
     amount: number;
     description: string;
-    dayOfMonth: number;
+    frequency: "daily" | "weekly" | "monthly" | "annual";
     startDate: string;
     active: boolean;
+    dayOfWeek?: number | undefined;
+    dayOfMonth?: number | undefined;
+    month?: number | undefined;
     endDate?: string | undefined;
 }, {
     category: string;
     amount: number;
     startDate: string;
     description?: string | undefined;
+    frequency?: "daily" | "weekly" | "monthly" | "annual" | undefined;
+    dayOfWeek?: number | undefined;
     dayOfMonth?: number | undefined;
+    month?: number | undefined;
     endDate?: string | undefined;
     active?: boolean | undefined;
 }>;
@@ -391,7 +401,10 @@ export declare const UpdateRecurringExpenseSchema: z.ZodObject<{
     category: z.ZodOptional<z.ZodString>;
     description: z.ZodOptional<z.ZodDefault<z.ZodString>>;
     amount: z.ZodOptional<z.ZodNumber>;
-    dayOfMonth: z.ZodOptional<z.ZodDefault<z.ZodNumber>>;
+    frequency: z.ZodOptional<z.ZodDefault<z.ZodEnum<["daily", "weekly", "monthly", "annual"]>>>;
+    dayOfWeek: z.ZodOptional<z.ZodOptional<z.ZodNumber>>;
+    dayOfMonth: z.ZodOptional<z.ZodOptional<z.ZodNumber>>;
+    month: z.ZodOptional<z.ZodOptional<z.ZodNumber>>;
     startDate: z.ZodOptional<z.ZodString>;
     endDate: z.ZodOptional<z.ZodOptional<z.ZodString>>;
     active: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
@@ -399,7 +412,10 @@ export declare const UpdateRecurringExpenseSchema: z.ZodObject<{
     category?: string | undefined;
     amount?: number | undefined;
     description?: string | undefined;
+    frequency?: "daily" | "weekly" | "monthly" | "annual" | undefined;
+    dayOfWeek?: number | undefined;
     dayOfMonth?: number | undefined;
+    month?: number | undefined;
     startDate?: string | undefined;
     endDate?: string | undefined;
     active?: boolean | undefined;
@@ -407,7 +423,10 @@ export declare const UpdateRecurringExpenseSchema: z.ZodObject<{
     category?: string | undefined;
     amount?: number | undefined;
     description?: string | undefined;
+    frequency?: "daily" | "weekly" | "monthly" | "annual" | undefined;
+    dayOfWeek?: number | undefined;
     dayOfMonth?: number | undefined;
+    month?: number | undefined;
     startDate?: string | undefined;
     endDate?: string | undefined;
     active?: boolean | undefined;
@@ -416,13 +435,16 @@ export declare const RecurringExpenseSchema: z.ZodObject<{
     category: z.ZodString;
     description: z.ZodDefault<z.ZodString>;
     amount: z.ZodNumber;
-    dayOfMonth: z.ZodDefault<z.ZodNumber>;
+    frequency: z.ZodDefault<z.ZodEnum<["daily", "weekly", "monthly", "annual"]>>;
+    dayOfWeek: z.ZodOptional<z.ZodNumber>;
+    dayOfMonth: z.ZodOptional<z.ZodNumber>;
+    month: z.ZodOptional<z.ZodNumber>;
     startDate: z.ZodString;
     endDate: z.ZodOptional<z.ZodString>;
     active: z.ZodDefault<z.ZodBoolean>;
 } & {
     id: z.ZodString;
-    lastGeneratedMonth: z.ZodNullable<z.ZodString>;
+    lastGeneratedPeriod: z.ZodNullable<z.ZodString>;
     createdAt: z.ZodString;
     updatedAt: z.ZodString;
 }, "strip", z.ZodTypeAny, {
@@ -432,10 +454,13 @@ export declare const RecurringExpenseSchema: z.ZodObject<{
     updatedAt: string;
     amount: number;
     description: string;
-    dayOfMonth: number;
+    frequency: "daily" | "weekly" | "monthly" | "annual";
     startDate: string;
     active: boolean;
-    lastGeneratedMonth: string | null;
+    lastGeneratedPeriod: string | null;
+    dayOfWeek?: number | undefined;
+    dayOfMonth?: number | undefined;
+    month?: number | undefined;
     endDate?: string | undefined;
 }, {
     category: string;
@@ -444,9 +469,12 @@ export declare const RecurringExpenseSchema: z.ZodObject<{
     updatedAt: string;
     amount: number;
     startDate: string;
-    lastGeneratedMonth: string | null;
+    lastGeneratedPeriod: string | null;
     description?: string | undefined;
+    frequency?: "daily" | "weekly" | "monthly" | "annual" | undefined;
+    dayOfWeek?: number | undefined;
     dayOfMonth?: number | undefined;
+    month?: number | undefined;
     endDate?: string | undefined;
     active?: boolean | undefined;
 }>;

@@ -20,7 +20,10 @@ export class RecurringExpenseService {
         category: dto.category,
         description: dto.description ?? '',
         amount: dto.amount,
-        dayOfMonth: dto.dayOfMonth ?? 1,
+        frequency: dto.frequency ?? 'monthly',
+        dayOfWeek: dto.dayOfWeek ?? null,
+        dayOfMonth: dto.dayOfMonth ?? null,
+        month: dto.month ?? null,
         startDate: new Date(dto.startDate),
         endDate: dto.endDate ? new Date(dto.endDate) : null,
         active: dto.active ?? true,
@@ -41,7 +44,10 @@ export class RecurringExpenseService {
         ...(dto.category !== undefined && { category: dto.category }),
         ...(dto.description !== undefined && { description: dto.description }),
         ...(dto.amount !== undefined && { amount: dto.amount }),
+        ...(dto.frequency !== undefined && { frequency: dto.frequency }),
+        ...(dto.dayOfWeek !== undefined && { dayOfWeek: dto.dayOfWeek }),
         ...(dto.dayOfMonth !== undefined && { dayOfMonth: dto.dayOfMonth }),
+        ...(dto.month !== undefined && { month: dto.month }),
         ...(dto.startDate !== undefined && { startDate: new Date(dto.startDate) }),
         ...(dto.endDate !== undefined && { endDate: dto.endDate ? new Date(dto.endDate) : null }),
         ...(dto.active !== undefined && { active: dto.active }),
@@ -58,29 +64,65 @@ export class RecurringExpenseService {
   }
 
   /**
-   * Runs daily. For every active recurring expense whose dayOfMonth has been reached
-   * this month (and hasn't already posted one this month — lastGeneratedMonth guards
-   * that), creates the real Expense and advances lastGeneratedMonth. A recurring expense
-   * created mid-month with dayOfMonth already in the past catches up immediately instead
-   * of waiting for next month.
+   * Runs daily. For every active recurring expense whose schedule is due today and
+   * hasn't already posted for the current period, creates the real Expense and advances
+   * lastGeneratedPeriod. The bucket key's shape (and the due check) depends on frequency:
+   *  - daily:   always due; bucket = today's date, so it can't double-fire the same day.
+   *  - weekly:  due when today's weekday matches dayOfWeek; bucket = today's date (the
+   *             matching weekday only recurs every 7 days, so this alone prevents re-fire).
+   *  - monthly: due once today's day-of-month reaches dayOfMonth; bucket = "YYYY-MM".
+   *  - annual:  due once today reaches month+dayOfMonth; bucket = "YYYY".
+   * A recurring expense created mid-period with its date already past catches up
+   * immediately instead of waiting for the next period (monthly/annual only — weekly
+   * naturally re-syncs on its own within a week, daily is always "due").
    */
   @Cron(CronExpression.EVERY_DAY_AT_7AM)
   async generateDueExpenses(): Promise<void> {
     const today = new Date();
-    const currentMonth = today.toISOString().slice(0, 7); // "YYYY-MM"
+    const todayStr = today.toISOString().slice(0, 10); // "YYYY-MM-DD"
+    const currentMonth = todayStr.slice(0, 7);          // "YYYY-MM"
+    const currentYear = todayStr.slice(0, 4);           // "YYYY"
     const todayDay = today.getDate();
+    const todayMonth = today.getMonth() + 1;
+    const todayDow = today.getDay(); // 0=dimanche..6=samedi
 
-    const due = await this.prisma.recurringExpense.findMany({
+    const candidates = await this.prisma.recurringExpense.findMany({
       where: {
         active: true,
         startDate: { lte: today },
         OR: [{ endDate: null }, { endDate: { gte: today } }],
-        dayOfMonth: { lte: todayDay },
-        NOT: { lastGeneratedMonth: currentMonth },
       },
     });
 
-    for (const r of due) {
+    for (const r of candidates) {
+      let periodKey: string;
+      let isDue: boolean;
+
+      switch (r.frequency) {
+        case 'daily':
+          periodKey = todayStr;
+          isDue = true;
+          break;
+        case 'weekly':
+          periodKey = todayStr;
+          isDue = r.dayOfWeek === todayDow;
+          break;
+        case 'annual': {
+          const m = r.month ?? 1;
+          const d = r.dayOfMonth ?? 1;
+          periodKey = currentYear;
+          isDue = todayMonth > m || (todayMonth === m && todayDay >= d);
+          break;
+        }
+        case 'monthly':
+        default:
+          periodKey = currentMonth;
+          isDue = todayDay >= (r.dayOfMonth ?? 1);
+          break;
+      }
+
+      if (!isDue || r.lastGeneratedPeriod === periodKey) continue;
+
       try {
         await this.prisma.expense.create({
           data: {
@@ -94,9 +136,9 @@ export class RecurringExpenseService {
         });
         await this.prisma.recurringExpense.update({
           where: { id: r.id },
-          data: { lastGeneratedMonth: currentMonth },
+          data: { lastGeneratedPeriod: periodKey },
         });
-        this.logger.log(`Generated recurring expense "${r.category}" (${r.amount}) for ${r.userId}/${r.businessId ?? '-'}, month ${currentMonth}`);
+        this.logger.log(`Generated recurring expense "${r.category}" (${r.amount}) [${r.frequency}] for ${r.userId}/${r.businessId ?? '-'}, period ${periodKey}`);
       } catch (err: any) {
         this.logger.warn(`Failed to generate recurring expense ${r.id}: ${err?.message}`);
       }

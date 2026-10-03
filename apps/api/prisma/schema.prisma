@@ -176,24 +176,28 @@ model Expense {
   @@map("expenses")
 }
 
-// A template that spawns a real Expense automatically every month (salaires, loyers,
-// remboursements de créances...) — RecurringExpenseService's cron checks these daily and
-// creates the Expense once dayOfMonth is reached, once per month, tracked via
-// lastGeneratedMonth so it can never fire twice for the same month.
+// A template that spawns a real Expense automatically (salaires, loyers, remboursements
+// de créances...) — RecurringExpenseService's cron checks these daily and creates the
+// Expense once its schedule is due, tracked via lastGeneratedPeriod (a bucket key whose
+// shape depends on frequency: "YYYY-MM-DD" daily/weekly, "YYYY-MM" monthly, "YYYY" annual)
+// so it can never fire twice for the same period.
 model RecurringExpense {
-  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  category           String
-  description        String    @default("")
-  amount             Float
-  dayOfMonth         Int       @default(1) @map("day_of_month")
-  startDate          DateTime  @map("start_date") @db.Date
-  endDate            DateTime? @map("end_date") @db.Date
-  active             Boolean   @default(true)
-  lastGeneratedMonth String?   @map("last_generated_month")
-  createdAt          DateTime  @default(now()) @map("created_at")
-  updatedAt          DateTime  @updatedAt @map("updated_at")
-  userId             String    @map("user_id")
-  businessId         String?   @map("business_id") @db.Uuid
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  category            String
+  description         String    @default("")
+  amount              Float
+  frequency           String    @default("monthly") @map("frequency") // 'daily' | 'weekly' | 'monthly' | 'annual'
+  dayOfWeek           Int?      @map("day_of_week")   // 0=dimanche..6=samedi — weekly only
+  dayOfMonth          Int?      @map("day_of_month")  // 1-28 — monthly & annual
+  month               Int?                            // 1-12 — annual only
+  startDate           DateTime  @map("start_date") @db.Date
+  endDate             DateTime? @map("end_date") @db.Date
+  active              Boolean   @default(true)
+  lastGeneratedPeriod String?   @map("last_generated_period")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+  userId              String    @map("user_id")
+  businessId          String?   @map("business_id") @db.Uuid
 
   @@index([userId])
   @@index([businessId])

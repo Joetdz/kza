@@ -119,11 +119,16 @@ export const ExpenseSchema = CreateExpenseSchema.extend({
 
 // ─── Recurring Expense ──────────────────────────────────────────────────────────
 
+export const RECURRING_FREQUENCIES = ['daily', 'weekly', 'monthly', 'annual'] as const;
+
 export const CreateRecurringExpenseSchema = z.object({
   category: z.string().min(1),
   description: z.string().default(''),
   amount: z.number().min(0),
-  dayOfMonth: z.number().int().min(1).max(28).default(1),
+  frequency: z.enum(RECURRING_FREQUENCIES).default('monthly'),
+  dayOfWeek: z.number().int().min(0).max(6).optional(),   // weekly only
+  dayOfMonth: z.number().int().min(1).max(28).optional(), // monthly & annual
+  month: z.number().int().min(1).max(12).optional(),      // annual only
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   active: z.boolean().default(true),
@@ -133,7 +138,7 @@ export const UpdateRecurringExpenseSchema = CreateRecurringExpenseSchema.partial
 
 export const RecurringExpenseSchema = CreateRecurringExpenseSchema.extend({
   id: z.string().uuid(),
-  lastGeneratedMonth: z.string().nullable(),
+  lastGeneratedPeriod: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });

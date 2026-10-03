@@ -71,7 +71,10 @@ export function Expenses() {
     category: 'other' as string,
     description: '',
     amount: 0,
+    frequency: 'monthly' as string,
+    dayOfWeek: 1,   // Lundi par défaut
     dayOfMonth: 1,
+    month: 1,       // Janvier par défaut
     startDate: new Date().toISOString().split('T')[0],
     endDate: '',
   });
@@ -85,7 +88,11 @@ export function Expenses() {
 
   const openAddRecurring = () => {
     setEditingRecurring(null);
-    setRecurringForm({ category: 'other', description: '', amount: 0, dayOfMonth: 1, startDate: new Date().toISOString().split('T')[0], endDate: '' });
+    setRecurringForm({
+      category: 'other', description: '', amount: 0,
+      frequency: 'monthly', dayOfWeek: 1, dayOfMonth: 1, month: 1,
+      startDate: new Date().toISOString().split('T')[0], endDate: '',
+    });
     setRecurringModalOpen(true);
   };
 
@@ -95,7 +102,10 @@ export function Expenses() {
       category: r.category,
       description: r.description,
       amount: r.amount,
-      dayOfMonth: r.dayOfMonth,
+      frequency: r.frequency,
+      dayOfWeek: r.dayOfWeek ?? 1,
+      dayOfMonth: r.dayOfMonth ?? 1,
+      month: r.month ?? 1,
       startDate: r.startDate.slice(0, 10),
       endDate: r.endDate ? r.endDate.slice(0, 10) : '',
     });
@@ -110,12 +120,15 @@ export function Expenses() {
         category: recurringForm.category,
         description: recurringForm.description,
         amount: recurringForm.amount,
-        dayOfMonth: recurringForm.dayOfMonth,
+        frequency: recurringForm.frequency,
+        ...(recurringForm.frequency === 'weekly' ? { dayOfWeek: recurringForm.dayOfWeek } : {}),
+        ...(recurringForm.frequency === 'monthly' || recurringForm.frequency === 'annual' ? { dayOfMonth: recurringForm.dayOfMonth } : {}),
+        ...(recurringForm.frequency === 'annual' ? { month: recurringForm.month } : {}),
         startDate: recurringForm.startDate,
         endDate: recurringForm.endDate || undefined,
       };
       if (editingRecurring) {
-        const updated = await recurringExpensesApi.update(editingRecurring.id, payload);
+        const updated = await recurringExpensesApi.update(editingRecurring.id, payload as any);
         setRecurring(prev => prev.map(r => r.id === updated.id ? updated : r));
       } else {
         const created = await recurringExpensesApi.create(payload as any);
@@ -150,7 +163,27 @@ export function Expenses() {
     }
   };
 
-  const currentMonthKey = new Date().toISOString().slice(0, 7);
+  // Mirrors the backend's bucket key per frequency (see RecurringExpenseService) — just
+  // for the "Généré cette période" badge, not for deciding whether to generate anything.
+  const currentPeriodKey = (freq: string) => {
+    const now = new Date();
+    const iso = now.toISOString();
+    if (freq === 'annual') return iso.slice(0, 4);
+    if (freq === 'monthly') return iso.slice(0, 7);
+    return iso.slice(0, 10); // daily & weekly
+  };
+
+  const WEEKDAY_LABELS = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
+  const MONTH_NAMES = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+  const scheduleLabel = (r: RecurringExpense) => {
+    switch (r.frequency) {
+      case 'daily': return 'Chaque jour';
+      case 'weekly': return `Chaque ${WEEKDAY_LABELS[r.dayOfWeek ?? 1]}`;
+      case 'annual': return `Le ${r.dayOfMonth ?? 1} ${MONTH_NAMES[(r.month ?? 1) - 1]}, chaque année`;
+      case 'monthly':
+      default: return `Le ${r.dayOfMonth ?? 1} de chaque mois`;
+    }
+  };
 
   // Built-ins first, then whatever custom category names already exist on this
   // business's own expenses — no separate table, category is just a string on Expense.
@@ -279,11 +312,11 @@ export function Expenses() {
         {recurringLoading ? (
           <p className="text-xs text-gray-400 py-2">Chargement...</p>
         ) : recurring.length === 0 ? (
-          <p className="text-xs text-gray-400 py-2">Aucune dépense récurrente — ajoute un salaire, un loyer ou un remboursement pour qu'il se crée automatiquement chaque mois.</p>
+          <p className="text-xs text-gray-400 py-2">Aucune dépense récurrente — ajoute un salaire, un loyer ou un remboursement pour qu'il se crée automatiquement (journalier, hebdo, mensuel ou annuel).</p>
         ) : (
           <div className="space-y-1.5">
             {recurring.map(r => {
-              const generatedThisMonth = r.lastGeneratedMonth === currentMonthKey;
+              const generatedThisPeriod = r.lastGeneratedPeriod === currentPeriodKey(r.frequency);
               return (
                 <div key={r.id} className={`flex items-center gap-3 p-2.5 rounded-xl ${r.active ? 'bg-gray-50' : 'bg-gray-50 opacity-50'}`}>
                   <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: catColor(r.category) }} />
@@ -292,9 +325,9 @@ export function Expenses() {
                       <span className="text-sm font-medium text-gray-800">{catLabel(r.category)}</span>
                       {r.description && <span className="text-xs text-gray-400 truncate">{r.description}</span>}
                       {!r.active && <Badge color="gray" size="sm">En pause</Badge>}
-                      {r.active && generatedThisMonth && <Badge color="green" size="sm">Généré ce mois</Badge>}
+                      {r.active && generatedThisPeriod && <Badge color="green" size="sm">Généré</Badge>}
                     </div>
-                    <div className="text-xs text-gray-400">Le {r.dayOfMonth} de chaque mois{r.endDate ? ` · jusqu'au ${formatDate(r.endDate)}` : ''}</div>
+                    <div className="text-xs text-gray-400">{scheduleLabel(r)}{r.endDate ? ` · jusqu'au ${formatDate(r.endDate)}` : ''}</div>
                   </div>
                   <div className="text-sm font-bold text-gray-900 shrink-0">{MAD(r.amount)}</div>
                   <div className="flex gap-1 shrink-0">
@@ -561,15 +594,58 @@ export function Expenses() {
               />
             </div>
             <div>
-              <label className="text-xs font-medium text-gray-600 mb-1 block">Jour du mois *</label>
-              <input
-                type="number" min={1} max={28}
-                value={recurringForm.dayOfMonth}
-                onChange={e => setRecurringForm(f => ({ ...f, dayOfMonth: Math.min(28, Math.max(1, +e.target.value)) }))}
+              <label className="text-xs font-medium text-gray-600 mb-1 block">Échéance *</label>
+              <select
+                value={recurringForm.frequency}
+                onChange={e => setRecurringForm(f => ({ ...f, frequency: e.target.value }))}
                 className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300"
-              />
-              <div className="text-xs text-gray-400 mt-1">1 à 28 — pour tomber dans tous les mois</div>
+              >
+                <option value="daily">Journalière</option>
+                <option value="weekly">Hebdomadaire</option>
+                <option value="monthly">Mensuelle</option>
+                <option value="annual">Annuelle</option>
+              </select>
             </div>
+
+            {recurringForm.frequency === 'weekly' && (
+              <div>
+                <label className="text-xs font-medium text-gray-600 mb-1 block">Jour de la semaine *</label>
+                <select
+                  value={recurringForm.dayOfWeek}
+                  onChange={e => setRecurringForm(f => ({ ...f, dayOfWeek: +e.target.value }))}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300"
+                >
+                  {WEEKDAY_LABELS.map((d, i) => <option key={i} value={i}>{d.charAt(0).toUpperCase() + d.slice(1)}</option>)}
+                </select>
+              </div>
+            )}
+
+            {recurringForm.frequency === 'annual' && (
+              <div>
+                <label className="text-xs font-medium text-gray-600 mb-1 block">Mois *</label>
+                <select
+                  value={recurringForm.month}
+                  onChange={e => setRecurringForm(f => ({ ...f, month: +e.target.value }))}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300"
+                >
+                  {MONTH_NAMES.map((m, i) => <option key={i} value={i + 1}>{m.charAt(0).toUpperCase() + m.slice(1)}</option>)}
+                </select>
+              </div>
+            )}
+
+            {(recurringForm.frequency === 'monthly' || recurringForm.frequency === 'annual') && (
+              <div>
+                <label className="text-xs font-medium text-gray-600 mb-1 block">Jour du mois *</label>
+                <input
+                  type="number" min={1} max={28}
+                  value={recurringForm.dayOfMonth}
+                  onChange={e => setRecurringForm(f => ({ ...f, dayOfMonth: Math.min(28, Math.max(1, +e.target.value)) }))}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300"
+                />
+                <div className="text-xs text-gray-400 mt-1">1 à 28 — pour tomber dans tous les mois</div>
+              </div>
+            )}
+
             <div>
               <label className="text-xs font-medium text-gray-600 mb-1 block">Début *</label>
               <input
