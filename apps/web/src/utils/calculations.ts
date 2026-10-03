@@ -1,6 +1,7 @@
 import type {
   Product, Sale, Expense, SalesGoal,
   ProductAnalytics, GlobalKpis, ProductClassification,
+  RecurringExpense, BudgetForecast,
 } from '../types';
 import { differenceInDays, parseISO } from 'date-fns';
 
@@ -289,4 +290,94 @@ export function computeGoalProgress(
       monthlyPct: Math.min(100, safeDiv(month.qty, goal.targetQty) * 100),
     };
   });
+}
+
+// ─── Budget prévisionnel ────────────────────────────────────────────────────────
+// Dynamique dans le sens où tout découle d'une seule saisie (quantité projetée par
+// produit pour le premier mois) : le CA, le COGS et le budget pub se déduisent de
+// cette quantité (prix de vente, coût d'achat, et ratio pub/unité tiré de l'historique
+// réel du produit), avec une croissance composée mois après mois. Structurellement
+// identique au vrai Compte de résultat (Analytics.tsx) pour que les deux soient
+// directement comparables.
+
+export interface ForecastMonth {
+  label: string;
+  monthKey: string; // "YYYY-MM"
+  revenue: number;
+  cogs: number;
+  grossProfit: number;
+  adBudget: number;
+  knownOpexByCategory: Record<string, number>; // dépenses récurrentes connues, projetées
+  manualOpexTotal: number;                      // lignes ajoutées à la main sur ce budget
+  totalOpex: number;
+  ebitda: number;
+}
+
+export function computeBudgetForecast(
+  products: Product[],
+  sales: Sale[],
+  expenses: Expense[],
+  recurringExpenses: RecurringExpense[],
+  forecast: BudgetForecast,
+): ForecastMonth[] {
+  // Ratio budget pub / unité vendue, par produit, sur tout l'historique disponible —
+  // seule base disponible pour projeter un budget pub à partir d'une quantité visée.
+  const adSpendPerUnit: Record<string, number> = {};
+  products.forEach(p => {
+    let units = 0;
+    sales.forEach(s => s.items.forEach(i => { if (i.productId === p.id) units += i.quantity; }));
+    const adSpend = expenses.filter(e => e.category === 'pub' && e.productId === p.id).reduce((s, e) => s + e.amount, 0);
+    adSpendPerUnit[p.id] = safeDiv(adSpend, units);
+  });
+
+  const qtyByProduct: Record<string, number> = {};
+  forecast.products.forEach(fp => { qtyByProduct[fp.productId] = fp.quantity; });
+
+  const manualOpexTotal = forecast.expenses.reduce((s, e) => s + e.amount, 0);
+
+  const [startY, startM] = (forecast.startMonth && /^\d{4}-\d{2}$/.test(forecast.startMonth)
+    ? forecast.startMonth
+    : new Date().toISOString().slice(0, 7)
+  ).split('-').map(Number);
+
+  const months: ForecastMonth[] = [];
+  for (let i = 0; i < forecast.horizonMonths; i++) {
+    const d = new Date(startY, startM - 1 + i, 1);
+    const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    const growthFactor = Math.pow(1 + forecast.monthlyGrowthPct / 100, i);
+
+    let revenue = 0, cogs = 0, adBudget = 0;
+    products.forEach(p => {
+      const baseQty = qtyByProduct[p.id] ?? 0;
+      if (baseQty <= 0) return;
+      const qty = baseQty * growthFactor;
+      revenue += qty * p.sellingPrice;
+      cogs += qty * p.acquisitionCost;
+      adBudget += qty * adSpendPerUnit[p.id];
+    });
+
+    const knownOpexByCategory: Record<string, number> = {};
+    recurringExpenses.forEach(r => {
+      if (!r.active) return;
+      let monthlyAmount = 0;
+      switch (r.frequency) {
+        case 'monthly': monthlyAmount = r.amount; break;
+        case 'annual': if ((r.month ?? 1) === d.getMonth() + 1) monthlyAmount = r.amount; break;
+        case 'weekly': monthlyAmount = r.amount * 4.33; break; // ~semaines/mois
+        case 'daily': monthlyAmount = r.amount * 30; break;
+      }
+      if (monthlyAmount > 0) knownOpexByCategory[r.category] = (knownOpexByCategory[r.category] ?? 0) + monthlyAmount;
+    });
+
+    const knownOpexTotal = Object.values(knownOpexByCategory).reduce((s, v) => s + v, 0);
+    const totalOpex = adBudget + knownOpexTotal + manualOpexTotal;
+    const grossProfit = revenue - cogs;
+    const ebitda = grossProfit - totalOpex;
+
+    months.push({
+      label: d.toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' }),
+      monthKey, revenue, cogs, grossProfit, adBudget, knownOpexByCategory, manualOpexTotal, totalOpex, ebitda,
+    });
+  }
+  return months;
 }

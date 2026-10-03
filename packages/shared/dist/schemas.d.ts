@@ -602,3 +602,121 @@ export declare const BusinessSchema: z.ZodObject<{
     logoUrl?: string | undefined;
     isDefault?: boolean | undefined;
 }>;
+export declare const BudgetForecastProductSchema: z.ZodObject<{
+    id: z.ZodString;
+    forecastId: z.ZodString;
+    productId: z.ZodString;
+    quantity: z.ZodNumber;
+}, "strip", z.ZodTypeAny, {
+    quantity: number;
+    id: string;
+    productId: string;
+    forecastId: string;
+}, {
+    quantity: number;
+    id: string;
+    productId: string;
+    forecastId: string;
+}>;
+export declare const BudgetForecastExpenseSchema: z.ZodObject<{
+    id: z.ZodString;
+    forecastId: z.ZodString;
+    category: z.ZodString;
+    description: z.ZodString;
+    amount: z.ZodNumber;
+}, "strip", z.ZodTypeAny, {
+    category: string;
+    id: string;
+    amount: number;
+    description: string;
+    forecastId: string;
+}, {
+    category: string;
+    id: string;
+    amount: number;
+    description: string;
+    forecastId: string;
+}>;
+export declare const BudgetForecastSchema: z.ZodObject<{
+    id: z.ZodString;
+    startMonth: z.ZodString;
+    monthlyGrowthPct: z.ZodNumber;
+    horizonMonths: z.ZodNumber;
+    createdAt: z.ZodString;
+    updatedAt: z.ZodString;
+    products: z.ZodArray<z.ZodObject<{
+        id: z.ZodString;
+        forecastId: z.ZodString;
+        productId: z.ZodString;
+        quantity: z.ZodNumber;
+    }, "strip", z.ZodTypeAny, {
+        quantity: number;
+        id: string;
+        productId: string;
+        forecastId: string;
+    }, {
+        quantity: number;
+        id: string;
+        productId: string;
+        forecastId: string;
+    }>, "many">;
+    expenses: z.ZodArray<z.ZodObject<{
+        id: z.ZodString;
+        forecastId: z.ZodString;
+        category: z.ZodString;
+        description: z.ZodString;
+        amount: z.ZodNumber;
+    }, "strip", z.ZodTypeAny, {
+        category: string;
+        id: string;
+        amount: number;
+        description: string;
+        forecastId: string;
+    }, {
+        category: string;
+        id: string;
+        amount: number;
+        description: string;
+        forecastId: string;
+    }>, "many">;
+}, "strip", z.ZodTypeAny, {
+    id: string;
+    createdAt: string;
+    updatedAt: string;
+    startMonth: string;
+    monthlyGrowthPct: number;
+    horizonMonths: number;
+    products: {
+        quantity: number;
+        id: string;
+        productId: string;
+        forecastId: string;
+    }[];
+    expenses: {
+        category: string;
+        id: string;
+        amount: number;
+        description: string;
+        forecastId: string;
+    }[];
+}, {
+    id: string;
+    createdAt: string;
+    updatedAt: string;
+    startMonth: string;
+    monthlyGrowthPct: number;
+    horizonMonths: number;
+    products: {
+        quantity: number;
+        id: string;
+        productId: string;
+        forecastId: string;
+    }[];
+    expenses: {
+        category: string;
+        id: string;
+        amount: number;
+        description: string;
+        forecastId: string;
+    }[];
+}>;

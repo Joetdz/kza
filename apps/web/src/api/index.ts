@@ -1,4 +1,4 @@
-import type { Product, Sale, Expense, SalesGoal, StockMovement, RecurringExpense } from '../types';
+import type { Product, Sale, Expense, SalesGoal, StockMovement, RecurringExpense, BudgetForecast } from '../types';
 import { supabase } from '../lib/supabase';
 
 const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api';
@@ -212,6 +212,21 @@ export const goalsApi = {
     req<SalesGoal>(`/goals/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   remove: (id: string) =>
     req<{ id: string }>(`/goals/${id}`, { method: 'DELETE' }),
+};
+
+// ─── Budget prévisionnel ────────────────────────────────────────
+export const budgetForecastApi = {
+  get: () => req<BudgetForecast>('/goals/budget-forecast'),
+  update: (body: { startMonth?: string; monthlyGrowthPct?: number; horizonMonths?: number }) =>
+    req<BudgetForecast>('/goals/budget-forecast', { method: 'PATCH', body: JSON.stringify(body) }),
+  setProducts: (items: { productId: string; quantity: number }[]) =>
+    req<BudgetForecast>('/goals/budget-forecast/products', { method: 'POST', body: JSON.stringify({ items }) }),
+  addExpense: (body: { category: string; description?: string; amount: number }) =>
+    req<BudgetForecast['expenses'][number]>('/goals/budget-forecast/expenses', { method: 'POST', body: JSON.stringify(body) }),
+  updateExpense: (id: string, body: { category?: string; description?: string; amount?: number }) =>
+    req<BudgetForecast['expenses'][number]>(`/goals/budget-forecast/expenses/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  removeExpense: (id: string) =>
+    req<{ id: string }>(`/goals/budget-forecast/expenses/${id}`, { method: 'DELETE' }),
 };
 
 // ─── Businesses ──────────────────────────────────────────────

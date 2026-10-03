@@ -180,3 +180,31 @@ export const BusinessSchema = CreateBusinessSchema.extend({
   updatedAt: z.string(),
 });
 
+// ─── Budget prévisionnel ────────────────────────────────────────────────────────
+
+export const BudgetForecastProductSchema = z.object({
+  id: z.string().uuid(),
+  forecastId: z.string().uuid(),
+  productId: z.string(),
+  quantity: z.number(),
+});
+
+export const BudgetForecastExpenseSchema = z.object({
+  id: z.string().uuid(),
+  forecastId: z.string().uuid(),
+  category: z.string(),
+  description: z.string(),
+  amount: z.number(),
+});
+
+export const BudgetForecastSchema = z.object({
+  id: z.string().uuid(),
+  startMonth: z.string(),
+  monthlyGrowthPct: z.number(),
+  horizonMonths: z.number(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  products: z.array(BudgetForecastProductSchema),
+  expenses: z.array(BudgetForecastExpenseSchema),
+});
+

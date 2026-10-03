@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ProductSchema, CreateProductSchema, UpdateProductSchema, MovementSchema, CreateMovementSchema, SaleSchema, SaleItemSchema, CreateSaleSchema, ExpenseSchema, CreateExpenseSchema, UpdateExpenseSchema, RecurringExpenseSchema, CreateRecurringExpenseSchema, UpdateRecurringExpenseSchema, GoalSchema, CreateGoalSchema, UpdateGoalSchema } from './schemas';
+import { ProductSchema, CreateProductSchema, UpdateProductSchema, MovementSchema, CreateMovementSchema, SaleSchema, SaleItemSchema, CreateSaleSchema, ExpenseSchema, CreateExpenseSchema, UpdateExpenseSchema, RecurringExpenseSchema, CreateRecurringExpenseSchema, UpdateRecurringExpenseSchema, GoalSchema, CreateGoalSchema, UpdateGoalSchema, BudgetForecastSchema, BudgetForecastProductSchema, BudgetForecastExpenseSchema } from './schemas';
 import type { SALE_CHANNELS, MOVEMENT_TYPES, SALE_STATUSES } from './schemas';
 export type SaleChannel = typeof SALE_CHANNELS[number];
 export type ExpenseCategory = string;
@@ -22,6 +22,9 @@ export type UpdateRecurringExpenseDto = z.infer<typeof UpdateRecurringExpenseSch
 export type SalesGoal = z.infer<typeof GoalSchema>;
 export type CreateGoalDto = z.infer<typeof CreateGoalSchema>;
 export type UpdateGoalDto = z.infer<typeof UpdateGoalSchema>;
+export type BudgetForecastProduct = z.infer<typeof BudgetForecastProductSchema>;
+export type BudgetForecastExpense = z.infer<typeof BudgetForecastExpenseSchema>;
+export type BudgetForecast = z.infer<typeof BudgetForecastSchema>;
 export type ProductClassification = 'scale' | 'profitable' | 'monitor' | 'stop';
 export interface ProductAnalytics {
     productId: string;

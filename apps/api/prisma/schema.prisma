@@ -99,6 +99,7 @@ model Product {
   orderItems     ManualOrderItem[]
   locationStocks LocationStock[]
   waMentions     WhatsAppProductMention[]
+  forecastEntries BudgetForecastProduct[]
 
   @@unique([userId, sku])
   @@index([userId])
@@ -215,6 +216,60 @@ model SalesGoal {
   @@index([userId])
   @@index([businessId])
   @@map("sales_goals")
+}
+
+// ─── Budget prévisionnel ────────────────────────────────────────────────────────
+// One forecast per business: a starting quantity-to-sell per product, grown at a
+// fixed monthly rate for N months. Everything else (revenue, COGS, ad budget,
+// known recurring OPEX) is derived client-side from this plus live product/sales/
+// expense data — these three models only hold the inputs the owner actually types.
+
+model BudgetForecast {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId           String   @map("user_id")
+  businessId       String?  @map("business_id") @db.Uuid
+  startMonth       String   @default("") @map("start_month") // "YYYY-MM", "" = mois courant
+  monthlyGrowthPct Float    @default(10) @map("monthly_growth_pct")
+  horizonMonths    Int      @default(12) @map("horizon_months")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  products BudgetForecastProduct[]
+  expenses BudgetForecastExpense[]
+
+  @@unique([userId, businessId])
+  @@map("budget_forecasts")
+}
+
+model BudgetForecastProduct {
+  id         String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  forecastId String @map("forecast_id") @db.Uuid
+  productId  String @map("product_id") @db.Uuid
+  // Quantité projetée pour le premier mois de l'horizon — les mois suivants
+  // appliquent monthlyGrowthPct composé, calculé côté client.
+  quantity   Float  @default(0)
+
+  forecast BudgetForecast @relation(fields: [forecastId], references: [id], onDelete: Cascade)
+  product  Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([forecastId, productId])
+  @@map("budget_forecast_products")
+}
+
+// Lignes OPEX ajoutées manuellement au budget prévisionnel, en plus des dépenses
+// récurrentes connues (RecurringExpense) qui s'y ajoutent automatiquement.
+// Montant mensuel appliqué à chaque mois de l'horizon — prévisionnel uniquement,
+// ne crée jamais de vraie Expense.
+model BudgetForecastExpense {
+  id          String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  forecastId  String @map("forecast_id") @db.Uuid
+  category    String
+  description String @default("")
+  amount      Float
+
+  forecast BudgetForecast @relation(fields: [forecastId], references: [id], onDelete: Cascade)
+
+  @@map("budget_forecast_expenses")
 }
 
 // ─── WhatsApp CRM ─────────────────────────────────────────────────────────────

@@ -17,6 +17,9 @@ import {
   GoalSchema,
   CreateGoalSchema,
   UpdateGoalSchema,
+  BudgetForecastSchema,
+  BudgetForecastProductSchema,
+  BudgetForecastExpenseSchema,
 } from './schemas';
 import type { SALE_CHANNELS, MOVEMENT_TYPES, SALE_STATUSES } from './schemas';
 
@@ -53,6 +56,10 @@ export type UpdateRecurringExpenseDto = z.infer<typeof UpdateRecurringExpenseSch
 export type SalesGoal = z.infer<typeof GoalSchema>;
 export type CreateGoalDto = z.infer<typeof CreateGoalSchema>;
 export type UpdateGoalDto = z.infer<typeof UpdateGoalSchema>;
+
+export type BudgetForecastProduct = z.infer<typeof BudgetForecastProductSchema>;
+export type BudgetForecastExpense = z.infer<typeof BudgetForecastExpenseSchema>;
+export type BudgetForecast = z.infer<typeof BudgetForecastSchema>;
 
 // ─── Computed / Analytics (frontend only, never stored) ──────────────────────
 

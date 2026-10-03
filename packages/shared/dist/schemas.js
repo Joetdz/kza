@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.BusinessSchema = exports.UpdateBusinessSchema = exports.CreateBusinessSchema = exports.SUPPORTED_CURRENCIES = exports.GoalSchema = exports.UpdateGoalSchema = exports.CreateGoalSchema = exports.RecurringExpenseSchema = exports.UpdateRecurringExpenseSchema = exports.CreateRecurringExpenseSchema = exports.RECURRING_FREQUENCIES = exports.ExpenseSchema = exports.UpdateExpenseSchema = exports.CreateExpenseSchema = exports.SaleSchema = exports.CreateSaleSchema = exports.SaleItemSchema = exports.MovementSchema = exports.CreateMovementSchema = exports.ProductSchema = exports.UpdateProductSchema = exports.CreateProductSchema = exports.DELIVERY_ZONES = exports.RDC_VILLES = exports.KINSHASA_COMMUNES = exports.SALE_STATUSES = exports.MOVEMENT_TYPES = exports.EXPENSE_CATEGORIES = exports.SALE_CHANNELS = void 0;
+exports.BudgetForecastSchema = exports.BudgetForecastExpenseSchema = exports.BudgetForecastProductSchema = exports.BusinessSchema = exports.UpdateBusinessSchema = exports.CreateBusinessSchema = exports.SUPPORTED_CURRENCIES = exports.GoalSchema = exports.UpdateGoalSchema = exports.CreateGoalSchema = exports.RecurringExpenseSchema = exports.UpdateRecurringExpenseSchema = exports.CreateRecurringExpenseSchema = exports.RECURRING_FREQUENCIES = exports.ExpenseSchema = exports.UpdateExpenseSchema = exports.CreateExpenseSchema = exports.SaleSchema = exports.CreateSaleSchema = exports.SaleItemSchema = exports.MovementSchema = exports.CreateMovementSchema = exports.ProductSchema = exports.UpdateProductSchema = exports.CreateProductSchema = exports.DELIVERY_ZONES = exports.RDC_VILLES = exports.KINSHASA_COMMUNES = exports.SALE_STATUSES = exports.MOVEMENT_TYPES = exports.EXPENSE_CATEGORIES = exports.SALE_CHANNELS = void 0;
 const zod_1 = require("zod");
 // ─── Constantes ──────────────────────────────────────────────────────────────
 exports.SALE_CHANNELS = ['WhatsApp', 'Meta Ads', 'TikTok', 'Instagram', 'Boutique', 'Autre'];
@@ -143,4 +143,28 @@ exports.BusinessSchema = exports.CreateBusinessSchema.extend({
     id: zod_1.z.string().uuid(),
     createdAt: zod_1.z.string(),
     updatedAt: zod_1.z.string(),
+});
+// ─── Budget prévisionnel ────────────────────────────────────────────────────────
+exports.BudgetForecastProductSchema = zod_1.z.object({
+    id: zod_1.z.string().uuid(),
+    forecastId: zod_1.z.string().uuid(),
+    productId: zod_1.z.string(),
+    quantity: zod_1.z.number(),
+});
+exports.BudgetForecastExpenseSchema = zod_1.z.object({
+    id: zod_1.z.string().uuid(),
+    forecastId: zod_1.z.string().uuid(),
+    category: zod_1.z.string(),
+    description: zod_1.z.string(),
+    amount: zod_1.z.number(),
+});
+exports.BudgetForecastSchema = zod_1.z.object({
+    id: zod_1.z.string().uuid(),
+    startMonth: zod_1.z.string(),
+    monthlyGrowthPct: zod_1.z.number(),
+    horizonMonths: zod_1.z.number(),
+    createdAt: zod_1.z.string(),
+    updatedAt: zod_1.z.string(),
+    products: zod_1.z.array(exports.BudgetForecastProductSchema),
+    expenses: zod_1.z.array(exports.BudgetForecastExpenseSchema),
 });
