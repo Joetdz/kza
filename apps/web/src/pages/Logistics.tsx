@@ -1644,6 +1644,11 @@ export function Logistics() {
       {/* ── MODAL STOCK EMPLACEMENT ── */}
       {stockModal && (
         <Modal title={`Stock — ${stockModal.name}`} onClose={() => setStockModal(null)}>
+          {stockModal.isDefault && (
+            <p className="text-xs text-gray-400 mb-2">
+              Quantités calculées automatiquement (stock total moins ce qui est affecté ailleurs) — non modifiables ici.
+            </p>
+          )}
           {stockLoading ? (
             <p className="text-sm text-gray-400 text-center py-4">Chargement...</p>
           ) : (
@@ -1654,8 +1659,9 @@ export function Logistics() {
                   <input type="number" min="0"
                     value={stockAllocations[p.id] ?? ''}
                     onChange={e => setStockAllocations(m => ({ ...m, [p.id]: e.target.value }))}
+                    disabled={stockModal.isDefault}
                     placeholder="0"
-                    className="w-24 border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-400 text-right" />
+                    className="w-24 border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-400 text-right disabled:bg-gray-50 disabled:text-gray-400" />
                 </div>
               ))}
               {products.filter(p => p.trackStock).length === 0 && (
@@ -1663,7 +1669,9 @@ export function Logistics() {
               )}
             </div>
           )}
-          <ModalFooter onClose={() => setStockModal(null)} onConfirm={handleSaveStock} loading={submitting} label="Enregistrer" />
+          {!stockModal.isDefault && (
+            <ModalFooter onClose={() => setStockModal(null)} onConfirm={handleSaveStock} loading={submitting} label="Enregistrer" />
+          )}
         </Modal>
       )}
 

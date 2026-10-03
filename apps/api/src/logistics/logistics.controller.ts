@@ -38,12 +38,24 @@ export class LogisticsController {
   // ── Emplacements ──────────────────────────────────────────────
 
   @Get('my/logistics/locations')
-  getLocations(@CurrentUser() user: AuthUser) {
-    return this.prisma.stockLocation.findMany({
+  async getLocations(@CurrentUser() user: AuthUser) {
+    await this.logisticsService.ensureDefaultLocation(user.ownerId, user.businessId ?? user.ownerId);
+
+    const locations = await this.prisma.stockLocation.findMany({
       where: this.where(user),
       include: { partner: true, stocks: { include: { product: true } } },
-      orderBy: { createdAt: 'asc' },
+      orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
     });
+
+    // The default location's `stocks` relation is always empty by design — fill it in
+    // with the computed values instead of making every caller know that distinction.
+    const defaultLoc = locations.find(l => l.isDefault);
+    if (defaultLoc) {
+      (defaultLoc as any).stocks = await this.logisticsService.computeDefaultLocationStock(
+        user.ownerId, user.businessId ?? user.ownerId, defaultLoc.id,
+      );
+    }
+    return locations;
   }
 
   @Post('my/logistics/locations')
@@ -56,12 +68,15 @@ export class LogisticsController {
         city: body.city,
         address: body.address,
         type: body.type ?? 'OWN',
+        // isDefault is never settable through this endpoint — there's exactly one,
+        // auto-created by ensureDefaultLocation.
       },
     });
   }
 
   @Patch('my/logistics/locations/:id')
   updateLocation(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() body: { name?: string; city?: string; address?: string }) {
+    // Renaming is allowed even for the default location — only its stock is protected.
     return this.prisma.stockLocation.updateMany({
       where: { id, ...this.where(user) },
       data: body,
@@ -69,14 +84,23 @@ export class LogisticsController {
   }
 
   @Delete('my/logistics/locations/:id')
-  deleteLocation(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.prisma.stockLocation.deleteMany({ where: { id, ...this.where(user) } });
+  async deleteLocation(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    const location = await this.prisma.stockLocation.findFirst({ where: { id, ...this.where(user) } });
+    if (!location) throw new NotFoundException('Emplacement introuvable');
+    if (location.isDefault) throw new BadRequestException('L\'entrepôt principal ne peut pas être supprimé.');
+    return this.prisma.stockLocation.delete({ where: { id } });
   }
 
   // ── Stock par emplacement ─────────────────────────────────────
 
   @Get('my/logistics/locations/:id/stock')
-  getLocationStock(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+  async getLocationStock(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    const location = await this.prisma.stockLocation.findFirst({ where: { id, ...this.where(user) } });
+    if (!location) throw new NotFoundException('Emplacement introuvable');
+
+    if (location.isDefault) {
+      return this.logisticsService.computeDefaultLocationStock(user.ownerId, user.businessId ?? user.ownerId, id);
+    }
     return this.prisma.locationStock.findMany({
       where: { locationId: id },
       include: { product: true },
@@ -93,6 +117,9 @@ export class LogisticsController {
 
     const location = await this.prisma.stockLocation.findFirst({ where: { id, ...this.where(user) } });
     if (!location) throw new NotFoundException('Emplacement introuvable');
+    if (location.isDefault) {
+      throw new BadRequestException('La quantité de l\'entrepôt principal est calculée automatiquement — affecte du stock vers un autre emplacement pour la faire bouger.');
+    }
 
     const product = await this.prisma.product.findFirst({ where: { id: body.productId, ...this.where(user) } });
     if (!product) throw new NotFoundException('Produit introuvable');
@@ -125,11 +152,20 @@ export class LogisticsController {
   }
 
   @Get('my/logistics/products/:productId/allocations')
-  getProductAllocations(@CurrentUser() user: AuthUser, @Param('productId') productId: string) {
-    return this.prisma.locationStock.findMany({
-      where: { productId },
+  async getProductAllocations(@CurrentUser() user: AuthUser, @Param('productId') productId: string) {
+    const defaultLoc = await this.prisma.stockLocation.findFirst({
+      where: { ...this.where(user), isDefault: true },
+    });
+    const explicit = await this.prisma.locationStock.findMany({
+      where: { productId, locationId: defaultLoc ? { not: defaultLoc.id } : undefined },
       include: { location: true, product: true },
     });
+    if (!defaultLoc) return explicit;
+
+    const [computed] = await this.logisticsService.computeDefaultLocationStock(
+      user.ownerId, user.businessId ?? user.ownerId, defaultLoc.id,
+    ).then(rows => rows.filter(r => r.productId === productId));
+    return computed ? [{ ...computed, location: defaultLoc }, ...explicit] : explicit;
   }
 
   // ── Partenaires ───────────────────────────────────────────────

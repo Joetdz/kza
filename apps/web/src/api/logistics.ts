@@ -40,6 +40,7 @@ export interface StockLocation {
   city: string;
   address: string | null;
   type: string;
+  isDefault: boolean;
   partnerId: string | null;
   partner: DeliveryPartner | null;
   stocks: LocationStock[];

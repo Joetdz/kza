@@ -119,7 +119,8 @@ export function Stock() {
     if (!allocProduct) return;
     setAllocSubmitting(true);
     try {
-      const entries = Object.entries(allocMap).filter(([, q]) => q !== '' && Number(q) >= 0);
+      const defaultLocIds = new Set(allocLocations.filter(l => l.isDefault).map(l => l.id));
+      const entries = Object.entries(allocMap).filter(([locId, q]) => q !== '' && Number(q) >= 0 && !defaultLocIds.has(locId));
       // Sequential, not Promise.all: the backend validates each location's quantity
       // against "what's already affected elsewhere" by reading the other locations'
       // current rows. Firing all of them in parallel lets several requests read the
@@ -585,15 +586,17 @@ export function Stock() {
               <div key={loc.id} className="flex items-center gap-3 p-2 rounded-xl hover:bg-gray-50">
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-gray-800 truncate">{loc.name}</p>
-                  <p className="text-xs text-gray-400">{loc.city}</p>
+                  <p className="text-xs text-gray-400">{loc.isDefault ? 'Calculé automatiquement' : loc.city}</p>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <input
                     type="number" min="0"
                     value={allocMap[loc.id] ?? ''}
                     onChange={e => setAllocMap(m => ({ ...m, [loc.id]: e.target.value }))}
+                    disabled={loc.isDefault}
                     placeholder="0"
-                    className="w-20 border border-gray-200 rounded-xl px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-indigo-400 text-right"
+                    title={loc.isDefault ? 'Quantité restante après affectation — non modifiable ici' : undefined}
+                    className="w-20 border border-gray-200 rounded-xl px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-indigo-400 text-right disabled:bg-gray-50 disabled:text-gray-400"
                   />
                   <span className="text-xs text-gray-400">unités</span>
                 </div>

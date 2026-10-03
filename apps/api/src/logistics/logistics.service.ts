@@ -13,6 +13,51 @@ export class LogisticsService {
   constructor(private prisma: PrismaService) {}
 
   /**
+   * Every business has exactly one default location — its main warehouse. Created lazily
+   * on first use rather than at business-creation time, so existing businesses pick one up
+   * automatically too. Name is editable afterward like any other location.
+   */
+  async ensureDefaultLocation(userId: string, businessId: string): Promise<{ id: string }> {
+    const existing = await this.prisma.stockLocation.findFirst({
+      where: { userId, businessId, isDefault: true },
+      select: { id: true },
+    });
+    if (existing) return existing;
+
+    return this.prisma.stockLocation.create({
+      data: { userId, businessId, name: 'Entrepôt Principal', city: '', type: 'OWN', isDefault: true },
+      select: { id: true },
+    });
+  }
+
+  /**
+   * The default location's stock is never entered by hand — it's whatever is left of each
+   * product's total quantity after subtracting what's explicitly affected to every OTHER
+   * location (partners, secondary warehouses). Computed on read, so it can never drift out
+   * of sync with Product.quantity or with affectations made elsewhere.
+   */
+  async computeDefaultLocationStock(userId: string, businessId: string, defaultLocationId: string) {
+    const [products, otherAllocations] = await Promise.all([
+      this.prisma.product.findMany({ where: { userId, businessId } }),
+      this.prisma.locationStock.groupBy({
+        by: ['productId'],
+        where: { locationId: { not: defaultLocationId }, product: { userId, businessId } },
+        _sum: { quantity: true },
+      }),
+    ]);
+    const affectedElsewhere = new Map(otherAllocations.map(a => [a.productId, a._sum.quantity ?? 0]));
+
+    return products.map(product => ({
+      id: `virtual-${defaultLocationId}-${product.id}`,
+      locationId: defaultLocationId,
+      productId: product.id,
+      quantity: product.quantity - (affectedElsewhere.get(product.id) ?? 0),
+      updatedAt: product.updatedAt,
+      product,
+    }));
+  }
+
+  /**
    * Marks a ManualOrder delivered: decrements Product.quantity, logs a StockMovement,
    * decrements LocationStock (order's own location, falling back to its partner's), and
    * records a Sale. Idempotent — a no-op if the order is missing or already delivered, so

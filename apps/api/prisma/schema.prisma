@@ -635,6 +635,11 @@ model StockLocation {
   city       String
   address    String?
   type       String          @default("OWN")
+  // The business's main warehouse — auto-created, one per business, never deleted. Its
+  // stock is never entered by hand: it's always computed as "total stock minus whatever
+  // is explicitly affected elsewhere" (see LogisticsService), so it can't drift out of
+  // sync. Renamable like any other location — only the name shown is "Entrepôt Principal".
+  isDefault  Boolean         @default(false) @map("is_default")
   partnerId  String?         @unique @map("partner_id") @db.Uuid
   partner    DeliveryPartner? @relation(fields: [partnerId], references: [id])
   orders     ManualOrder[]
