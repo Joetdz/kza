@@ -462,12 +462,12 @@ export function Goals() {
             </div>
           </div>
 
-          {/* Projected quantities per product */}
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
-            <div className="flex items-center justify-between mb-3">
+          {/* Projected quantities per product, month by month */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            <div className="flex items-center justify-between p-4 pb-3">
               <div>
-                <h2 className="font-semibold text-gray-900 text-sm">Quantité projetée à vendre — {forecastMonths[0]?.label ?? 'premier mois'}</h2>
-                <p className="text-xs text-gray-400">Le CA, le COGS et le budget pub se déduisent automatiquement ; les mois suivants appliquent la croissance ci-dessus.</p>
+                <h2 className="font-semibold text-gray-900 text-sm">Quantité projetée à vendre, par mois</h2>
+                <p className="text-xs text-gray-400">Seul le premier mois se saisit — les suivants appliquent la croissance de {forecast.monthlyGrowthPct}%/mois automatiquement.</p>
               </div>
               <button onClick={handleSaveQuantities} disabled={savingQty}
                 className="shrink-0 flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white px-3 py-2 rounded-xl text-xs font-medium transition-colors">
@@ -475,21 +475,48 @@ export function Goals() {
               </button>
             </div>
             {products.length === 0 ? (
-              <p className="text-xs text-gray-400 py-2">Aucun produit.</p>
+              <p className="text-xs text-gray-400 px-4 pb-4">Aucun produit.</p>
             ) : (
-              <div className="grid sm:grid-cols-2 gap-2">
-                {products.filter(p => p.trackStock !== false).map(p => (
-                  <div key={p.id} className="flex items-center gap-3">
-                    <span className="flex-1 text-sm text-gray-700 truncate">{p.name}</span>
-                    <input
-                      type="number" min={0}
-                      value={qtyMap[p.id] ?? ''}
-                      onChange={e => setQtyMap(m => ({ ...m, [p.id]: e.target.value }))}
-                      placeholder="0"
-                      className="w-24 border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-300 text-right"
-                    />
-                  </div>
-                ))}
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-100">
+                      <th className="text-left font-medium text-gray-500 px-4 py-2 sticky left-0 bg-white">Produit</th>
+                      {forecastMonths.map(m => (
+                        <th key={m.monthKey} className="text-right font-medium text-gray-500 px-3 py-2 whitespace-nowrap min-w-[80px]">{m.label}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {products.filter(p => p.trackStock !== false).map(p => (
+                      <tr key={p.id} className="border-b border-gray-50">
+                        <td className="px-4 py-1.5 text-gray-700 truncate sticky left-0 bg-white max-w-[160px]">{p.name}</td>
+                        <td className="px-2 py-1.5">
+                          <input
+                            type="number" min={0}
+                            value={qtyMap[p.id] ?? ''}
+                            onChange={e => setQtyMap(m => ({ ...m, [p.id]: e.target.value }))}
+                            placeholder="0"
+                            className="w-20 border border-gray-200 rounded-lg px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300 text-right"
+                          />
+                        </td>
+                        {forecastMonths.slice(1).map(m => (
+                          <td key={m.monthKey} className="text-right px-3 py-1.5 text-gray-400">
+                            {Math.round(m.quantitiesByProduct[p.id] ?? 0) || '—'}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                    <tr className="bg-gray-50 font-semibold">
+                      <td className="px-4 py-2 text-gray-700 sticky left-0 bg-gray-50">Total</td>
+                      {forecastMonths.map(m => (
+                        <td key={m.monthKey} className="text-right px-3 py-2 text-gray-800">
+                          {Math.round(Object.values(m.quantitiesByProduct).reduce((s, q) => s + q, 0))}
+                        </td>
+                      ))}
+                    </tr>
+                  </tbody>
+                </table>
               </div>
             )}
           </div>

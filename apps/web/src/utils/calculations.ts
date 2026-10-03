@@ -303,6 +303,7 @@ export function computeGoalProgress(
 export interface ForecastMonth {
   label: string;
   monthKey: string; // "YYYY-MM"
+  quantitiesByProduct: Record<string, number>; // quantité projetée (après croissance), par produit
   revenue: number;
   cogs: number;
   grossProfit: number;
@@ -347,10 +348,12 @@ export function computeBudgetForecast(
     const growthFactor = Math.pow(1 + forecast.monthlyGrowthPct / 100, i);
 
     let revenue = 0, cogs = 0, adBudget = 0;
+    const quantitiesByProduct: Record<string, number> = {};
     products.forEach(p => {
       const baseQty = qtyByProduct[p.id] ?? 0;
       if (baseQty <= 0) return;
       const qty = baseQty * growthFactor;
+      quantitiesByProduct[p.id] = qty;
       revenue += qty * p.sellingPrice;
       cogs += qty * p.acquisitionCost;
       adBudget += qty * adSpendPerUnit[p.id];
@@ -376,7 +379,7 @@ export function computeBudgetForecast(
 
     months.push({
       label: d.toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' }),
-      monthKey, revenue, cogs, grossProfit, adBudget, knownOpexByCategory, manualOpexTotal, totalOpex, ebitda,
+      monthKey, quantitiesByProduct, revenue, cogs, grossProfit, adBudget, knownOpexByCategory, manualOpexTotal, totalOpex, ebitda,
     });
   }
   return months;
