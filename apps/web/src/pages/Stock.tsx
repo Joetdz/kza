@@ -120,12 +120,20 @@ export function Stock() {
     setAllocSubmitting(true);
     try {
       const entries = Object.entries(allocMap).filter(([, q]) => q !== '' && Number(q) >= 0);
-      await Promise.all(entries.map(([locationId, quantity]) =>
-        logisticsApi.setLocationStock(locationId, { productId: allocProduct.id, quantity: Number(quantity) })
-      ));
+      // Sequential, not Promise.all: the backend validates each location's quantity
+      // against "what's already affected elsewhere" by reading the other locations'
+      // current rows. Firing all of them in parallel lets several requests read the
+      // same stale snapshot before any of them writes, so each one sees stock as still
+      // free and passes — letting the same units get over-affected across locations.
+      // One at a time, each write lands before the next request reads.
+      for (const [locationId, quantity] of entries) {
+        await logisticsApi.setLocationStock(locationId, { productId: allocProduct.id, quantity: Number(quantity) });
+      }
       toast.success('Affectations enregistrées');
       setAllocProduct(null);
-    } catch { toast.error('Erreur lors de la sauvegarde'); }
+    } catch (e: any) {
+      toast.error(e?.message ?? 'Erreur lors de la sauvegarde');
+    }
     finally { setAllocSubmitting(false); }
   };
 
