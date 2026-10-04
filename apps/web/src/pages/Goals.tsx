@@ -197,8 +197,15 @@ export function Goals() {
 
   const updateForecastSettings = async (patch: { startMonth?: string; monthlyGrowthPct?: number; horizonMonths?: number }) => {
     if (!forecast) return;
-    const updated = await budgetForecastApi.update(patch).catch(() => null);
-    if (updated) setForecast(updated);
+    // Optimistic update first — sinon un champ dont la requête traîne (ou échoue
+    // silencieusement) donne l'impression que seul le dernier champ modifié "marche".
+    setForecast({ ...forecast, ...patch });
+    try {
+      const updated = await budgetForecastApi.update(patch);
+      setForecast(updated);
+    } catch (e: any) {
+      alert('Erreur : ' + (e?.message ?? 'Impossible de sauvegarder ce paramètre'));
+    }
   };
 
   const handleSaveQuantities = async () => {
