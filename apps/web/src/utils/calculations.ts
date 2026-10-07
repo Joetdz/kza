@@ -384,3 +384,17 @@ export function computeBudgetForecast(
   }
   return months;
 }
+
+// Réalisé par produit sur un mois civil donné ("YYYY-MM") — même notion de mois que le
+// budget prévisionnel (contrairement à computeGoalProgress, qui utilise une fenêtre
+// glissante de 30 jours). Sert à comparer Objectif / Prévisionnel / Réalisé sur la même base.
+export function computeRealizedByProduct(sales: Sale[], monthKey: string): Record<string, number> {
+  const result: Record<string, number> = {};
+  sales
+    .filter(s => s.date.slice(0, 7) === monthKey)
+    .forEach(s => s.items.forEach(i => {
+      if (!i.productId) return;
+      result[i.productId] = (result[i.productId] ?? 0) + i.quantity;
+    }));
+  return result;
+}

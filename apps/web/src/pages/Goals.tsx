@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { Plus, Trash2, Edit2, Target, TrendingUp, Calculator } from 'lucide-react';
 import { useStore } from '../store/useStore';
-import { computeGoalProgress, computeBudgetForecast } from '../utils/calculations';
+import { computeGoalProgress, computeBudgetForecast, computeRealizedByProduct } from '../utils/calculations';
 import { useCurrency } from '../hooks/useCurrency';
 import { Modal } from '../components/ui/Modal';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
@@ -195,6 +195,31 @@ export function Goals() {
 
   const catLabel = (c: string) => EXPENSE_LABELS[c] ?? c;
 
+  // ─── Objectif vs Budget prévisionnel vs Réalisé (mois civil en cours) ───────
+  const currentCalendarMonth = new Date().toISOString().slice(0, 7);
+  const currentForecastMonth = useMemo(
+    () => forecastMonths.find(m => m.monthKey === currentCalendarMonth),
+    [forecastMonths, currentCalendarMonth],
+  );
+  const realizedByProduct = useMemo(() => computeRealizedByProduct(sales, currentCalendarMonth), [sales, currentCalendarMonth]);
+
+  const comparisonRows = useMemo(() => {
+    const productIds = new Set<string>();
+    goals.forEach(g => { if (g.productId !== 'all') productIds.add(g.productId); });
+    if (currentForecastMonth) Object.keys(currentForecastMonth.quantitiesByProduct).forEach(id => productIds.add(id));
+
+    return [...productIds].map(productId => {
+      const product = products.find(p => p.id === productId);
+      const goalQty = goals.find(g => g.productId === productId)?.targetQty ?? null;
+      const forecastQty = currentForecastMonth?.quantitiesByProduct[productId] ?? null;
+      const realizedQty = realizedByProduct[productId] ?? 0;
+      const reference = Math.max(goalQty ?? 0, forecastQty ?? 0);
+      const pct = reference > 0 ? Math.min(100, (realizedQty / reference) * 100) : 0;
+      return { productId, productName: product?.name ?? 'Produit inconnu', goalQty, forecastQty, realizedQty, pct };
+    }).filter(r => r.goalQty !== null || r.forecastQty !== null)
+      .sort((a, b) => b.pct - a.pct);
+  }, [goals, currentForecastMonth, realizedByProduct, products]);
+
   const updateForecastSettings = async (patch: { startMonth?: string; monthlyGrowthPct?: number; horizonMonths?: number }) => {
     if (!forecast) return;
     // Optimistic update first — sinon un champ dont la requête traîne (ou échoue
@@ -342,6 +367,52 @@ export function Goals() {
           <div className="flex items-center gap-2 text-sm text-white/70 mt-2">
             <TrendingUp size={14} />
             Moyenne sur {goals.length} objectif{goals.length !== 1 ? 's' : ''}
+          </div>
+        </div>
+      )}
+
+      {/* Objectif vs Budget prévisionnel vs Réalisé — mois en cours */}
+      {comparisonRows.length > 0 && (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="p-4 pb-3">
+            <h2 className="font-semibold text-gray-900 text-sm">Objectif vs Budget prévisionnel vs Réalisé</h2>
+            <p className="text-xs text-gray-400">
+              {currentForecastMonth ? `Mois en cours (${currentForecastMonth.label})` : "Le budget prévisionnel ne couvre pas le mois en cours — seul l'objectif manuel est comparé au réalisé."}
+            </p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-100">
+                  <th className="text-left font-medium text-gray-500 px-4 py-2">Produit</th>
+                  <th className="text-right font-medium text-gray-500 px-3 py-2">Objectif</th>
+                  <th className="text-right font-medium text-gray-500 px-3 py-2">Prévisionnel</th>
+                  <th className="text-right font-medium text-gray-500 px-3 py-2">Réalisé</th>
+                  <th className="text-left font-medium text-gray-500 px-4 py-2 w-1/3">Progression</th>
+                </tr>
+              </thead>
+              <tbody>
+                {comparisonRows.map(r => {
+                  const color = r.pct >= 100 ? 'bg-emerald-500' : r.pct >= 60 ? 'bg-indigo-500' : r.pct >= 30 ? 'bg-amber-500' : 'bg-red-400';
+                  return (
+                    <tr key={r.productId} className="border-b border-gray-50">
+                      <td className="px-4 py-2.5 text-gray-800 font-medium truncate max-w-[160px]">{r.productName}</td>
+                      <td className="text-right px-3 py-2.5 text-gray-600">{r.goalQty ?? '—'}</td>
+                      <td className="text-right px-3 py-2.5 text-gray-600">{r.forecastQty != null ? Math.round(r.forecastQty) : '—'}</td>
+                      <td className="text-right px-3 py-2.5 font-semibold text-gray-900">{r.realizedQty}</td>
+                      <td className="px-4 py-2.5">
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 bg-gray-100 rounded-full h-2">
+                            <div className={`h-2 rounded-full ${color}`} style={{ width: `${r.pct}%` }} />
+                          </div>
+                          <span className="text-xs text-gray-500 w-10 text-right shrink-0">{Math.round(r.pct)}%</span>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
