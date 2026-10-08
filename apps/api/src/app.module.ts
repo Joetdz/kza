@@ -20,6 +20,8 @@ import { CategoriesModule } from './categories/categories.module';
 import { BusinessModule } from './business/business.module';
 import { LogisticsModule } from './logistics/logistics.module';
 import { PushModule } from './push/push.module';
+import { InvestorsModule } from './investors/investors.module';
+import { FundraisingModule } from './fundraising/fundraising.module';
 
 @Module({
   imports: [
@@ -46,6 +48,8 @@ import { PushModule } from './push/push.module';
     BusinessModule,
     LogisticsModule,
     PushModule,
+    InvestorsModule,
+    FundraisingModule,
   ],
   providers: [
     {

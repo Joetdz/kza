@@ -187,6 +187,7 @@ export const BudgetForecastProductSchema = z.object({
   forecastId: z.string().uuid(),
   productId: z.string(),
   quantity: z.number(),
+  adBudgetOverride: z.number().nullable().optional(),
 });
 
 export const BudgetForecastExpenseSchema = z.object({

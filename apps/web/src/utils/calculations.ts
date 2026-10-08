@@ -304,6 +304,7 @@ export interface ForecastMonth {
   label: string;
   monthKey: string; // "YYYY-MM"
   quantitiesByProduct: Record<string, number>; // quantité projetée (après croissance), par produit
+  adBudgetByProduct: Record<string, number>;   // budget pub projeté (calculé ou surchargé), par produit
   revenue: number;
   cogs: number;
   grossProfit: number;
@@ -314,15 +315,10 @@ export interface ForecastMonth {
   ebitda: number;
 }
 
-export function computeBudgetForecast(
-  products: Product[],
-  sales: Sale[],
-  expenses: Expense[],
-  recurringExpenses: RecurringExpense[],
-  forecast: BudgetForecast,
-): ForecastMonth[] {
-  // Ratio budget pub / unité vendue, par produit, sur tout l'historique disponible —
-  // seule base disponible pour projeter un budget pub à partir d'une quantité visée.
+// Ratio budget pub / unité vendue, par produit, sur tout l'historique disponible — base
+// par défaut pour projeter un budget pub à partir d'une quantité visée (surchargeable
+// manuellement par produit dans BudgetForecastProduct.adBudgetOverride).
+export function computeAdSpendPerUnit(products: Product[], sales: Sale[], expenses: Expense[]): Record<string, number> {
   const adSpendPerUnit: Record<string, number> = {};
   products.forEach(p => {
     let units = 0;
@@ -330,9 +326,24 @@ export function computeBudgetForecast(
     const adSpend = expenses.filter(e => e.category === 'pub' && e.productId === p.id).reduce((s, e) => s + e.amount, 0);
     adSpendPerUnit[p.id] = safeDiv(adSpend, units);
   });
+  return adSpendPerUnit;
+}
+
+export function computeBudgetForecast(
+  products: Product[],
+  sales: Sale[],
+  expenses: Expense[],
+  recurringExpenses: RecurringExpense[],
+  forecast: BudgetForecast,
+): ForecastMonth[] {
+  const adSpendPerUnit = computeAdSpendPerUnit(products, sales, expenses);
 
   const qtyByProduct: Record<string, number> = {};
-  forecast.products.forEach(fp => { qtyByProduct[fp.productId] = fp.quantity; });
+  const adBudgetOverrideByProduct: Record<string, number> = {};
+  forecast.products.forEach(fp => {
+    qtyByProduct[fp.productId] = fp.quantity;
+    if (fp.adBudgetOverride != null) adBudgetOverrideByProduct[fp.productId] = fp.adBudgetOverride;
+  });
 
   const manualOpexTotal = forecast.expenses.reduce((s, e) => s + e.amount, 0);
 
@@ -349,6 +360,7 @@ export function computeBudgetForecast(
 
     let revenue = 0, cogs = 0, adBudget = 0;
     const quantitiesByProduct: Record<string, number> = {};
+    const adBudgetByProduct: Record<string, number> = {};
     products.forEach(p => {
       const baseQty = qtyByProduct[p.id] ?? 0;
       if (baseQty <= 0) return;
@@ -356,7 +368,12 @@ export function computeBudgetForecast(
       quantitiesByProduct[p.id] = qty;
       revenue += qty * p.sellingPrice;
       cogs += qty * p.acquisitionCost;
-      adBudget += qty * adSpendPerUnit[p.id];
+      // Même logique de croissance composée que la quantité : la surcharge (ou le
+      // calcul par défaut) porte sur le premier mois, les suivants suivent growthFactor.
+      const baseAdBudget = adBudgetOverrideByProduct[p.id] ?? (baseQty * adSpendPerUnit[p.id]);
+      const productAdBudget = baseAdBudget * growthFactor;
+      adBudgetByProduct[p.id] = productAdBudget;
+      adBudget += productAdBudget;
     });
 
     const knownOpexByCategory: Record<string, number> = {};
@@ -379,7 +396,7 @@ export function computeBudgetForecast(
 
     months.push({
       label: d.toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' }),
-      monthKey, quantitiesByProduct, revenue, cogs, grossProfit, adBudget, knownOpexByCategory, manualOpexTotal, totalOpex, ebitda,
+      monthKey, quantitiesByProduct, adBudgetByProduct, revenue, cogs, grossProfit, adBudget, knownOpexByCategory, manualOpexTotal, totalOpex, ebitda,
     });
   }
   return months;

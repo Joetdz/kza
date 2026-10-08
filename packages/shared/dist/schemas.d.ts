@@ -607,16 +607,19 @@ export declare const BudgetForecastProductSchema: z.ZodObject<{
     forecastId: z.ZodString;
     productId: z.ZodString;
     quantity: z.ZodNumber;
+    adBudgetOverride: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
 }, "strip", z.ZodTypeAny, {
     quantity: number;
     id: string;
     productId: string;
     forecastId: string;
+    adBudgetOverride?: number | null | undefined;
 }, {
     quantity: number;
     id: string;
     productId: string;
     forecastId: string;
+    adBudgetOverride?: number | null | undefined;
 }>;
 export declare const BudgetForecastExpenseSchema: z.ZodObject<{
     id: z.ZodString;
@@ -649,16 +652,19 @@ export declare const BudgetForecastSchema: z.ZodObject<{
         forecastId: z.ZodString;
         productId: z.ZodString;
         quantity: z.ZodNumber;
+        adBudgetOverride: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
     }, "strip", z.ZodTypeAny, {
         quantity: number;
         id: string;
         productId: string;
         forecastId: string;
+        adBudgetOverride?: number | null | undefined;
     }, {
         quantity: number;
         id: string;
         productId: string;
         forecastId: string;
+        adBudgetOverride?: number | null | undefined;
     }>, "many">;
     expenses: z.ZodArray<z.ZodObject<{
         id: z.ZodString;
@@ -691,6 +697,7 @@ export declare const BudgetForecastSchema: z.ZodObject<{
         id: string;
         productId: string;
         forecastId: string;
+        adBudgetOverride?: number | null | undefined;
     }[];
     expenses: {
         category: string;
@@ -711,6 +718,7 @@ export declare const BudgetForecastSchema: z.ZodObject<{
         id: string;
         productId: string;
         forecastId: string;
+        adBudgetOverride?: number | null | undefined;
     }[];
     expenses: {
         category: string;

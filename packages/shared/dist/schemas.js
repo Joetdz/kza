@@ -150,6 +150,7 @@ exports.BudgetForecastProductSchema = zod_1.z.object({
     forecastId: zod_1.z.string().uuid(),
     productId: zod_1.z.string(),
     quantity: zod_1.z.number(),
+    adBudgetOverride: zod_1.z.number().nullable().optional(),
 });
 exports.BudgetForecastExpenseSchema = zod_1.z.object({
     id: zod_1.z.string().uuid(),

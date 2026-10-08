@@ -219,7 +219,7 @@ export const budgetForecastApi = {
   get: () => req<BudgetForecast>('/goals/budget-forecast'),
   update: (body: { startMonth?: string; monthlyGrowthPct?: number; horizonMonths?: number }) =>
     req<BudgetForecast>('/goals/budget-forecast', { method: 'PATCH', body: JSON.stringify(body) }),
-  setProducts: (items: { productId: string; quantity: number }[]) =>
+  setProducts: (items: { productId: string; quantity: number; adBudgetOverride?: number | null }[]) =>
     req<BudgetForecast>('/goals/budget-forecast/products', { method: 'POST', body: JSON.stringify({ items }) }),
   addExpense: (body: { category: string; description?: string; amount: number }) =>
     req<BudgetForecast['expenses'][number]>('/goals/budget-forecast/expenses', { method: 'POST', body: JSON.stringify(body) }),
@@ -227,6 +227,61 @@ export const budgetForecastApi = {
     req<BudgetForecast['expenses'][number]>(`/goals/budget-forecast/expenses/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   removeExpense: (id: string) =>
     req<{ id: string }>(`/goals/budget-forecast/expenses/${id}`, { method: 'DELETE' }),
+};
+
+// ─── Levée de fonds (cagnottes) ──────────────────────────────────
+export interface FundraisingInvestor {
+  id: string;
+  email: string;
+  name: string;
+  phone: string | null;
+}
+
+export interface FundraisingInvestment {
+  id: string;
+  campaignId: string;
+  investorId: string;
+  amount: number;
+  repaymentAmount: number;
+  repaymentDueDate: string | null;
+  repaidAmount: number;
+  repaidAt: string | null;
+  status: 'pending' | 'partially_repaid' | 'repaid';
+  investedAt: string;
+  investor?: FundraisingInvestor;
+}
+
+export interface FundraisingCampaign {
+  id: string;
+  name: string;
+  description: string;
+  targetAmount: number;
+  entryTicket: number;
+  maxInvestors: number | null;
+  repaymentDueDate: string | null;
+  status: 'active' | 'closed';
+  createdAt: string;
+  updatedAt: string;
+  investments: FundraisingInvestment[];
+}
+
+export const fundraisingApi = {
+  listCampaigns: () => req<FundraisingCampaign[]>('/fundraising/campaigns'),
+  getCampaign: (id: string) => req<FundraisingCampaign>(`/fundraising/campaigns/${id}`),
+  createCampaign: (body: { name: string; description?: string; targetAmount: number; entryTicket: number; maxInvestors?: number | null; repaymentDueDate?: string | null }) =>
+    req<FundraisingCampaign>('/fundraising/campaigns', { method: 'POST', body: JSON.stringify(body) }),
+  updateCampaign: (id: string, body: Partial<{ name: string; description: string; targetAmount: number; entryTicket: number; maxInvestors: number | null; repaymentDueDate: string | null; status: 'active' | 'closed' }>) =>
+    req<FundraisingCampaign>(`/fundraising/campaigns/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  removeCampaign: (id: string) =>
+    req<{ id: string }>(`/fundraising/campaigns/${id}`, { method: 'DELETE' }),
+  listInvestments: (campaignId: string) =>
+    req<FundraisingInvestment[]>(`/fundraising/campaigns/${campaignId}/investments`),
+  addInvestment: (campaignId: string, body: { investorEmail: string; investorName: string; investorPhone?: string; investorPassword?: string; amount: number; repaymentAmount?: number; repaymentDueDate?: string; investedAt?: string }) =>
+    req<FundraisingInvestment>(`/fundraising/campaigns/${campaignId}/investments`, { method: 'POST', body: JSON.stringify(body) }),
+  updateInvestment: (id: string, body: Partial<{ repaymentAmount: number; repaymentDueDate: string; repaidAmount: number; repaidAt: string; status: 'pending' | 'partially_repaid' | 'repaid' }>) =>
+    req<FundraisingInvestment>(`/fundraising/investments/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  removeInvestment: (id: string) =>
+    req<{ id: string }>(`/fundraising/investments/${id}`, { method: 'DELETE' }),
 };
 
 // ─── Businesses ──────────────────────────────────────────────

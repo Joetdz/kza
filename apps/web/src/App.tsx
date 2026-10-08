@@ -9,6 +9,8 @@ import { Sales } from './pages/Sales';
 import { Expenses } from './pages/Expenses';
 import { Analytics } from './pages/Analytics';
 import { Goals } from './pages/Goals';
+import { Fundraising } from './pages/Fundraising';
+import { InvestorPortal } from './pages/InvestorPortal';
 import { Export } from './pages/Export';
 import { Landing } from './pages/Landing';
 import { StorePage } from './pages/StorePage';
@@ -77,6 +79,11 @@ function AppInner() {
   if (hash.startsWith('#/partenaire/')) {
     const token = hash.split('/')[2];
     if (token) return <PartnerPortal token={token} />;
+  }
+
+  // Portail investisseur — auth email/mot de passe propre, séparée de Supabase.
+  if (hash.startsWith('#/investisseur')) {
+    return <InvestorPortal />;
   }
 
   // Team invite — must sit above the session and "no business yet" gates below,
@@ -188,6 +195,7 @@ function AppInner() {
           <Route path="/depenses" element={<Expenses />} />
           <Route path="/analytique" element={<Analytics />} />
           <Route path="/objectifs" element={<Goals />} />
+          <Route path="/financement" element={<Fundraising />} />
           <Route path="/export" element={<Export />} />
           <Route path="/boutique" element={<StorePage />} />
           <Route path="/admin" element={<AdminDashboard />} />

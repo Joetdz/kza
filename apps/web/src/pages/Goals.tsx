@@ -1,173 +1,56 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Plus, Trash2, Edit2, Target, TrendingUp, Calculator } from 'lucide-react';
+import { Plus, Trash2, Edit2, Calculator, Target, TrendingUp, ChevronDown, ChevronRight } from 'lucide-react';
 import { useStore } from '../store/useStore';
-import { computeGoalProgress, computeBudgetForecast, computeRealizedByProduct } from '../utils/calculations';
+import { computeBudgetForecast, computeRealizedByProduct, computeAdSpendPerUnit } from '../utils/calculations';
 import { useCurrency } from '../hooks/useCurrency';
 import { Modal } from '../components/ui/Modal';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
-import { ProgressBar } from '../components/ui/ProgressBar';
 import { NumberInput } from '../components/ui/NumberInput';
 import { budgetForecastApi, recurringExpensesApi } from '../api';
 import { EXPENSE_LABELS } from '../utils/formatters';
-import type { SalesGoal, BudgetForecast, RecurringExpense } from '../types';
-
-type GoalProgress = ReturnType<typeof computeGoalProgress>[0];
-
-function PeriodRow({
-  label,
-  qty,
-  target,
-  revenue,
-  revenueTarget,
-  pct,
-  fmt,
-}: {
-  label: string;
-  qty: number;
-  target: number;
-  revenue: number;
-  revenueTarget: number;
-  pct: number;
-  fmt: (n: number) => string;
-}) {
-  const color =
-    pct >= 100 ? 'text-emerald-600' :
-    pct >= 60  ? 'text-indigo-600'  :
-    pct >= 30  ? 'text-amber-600'   : 'text-red-500';
-
-  return (
-    <div>
-      <div className="flex items-center justify-between text-sm mb-1.5">
-        <span className="text-gray-600 font-medium">{label}</span>
-        <div className="text-right">
-          <div>
-            <span className={`font-bold ${color}`}>{qty}</span>
-            <span className="text-gray-400 text-xs"> / {target} unités</span>
-          </div>
-          <div className="text-xs">
-            <span className={`font-semibold ${color}`}>{fmt(revenue)}</span>
-            <span className="text-gray-400"> / {fmt(revenueTarget)}</span>
-          </div>
-        </div>
-      </div>
-      <ProgressBar value={pct} />
-    </div>
-  );
-}
-
-function GoalCard({
-  goal,
-  productName,
-  progress,
-  fmt,
-  onEdit,
-  onDelete,
-}: {
-  goal: SalesGoal;
-  productName: string;
-  progress: GoalProgress;
-  fmt: (n: number) => string;
-  onEdit: () => void;
-  onDelete: () => void;
-}) {
-  const bestPct = Math.max(progress.dailyPct, progress.weeklyPct, progress.monthlyPct);
-
-  return (
-    <div className={`bg-white rounded-2xl p-5 shadow-sm border transition-all ${
-      bestPct >= 100 ? 'border-emerald-200 bg-emerald-50/20' :
-      bestPct < 30   ? 'border-amber-100' : 'border-gray-100'
-    }`}>
-      <div className="flex items-start justify-between mb-1">
-        <div>
-          <div className="font-semibold text-gray-900">{productName}</div>
-          <div className="text-xs text-gray-500 mt-0.5">
-            Objectif : <span className="font-medium text-indigo-600">{goal.targetQty} unités / mois</span>
-          </div>
-        </div>
-        <div className="flex gap-1">
-          <button onClick={onEdit} className="p-1.5 rounded-lg bg-gray-100 text-gray-500 hover:bg-gray-200">
-            <Edit2 size={14} />
-          </button>
-          <button onClick={onDelete} className="p-1.5 rounded-lg bg-red-50 text-red-400 hover:bg-red-100">
-            <Trash2 size={14} />
-          </button>
-        </div>
-      </div>
-
-      <div className="space-y-4 mt-4">
-        <PeriodRow
-          label="Aujourd'hui"
-          qty={progress.dailyQty}
-          target={progress.dailyTarget}
-          revenue={progress.dailyRevenue}
-          revenueTarget={progress.dailyRevenueTarget}
-          pct={progress.dailyPct}
-          fmt={fmt}
-        />
-        <PeriodRow
-          label="Cette semaine"
-          qty={progress.weeklyQty}
-          target={progress.weeklyTarget}
-          revenue={progress.weeklyRevenue}
-          revenueTarget={progress.weeklyRevenueTarget}
-          pct={progress.weeklyPct}
-          fmt={fmt}
-        />
-        <PeriodRow
-          label="Ce mois"
-          qty={progress.monthlyQty}
-          target={goal.targetQty}
-          revenue={progress.monthlyRevenue}
-          revenueTarget={progress.monthlyRevenueTarget}
-          pct={progress.monthlyPct}
-          fmt={fmt}
-        />
-      </div>
-
-      {progress.monthlyPct >= 100 && (
-        <div className="mt-3 text-center text-xs font-semibold text-emerald-700 bg-emerald-100 rounded-xl py-2">
-          Objectif mensuel atteint !
-        </div>
-      )}
-      {progress.monthlyPct < 30 && (
-        <div className="mt-3 text-center text-xs font-semibold text-amber-700 bg-amber-50 rounded-xl py-2">
-          En retard — action requise
-        </div>
-      )}
-    </div>
-  );
-}
-
-const emptyForm = (): { productId: string; targetQty: number } => ({
-  productId: 'all',
-  targetQty: 30,
-});
+import type { BudgetForecast, RecurringExpense } from '../types';
 
 type MainTab = 'objectifs' | 'budget';
 
+// Petites préférences d'affichage de l'onglet Objectifs (mois consulté, sections
+// dépliées) — pas des données métier, juste du confort ; persistées en local pour
+// retrouver la même vue en revenant sur la page, tolérant aux navigateurs privés.
+function loadPref<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw !== null ? (JSON.parse(raw) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+function savePref(key: string, value: unknown) {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* ignore */ }
+}
+
 export function Goals() {
-  const { products, sales, expenses, goals, addGoal, updateGoal, deleteGoal } = useStore();
+  const { products, sales, expenses } = useStore();
   const { fmt } = useCurrency();
 
   const [mainTab, setMainTab] = useState<MainTab>('objectifs');
-
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editing, setEditing] = useState<SalesGoal | null>(null);
-  const [deleteId, setDeleteId] = useState<string | null>(null);
-  const [form, setForm] = useState(emptyForm());
-
-  const progress = useMemo(() => computeGoalProgress(goals, sales, products), [goals, sales, products]);
 
   // ─── Budget prévisionnel ─────────────────────────────────────────────────────
   const [forecast, setForecast] = useState<BudgetForecast | null>(null);
   const [recurringExpenses, setRecurringExpenses] = useState<RecurringExpense[]>([]);
   const [forecastLoading, setForecastLoading] = useState(true);
   const [qtyMap, setQtyMap] = useState<Record<string, string>>({});
+  const [adBudgetMap, setAdBudgetMap] = useState<Record<string, string>>({});
   const [savingQty, setSavingQty] = useState(false);
   const [expenseModalOpen, setExpenseModalOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<BudgetForecast['expenses'][number] | null>(null);
   const [expenseForm, setExpenseForm] = useState({ category: 'other', description: '', amount: 0 });
   const [deleteExpenseId, setDeleteExpenseId] = useState<string | null>(null);
+  const [showOtherExpenses, setShowOtherExpenses] = useState(() => loadPref('kza_goals_show_other_expenses', false));
+  const [pubExpanded, setPubExpanded] = useState(() => loadPref('kza_goals_pub_expanded', false));
+  const [selectedMonth, setSelectedMonth] = useState(() => loadPref('kza_goals_selected_month', new Date().toISOString().slice(0, 7)));
+
+  useEffect(() => savePref('kza_goals_show_other_expenses', showOtherExpenses), [showOtherExpenses]);
+  useEffect(() => savePref('kza_goals_pub_expanded', pubExpanded), [pubExpanded]);
+  useEffect(() => savePref('kza_goals_selected_month', selectedMonth), [selectedMonth]);
 
   useEffect(() => {
     Promise.all([budgetForecastApi.get(), recurringExpensesApi.getAll()])
@@ -175,8 +58,13 @@ export function Goals() {
         setForecast(f);
         setRecurringExpenses(r);
         const map: Record<string, string> = {};
-        f.products.forEach(fp => { map[fp.productId] = String(fp.quantity); });
+        const adMap: Record<string, string> = {};
+        f.products.forEach(fp => {
+          map[fp.productId] = String(fp.quantity);
+          if (fp.adBudgetOverride != null) adMap[fp.productId] = String(fp.adBudgetOverride);
+        });
         setQtyMap(map);
+        setAdBudgetMap(adMap);
       })
       .catch(() => {})
       .finally(() => setForecastLoading(false));
@@ -195,30 +83,100 @@ export function Goals() {
 
   const catLabel = (c: string) => EXPENSE_LABELS[c] ?? c;
 
-  // ─── Objectif vs Budget prévisionnel vs Réalisé (mois civil en cours) ───────
-  const currentCalendarMonth = new Date().toISOString().slice(0, 7);
+  // Ratio historique (dépense pub / unité vendue) par produit — valeur par défaut
+  // affichée en placeholder quand aucune surcharge manuelle n'est saisie.
+  const adSpendPerUnit = useMemo(() => computeAdSpendPerUnit(products, sales, expenses), [products, sales, expenses]);
+
+  // ─── Objectif vs Budget prévisionnel vs Réalisé (mois sélectionné) ──────────
   const currentForecastMonth = useMemo(
-    () => forecastMonths.find(m => m.monthKey === currentCalendarMonth),
-    [forecastMonths, currentCalendarMonth],
+    () => forecastMonths.find(m => m.monthKey === selectedMonth),
+    [forecastMonths, selectedMonth],
   );
-  const realizedByProduct = useMemo(() => computeRealizedByProduct(sales, currentCalendarMonth), [sales, currentCalendarMonth]);
+  const realizedByProduct = useMemo(() => computeRealizedByProduct(sales, selectedMonth), [sales, selectedMonth]);
 
   const comparisonRows = useMemo(() => {
     const productIds = new Set<string>();
-    goals.forEach(g => { if (g.productId !== 'all') productIds.add(g.productId); });
     if (currentForecastMonth) Object.keys(currentForecastMonth.quantitiesByProduct).forEach(id => productIds.add(id));
 
     return [...productIds].map(productId => {
       const product = products.find(p => p.id === productId);
-      const goalQty = goals.find(g => g.productId === productId)?.targetQty ?? null;
       const forecastQty = currentForecastMonth?.quantitiesByProduct[productId] ?? null;
       const realizedQty = realizedByProduct[productId] ?? 0;
-      const reference = Math.max(goalQty ?? 0, forecastQty ?? 0);
+      const reference = forecastQty ?? 0;
       const pct = reference > 0 ? Math.min(100, (realizedQty / reference) * 100) : 0;
-      return { productId, productName: product?.name ?? 'Produit inconnu', goalQty, forecastQty, realizedQty, pct };
-    }).filter(r => r.goalQty !== null || r.forecastQty !== null)
+      return { productId, productName: product?.name ?? 'Produit inconnu', forecastQty, realizedQty, pct };
+    }).filter(r => r.forecastQty !== null)
       .sort((a, b) => b.pct - a.pct);
-  }, [goals, currentForecastMonth, realizedByProduct, products]);
+  }, [currentForecastMonth, realizedByProduct, products]);
+
+  // Progression globale du mois = moyenne de la progression (réalisé/prévisionnel) par
+  // produit — même sens que les barres individuelles, résumé en un seul indicateur.
+  const globalProgressPct = useMemo(
+    () => comparisonRows.length > 0 ? comparisonRows.reduce((s, r) => s + r.pct, 0) / comparisonRows.length : 0,
+    [comparisonRows],
+  );
+
+  // ─── Dépenses : Prévu (budget prévisionnel) vs Réalisé (vraies dépenses du mois) ──
+  const realizedExpensesByCategory = useMemo(() => {
+    const result: Record<string, number> = {};
+    expenses
+      .filter(e => e.date.slice(0, 7) === selectedMonth)
+      .forEach(e => { result[e.category] = (result[e.category] ?? 0) + e.amount; });
+    return result;
+  }, [expenses, selectedMonth]);
+
+  const pubExpenseRow = useMemo(() => {
+    const forecastAmount = currentForecastMonth?.adBudget ?? 0;
+    const realizedAmount = realizedExpensesByCategory['pub'] ?? 0;
+    const pct = forecastAmount > 0 ? Math.min(100, (realizedAmount / forecastAmount) * 100) : 0;
+    return { forecastAmount, realizedAmount, pct };
+  }, [currentForecastMonth, realizedExpensesByCategory]);
+
+  // Détail pub par produit (dérouable) — seule dépense rattachée à des produits
+  // individuels (via Expense.productId), donc la seule à pouvoir se décliner ainsi.
+  const realizedPubByProduct = useMemo(() => {
+    const result: Record<string, number> = {};
+    expenses
+      .filter(e => e.category === 'pub' && e.date.slice(0, 7) === selectedMonth)
+      .forEach(e => {
+        const key = e.productId ?? '__none__';
+        result[key] = (result[key] ?? 0) + e.amount;
+      });
+    return result;
+  }, [expenses, selectedMonth]);
+
+  const pubByProductRows = useMemo(() => {
+    const productIds = new Set<string>();
+    if (currentForecastMonth) Object.keys(currentForecastMonth.adBudgetByProduct).forEach(id => productIds.add(id));
+    Object.keys(realizedPubByProduct).forEach(id => { if (id !== '__none__') productIds.add(id); });
+
+    const rows = [...productIds].map(productId => {
+      const forecastAmount = currentForecastMonth?.adBudgetByProduct[productId] ?? 0;
+      const realizedAmount = realizedPubByProduct[productId] ?? 0;
+      const pct = forecastAmount > 0 ? Math.min(100, (realizedAmount / forecastAmount) * 100) : 0;
+      return { productId, productName: products.find(p => p.id === productId)?.name ?? 'Produit inconnu', forecastAmount, realizedAmount, pct };
+    }).sort((a, b) => b.realizedAmount - a.realizedAmount);
+
+    // Dépenses pub réelles sans produit rattaché — pas de prévu correspondant (le
+    // prévisionnel se construit toujours à partir d'une quantité par produit).
+    if (realizedPubByProduct['__none__']) {
+      rows.push({ productId: '__none__', productName: 'Sans produit rattaché', forecastAmount: 0, realizedAmount: realizedPubByProduct['__none__'], pct: 0 });
+    }
+    return rows;
+  }, [currentForecastMonth, realizedPubByProduct, products]);
+
+  // Autres catégories d'OPEX connues (dépenses récurrentes) — optionnelles, repliées
+  // par défaut derrière une case à cocher pour ne pas noyer la pub dans le détail.
+  const otherExpenseRows = useMemo(() => {
+    return forecastOpexCategories
+      .filter(cat => cat !== 'pub')
+      .map(cat => {
+        const forecastAmount = currentForecastMonth?.knownOpexByCategory[cat] ?? 0;
+        const realizedAmount = realizedExpensesByCategory[cat] ?? 0;
+        const pct = forecastAmount > 0 ? Math.min(100, (realizedAmount / forecastAmount) * 100) : 0;
+        return { category: cat, forecastAmount, realizedAmount, pct };
+      });
+  }, [forecastOpexCategories, currentForecastMonth, realizedExpensesByCategory]);
 
   const updateForecastSettings = async (patch: { startMonth?: string; monthlyGrowthPct?: number; horizonMonths?: number }) => {
     if (!forecast) return;
@@ -238,7 +196,11 @@ export function Goals() {
     try {
       const items = Object.entries(qtyMap)
         .filter(([, q]) => q !== '')
-        .map(([productId, q]) => ({ productId, quantity: Number(q) }));
+        .map(([productId, q]) => ({
+          productId,
+          quantity: Number(q),
+          adBudgetOverride: adBudgetMap[productId] ? Number(adBudgetMap[productId]) : null,
+        }));
       const updated = await budgetForecastApi.setProducts(items);
       setForecast(updated);
     } catch (e: any) {
@@ -289,34 +251,6 @@ export function Goals() {
     }
   };
 
-  const openAdd = () => {
-    setEditing(null);
-    setForm(emptyForm());
-    setModalOpen(true);
-  };
-
-  const openEdit = (g: SalesGoal) => {
-    setEditing(g);
-    setForm({ productId: g.productId, targetQty: g.targetQty });
-    setModalOpen(true);
-  };
-
-  const handleSave = () => {
-    if (form.targetQty < 1) return;
-    if (editing) updateGoal(editing.id, form);
-    else addGoal(form);
-    setModalOpen(false);
-  };
-
-  const getProductName = (productId: string) => {
-    if (productId === 'all') return 'Boutique entière';
-    return products.find(p => p.id === productId)?.name ?? 'Produit inconnu';
-  };
-
-  const avgMonthlyPct = progress.length > 0
-    ? progress.reduce((s, p) => s + p.monthlyPct, 0) / progress.length
-    : 0;
-
   return (
     <div className="space-y-5 overflow-x-hidden">
       <div className="flex items-center justify-between gap-3">
@@ -326,17 +260,17 @@ export function Goals() {
           </h1>
           <p className="text-xs sm:text-sm text-gray-500">
             {mainTab === 'objectifs'
-              ? `${goals.length} objectif${goals.length !== 1 ? 's' : ''} défini${goals.length !== 1 ? 's' : ''}`
+              ? 'Progression du mois sélectionné par rapport au budget prévisionnel'
               : 'Projection dynamique à partir des quantités visées par produit'}
           </p>
         </div>
         {mainTab === 'objectifs' && (
-          <button
-            onClick={openAdd}
-            className="shrink-0 flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-3 sm:px-4 py-2.5 rounded-xl text-sm font-medium transition-colors"
-          >
-            <Plus size={16} /><span className="hidden sm:inline">Définir objectif</span>
-          </button>
+          <input
+            type="month"
+            value={selectedMonth}
+            onChange={e => setSelectedMonth(e.target.value)}
+            className="shrink-0 border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300"
+          />
         )}
       </div>
 
@@ -351,41 +285,41 @@ export function Goals() {
       </div>
 
       {mainTab === 'objectifs' && <>
-      {goals.length > 0 && (
+      {comparisonRows.length > 0 && (
         <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-2xl p-5 text-white">
           <div className="flex items-center gap-3 mb-3">
             <Target size={22} />
-            <span className="font-semibold">Progression mensuelle globale</span>
+            <span className="font-semibold">Progression globale du mois</span>
           </div>
-          <div className="text-4xl font-black mb-2">{Math.round(avgMonthlyPct)}%</div>
+          <div className="text-4xl font-black mb-2">{Math.round(globalProgressPct)}%</div>
           <div className="w-full bg-white/20 rounded-full h-2">
             <div
               className="h-2 rounded-full bg-white transition-all"
-              style={{ width: `${Math.min(100, avgMonthlyPct)}%` }}
+              style={{ width: `${Math.min(100, globalProgressPct)}%` }}
             />
           </div>
           <div className="flex items-center gap-2 text-sm text-white/70 mt-2">
             <TrendingUp size={14} />
-            Moyenne sur {goals.length} objectif{goals.length !== 1 ? 's' : ''}
+            Moyenne sur {comparisonRows.length} produit{comparisonRows.length !== 1 ? 's' : ''} suivi{comparisonRows.length !== 1 ? 's' : ''}
           </div>
         </div>
       )}
 
-      {/* Objectif vs Budget prévisionnel vs Réalisé — mois en cours */}
-      {comparisonRows.length > 0 && (
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-          <div className="p-4 pb-3">
-            <h2 className="font-semibold text-gray-900 text-sm">Objectif vs Budget prévisionnel vs Réalisé</h2>
-            <p className="text-xs text-gray-400">
-              {currentForecastMonth ? `Mois en cours (${currentForecastMonth.label})` : "Le budget prévisionnel ne couvre pas le mois en cours — seul l'objectif manuel est comparé au réalisé."}
-            </p>
-          </div>
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div className="p-4 pb-3">
+          <h2 className="font-semibold text-gray-900 text-sm">Budget prévisionnel vs Réalisé</h2>
+          <p className="text-xs text-gray-400">
+            {currentForecastMonth ? `Mois affiché : ${currentForecastMonth.label}` : "Le budget prévisionnel ne couvre pas ce mois-là."}
+          </p>
+        </div>
+        {comparisonRows.length === 0 ? (
+          <p className="text-sm text-gray-400 text-center py-10">Aucune quantité projetée pour ce mois — définis le budget prévisionnel dans l'autre onglet.</p>
+        ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100">
                   <th className="text-left font-medium text-gray-500 px-4 py-2">Produit</th>
-                  <th className="text-right font-medium text-gray-500 px-3 py-2">Objectif</th>
                   <th className="text-right font-medium text-gray-500 px-3 py-2">Prévisionnel</th>
                   <th className="text-right font-medium text-gray-500 px-3 py-2">Réalisé</th>
                   <th className="text-left font-medium text-gray-500 px-4 py-2 w-1/3">Progression</th>
@@ -397,7 +331,6 @@ export function Goals() {
                   return (
                     <tr key={r.productId} className="border-b border-gray-50">
                       <td className="px-4 py-2.5 text-gray-800 font-medium truncate max-w-[160px]">{r.productName}</td>
-                      <td className="text-right px-3 py-2.5 text-gray-600">{r.goalQty ?? '—'}</td>
                       <td className="text-right px-3 py-2.5 text-gray-600">{r.forecastQty != null ? Math.round(r.forecastQty) : '—'}</td>
                       <td className="text-right px-3 py-2.5 font-semibold text-gray-900">{r.realizedQty}</td>
                       <td className="px-4 py-2.5">
@@ -414,89 +347,116 @@ export function Goals() {
               </tbody>
             </table>
           </div>
-        </div>
-      )}
-
-      <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-4">
-        {progress.map(p => (
-          <GoalCard
-            key={p.goal.id}
-            goal={p.goal}
-            productName={getProductName(p.goal.productId)}
-            progress={p}
-            fmt={fmt}
-            onEdit={() => openEdit(p.goal)}
-            onDelete={() => setDeleteId(p.goal.id)}
-          />
-        ))}
-        {goals.length === 0 && (
-          <div className="col-span-full text-center py-16 text-gray-400">
-            <Target size={48} className="mx-auto mb-3 text-gray-200" />
-            <p className="text-lg">Aucun objectif défini</p>
-            <p className="text-sm mt-1">Définissez un objectif de vente par produit</p>
-          </div>
         )}
       </div>
 
-      <Modal
-        open={modalOpen}
-        onClose={() => setModalOpen(false)}
-        title={editing ? "Modifier l'objectif" : 'Nouvel objectif'}
-        size="sm"
-      >
-        <div className="space-y-4">
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div className="p-4 pb-3 flex items-center justify-between gap-3">
           <div>
-            <label className="text-xs font-medium text-gray-600 mb-1 block">Produit</label>
-            <select
-              value={form.productId}
-              onChange={e => setForm(f => ({ ...f, productId: e.target.value }))}
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300"
-            >
-              <option value="all">Boutique entière</option>
-              {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-          </div>
-
-          <div>
-            <label className="text-xs font-medium text-gray-600 mb-1 block">
-              Objectif mensuel (nombre de ventes)
-            </label>
-            <input
-              type="number"
-              min={1}
-              value={form.targetQty}
-              onChange={e => setForm(f => ({ ...f, targetQty: Math.max(1, +e.target.value) }))}
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300"
-            />
-            <p className="text-xs text-gray-400 mt-1">
-              ~{Math.ceil(form.targetQty / 30)} / jour · ~{Math.ceil(form.targetQty / 4)} / semaine
+            <h2 className="font-semibold text-gray-900 text-sm">Dépenses : Prévu vs Réalisé</h2>
+            <p className="text-xs text-gray-400">
+              {currentForecastMonth ? `Mois affiché : ${currentForecastMonth.label}` : "Le budget prévisionnel ne couvre pas ce mois-là."} — surtout la publicité.
             </p>
           </div>
-
-          <div className="flex gap-3 pt-2">
-            <button
-              onClick={() => setModalOpen(false)}
-              className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-700"
-            >
-              Annuler
-            </button>
-            <button
-              onClick={handleSave}
-              className="flex-1 px-4 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-medium hover:bg-indigo-700"
-            >
-              {editing ? 'Enregistrer' : 'Créer'}
-            </button>
-          </div>
+          {otherExpenseRows.length > 0 && (
+            <label className="flex items-center gap-1.5 text-xs text-gray-500 shrink-0 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={showOtherExpenses}
+                onChange={e => setShowOtherExpenses(e.target.checked)}
+                className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-300"
+              />
+              Autres dépenses
+            </label>
+          )}
         </div>
-      </Modal>
-
-      <ConfirmDialog
-        open={!!deleteId}
-        title="Supprimer l'objectif"
-        message="Cet objectif sera définitivement supprimé."
-        onConfirm={() => { if (deleteId) deleteGoal(deleteId); setDeleteId(null); }}
-        onCancel={() => setDeleteId(null)}
-      />
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-100">
+                <th className="text-left font-medium text-gray-500 px-4 py-2">Catégorie</th>
+                <th className="text-right font-medium text-gray-500 px-3 py-2">Prévu</th>
+                <th className="text-right font-medium text-gray-500 px-3 py-2">Réalisé</th>
+                <th className="text-left font-medium text-gray-500 px-4 py-2 w-1/3">Progression</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(() => {
+                const color = pubExpenseRow.pct >= 100 ? 'bg-red-500' : pubExpenseRow.pct >= 60 ? 'bg-amber-500' : 'bg-emerald-500';
+                return (
+                  <tr className="border-b border-gray-50">
+                    <td className="px-4 py-2.5 text-gray-800 font-medium">
+                      <button
+                        onClick={() => setPubExpanded(v => !v)}
+                        className="flex items-center gap-1.5 hover:text-indigo-600"
+                      >
+                        {pubExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                        Publicité
+                      </button>
+                    </td>
+                    <td className="text-right px-3 py-2.5 text-gray-600">{fmt(pubExpenseRow.forecastAmount)}</td>
+                    <td className="text-right px-3 py-2.5 font-semibold text-gray-900">{fmt(pubExpenseRow.realizedAmount)}</td>
+                    <td className="px-4 py-2.5">
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 bg-gray-100 rounded-full h-2">
+                          <div className={`h-2 rounded-full ${color}`} style={{ width: `${pubExpenseRow.pct}%` }} />
+                        </div>
+                        <span className="text-xs text-gray-500 w-10 text-right shrink-0">{Math.round(pubExpenseRow.pct)}%</span>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })()}
+              {pubExpanded && pubByProductRows.map(r => {
+                const color = r.pct >= 100 ? 'bg-red-400' : r.pct >= 60 ? 'bg-amber-400' : 'bg-emerald-400';
+                return (
+                  <tr key={r.productId} className="border-b border-gray-50 bg-gray-50/50">
+                    <td className="pl-9 pr-4 py-2 text-gray-500 text-xs truncate max-w-[200px]">{r.productName}</td>
+                    <td className="text-right px-3 py-2 text-gray-500 text-xs">{r.forecastAmount ? fmt(r.forecastAmount) : '—'}</td>
+                    <td className="text-right px-3 py-2 font-medium text-gray-700 text-xs">{fmt(r.realizedAmount)}</td>
+                    <td className="px-4 py-2">
+                      {r.forecastAmount > 0 ? (
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 bg-gray-100 rounded-full h-1.5">
+                            <div className={`h-1.5 rounded-full ${color}`} style={{ width: `${r.pct}%` }} />
+                          </div>
+                          <span className="text-[11px] text-gray-400 w-10 text-right shrink-0">{Math.round(r.pct)}%</span>
+                        </div>
+                      ) : (
+                        <span className="text-[11px] text-gray-300">Pas de budget prévu</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+              {pubExpanded && pubByProductRows.length === 0 && (
+                <tr className="border-b border-gray-50 bg-gray-50/50">
+                  <td colSpan={4} className="px-9 py-2 text-xs text-gray-400">Aucune dépense pub ni quantité projetée ce mois-ci, par produit.</td>
+                </tr>
+              )}
+              {showOtherExpenses && otherExpenseRows.map(r => {
+                const color = r.pct >= 100 ? 'bg-red-500' : r.pct >= 60 ? 'bg-amber-500' : 'bg-emerald-500';
+                return (
+                  <tr key={r.category} className="border-b border-gray-50">
+                    <td className="px-4 py-2.5 text-gray-700">{catLabel(r.category)}</td>
+                    <td className="text-right px-3 py-2.5 text-gray-600">{fmt(r.forecastAmount)}</td>
+                    <td className="text-right px-3 py-2.5 font-semibold text-gray-900">{fmt(r.realizedAmount)}</td>
+                    <td className="px-4 py-2.5">
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 bg-gray-100 rounded-full h-2">
+                          <div className={`h-2 rounded-full ${color}`} style={{ width: `${r.pct}%` }} />
+                        </div>
+                        <span className="text-xs text-gray-500 w-10 text-right shrink-0">{Math.round(r.pct)}%</span>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <p className="text-[11px] text-gray-400 px-4 pb-3 pt-1">Vert = sous le budget, orange = proche, rouge = dépassé.</p>
+      </div>
       </>}
 
       {mainTab === 'budget' && (
@@ -540,12 +500,15 @@ export function Goals() {
             </div>
           </div>
 
-          {/* Projected quantities per product, month by month */}
+          {/* Projected quantities + ad budget per product, month by month */}
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
             <div className="flex items-center justify-between p-4 pb-3">
               <div>
-                <h2 className="font-semibold text-gray-900 text-sm">Quantité projetée à vendre, par mois</h2>
-                <p className="text-xs text-gray-400">Seul le premier mois se saisit — les suivants appliquent la croissance de {forecast.monthlyGrowthPct}%/mois automatiquement.</p>
+                <h2 className="font-semibold text-gray-900 text-sm">Quantité et budget pub projetés, par mois</h2>
+                <p className="text-xs text-gray-400">
+                  Seul le premier mois se saisit — les suivants appliquent la croissance de {forecast.monthlyGrowthPct}%/mois automatiquement.
+                  Budget pub laissé vide = calculé depuis l'historique du produit (dépense pub / unité vendue).
+                </p>
               </div>
               <button onClick={handleSaveQuantities} disabled={savingQty}
                 className="shrink-0 flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white px-3 py-2 rounded-xl text-xs font-medium transition-colors">
@@ -561,35 +524,56 @@ export function Goals() {
                     <tr className="border-b border-gray-100">
                       <th className="text-left font-medium text-gray-500 px-4 py-2 sticky left-0 bg-white">Produit</th>
                       {forecastMonths.map(m => (
-                        <th key={m.monthKey} className="text-right font-medium text-gray-500 px-3 py-2 whitespace-nowrap min-w-[80px]">{m.label}</th>
+                        <th key={m.monthKey} className="text-right font-medium text-gray-500 px-3 py-2 whitespace-nowrap min-w-[90px]">{m.label}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {products.filter(p => p.trackStock !== false).map(p => (
-                      <tr key={p.id} className="border-b border-gray-50">
-                        <td className="px-4 py-1.5 text-gray-700 truncate sticky left-0 bg-white max-w-[160px]">{p.name}</td>
-                        <td className="px-2 py-1.5">
-                          <input
-                            type="number" min={0}
-                            value={qtyMap[p.id] ?? ''}
-                            onChange={e => setQtyMap(m => ({ ...m, [p.id]: e.target.value }))}
-                            placeholder="0"
-                            className="w-20 border border-gray-200 rounded-lg px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300 text-right"
-                          />
-                        </td>
-                        {forecastMonths.slice(1).map(m => (
-                          <td key={m.monthKey} className="text-right px-3 py-1.5 text-gray-400">
-                            {Math.round(m.quantitiesByProduct[p.id] ?? 0) || '—'}
+                    {products.filter(p => p.trackStock !== false).map(p => {
+                      const computedAdBudget = (Number(qtyMap[p.id]) || 0) * (adSpendPerUnit[p.id] ?? 0);
+                      return (
+                        <tr key={p.id} className="border-b border-gray-50">
+                          <td className="px-4 py-1.5 text-gray-700 truncate sticky left-0 bg-white max-w-[160px]">{p.name}</td>
+                          <td className="px-2 py-1.5">
+                            <div className="flex flex-col gap-1">
+                              <div className="flex items-center gap-1">
+                                <span className="text-[9px] text-gray-400 w-7 shrink-0">Qté</span>
+                                <input
+                                  type="number" min={0}
+                                  value={qtyMap[p.id] ?? ''}
+                                  onChange={e => setQtyMap(m => ({ ...m, [p.id]: e.target.value }))}
+                                  placeholder="0"
+                                  className="w-24 border border-gray-200 rounded-lg px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300 text-right"
+                                />
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <span className="text-[9px] text-gray-400 w-7 shrink-0">Pub</span>
+                                <input
+                                  type="number" min={0}
+                                  value={adBudgetMap[p.id] ?? ''}
+                                  onChange={e => setAdBudgetMap(m => ({ ...m, [p.id]: e.target.value }))}
+                                  placeholder={computedAdBudget ? String(Math.round(computedAdBudget)) : '0'}
+                                  title="Budget pub pour ce produit — vide = calculé automatiquement depuis l'historique"
+                                  className="w-24 border border-gray-200 rounded-lg px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-indigo-300 text-right text-gray-500"
+                                />
+                              </div>
+                            </div>
                           </td>
-                        ))}
-                      </tr>
-                    ))}
+                          {forecastMonths.slice(1).map(m => (
+                            <td key={m.monthKey} className="text-right px-3 py-1.5 text-gray-400">
+                              <div>{Math.round(m.quantitiesByProduct[p.id] ?? 0) || '—'}</div>
+                              <div className="text-[10px] text-gray-300">{m.adBudgetByProduct[p.id] ? fmt(m.adBudgetByProduct[p.id]) : '—'}</div>
+                            </td>
+                          ))}
+                        </tr>
+                      );
+                    })}
                     <tr className="bg-gray-50 font-semibold">
                       <td className="px-4 py-2 text-gray-700 sticky left-0 bg-gray-50">Total</td>
                       {forecastMonths.map(m => (
                         <td key={m.monthKey} className="text-right px-3 py-2 text-gray-800">
-                          {Math.round(Object.values(m.quantitiesByProduct).reduce((s, q) => s + q, 0))}
+                          <div>{Math.round(Object.values(m.quantitiesByProduct).reduce((s, q) => s + q, 0))}</div>
+                          <div className="text-[10px] font-normal text-gray-400">{fmt(m.adBudget)}</div>
                         </td>
                       ))}
                     </tr>

@@ -52,8 +52,16 @@ export class BudgetForecastService {
       dto.items.map(item =>
         this.prisma.budgetForecastProduct.upsert({
           where: { forecastId_productId: { forecastId: forecast.id, productId: item.productId } },
-          create: { forecastId: forecast.id, productId: item.productId, quantity: item.quantity },
-          update: { quantity: item.quantity },
+          create: {
+            forecastId: forecast.id,
+            productId: item.productId,
+            quantity: item.quantity,
+            adBudgetOverride: item.adBudgetOverride ?? null,
+          },
+          update: {
+            quantity: item.quantity,
+            ...(item.adBudgetOverride !== undefined && { adBudgetOverride: item.adBudgetOverride }),
+          },
         }),
       ),
     );

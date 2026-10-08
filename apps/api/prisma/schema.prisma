@@ -248,6 +248,11 @@ model BudgetForecastProduct {
   // Quantité projetée pour le premier mois de l'horizon — les mois suivants
   // appliquent monthlyGrowthPct composé, calculé côté client.
   quantity   Float  @default(0)
+  // Budget pub pour le premier mois, saisi à la main — remplace le calcul par
+  // défaut (ratio historique dépense pub / unité vendue × quantité). null =
+  // pas de surcharge, on garde le calcul automatique. Comme la quantité, ne
+  // porte que sur le premier mois : les mois suivants appliquent monthlyGrowthPct.
+  adBudgetOverride Float? @map("ad_budget_override")
 
   forecast BudgetForecast @relation(fields: [forecastId], references: [id], onDelete: Cascade)
   product  Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
@@ -894,4 +899,83 @@ model PushSubscription {
 
   @@index([userId])
   @@map("push_subscriptions")
+}
+
+// ─── Levée de fonds (cagnottes) ────────────────────────────────────────────────
+// Plusieurs cagnottes peuvent être actives en parallèle pour une même entreprise.
+// Les investisseurs sont ajoutés à la main par le propriétaire (pas d'auto-
+// inscription publique) ; chaque investissement porte ses propres conditions de
+// remboursement (montant fixe + échéance) plutôt que la cagnotte elle-même, pour
+// permettre des conditions différentes d'un investisseur à l'autre dans la même
+// campagne tout en restant simple (pas de calcul d'intérêt automatique).
+
+model FundraisingCampaign {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId           String   @map("user_id")
+  businessId       String?  @map("business_id") @db.Uuid
+  name             String
+  description      String   @default("")
+  targetAmount     Float    @map("target_amount")
+  entryTicket      Float    @map("entry_ticket")
+  maxInvestors     Int?     @map("max_investors")
+  // Condition de remboursement par défaut proposée aux nouveaux investissements de
+  // cette cagnotte — chaque investissement peut la surcharger individuellement.
+  repaymentDueDate String?  @map("repayment_due_date") // "YYYY-MM-DD"
+  status           String   @default("active") // "active" | "closed"
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  investments FundraisingInvestment[]
+
+  @@index([userId])
+  @@index([businessId])
+  @@map("fundraising_campaigns")
+}
+
+// Compte de connexion d'un investisseur au portail — distinct des comptes Supabase
+// des propriétaires d'entreprise ; auth propre (email + mot de passe, JWT signé par
+// l'API). Un même investisseur peut avoir des investissements dans plusieurs
+// cagnottes/entreprises différentes.
+model Investor {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  name         String
+  phone        String?
+  // Jeton opaque fixe, comme DeliveryPartner.token — l'email/mot de passe ne sert
+  // qu'à la connexion initiale ; une fois authentifié, le portail réutilise ce
+  // jeton directement dans l'URL de chaque appel (même structure que le portail
+  // partenaire), sans JWT signé ni garde séparé.
+  token        String   @unique @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  investments FundraisingInvestment[]
+
+  @@map("investors")
+}
+
+model FundraisingInvestment {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  campaignId       String   @map("campaign_id") @db.Uuid
+  investorId       String   @map("investor_id") @db.Uuid
+  amount           Float
+  // Montant fixe promis en retour, et échéance — saisis à la main par le propriétaire
+  // (pas de calcul d'intérêt), par défaut égaux au montant investi / à l'échéance de
+  // la cagnotte mais librement modifiables par investissement.
+  repaymentAmount  Float    @map("repayment_amount")
+  repaymentDueDate String?  @map("repayment_due_date") // "YYYY-MM-DD"
+  repaidAmount     Float    @default(0) @map("repaid_amount")
+  repaidAt         String?  @map("repaid_at") // "YYYY-MM-DD"
+  status           String   @default("pending") // "pending" | "partially_repaid" | "repaid"
+  investedAt       String   @map("invested_at") // "YYYY-MM-DD"
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  campaign FundraisingCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  investor Investor            @relation(fields: [investorId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId])
+  @@index([investorId])
+  @@map("fundraising_investments")
 }

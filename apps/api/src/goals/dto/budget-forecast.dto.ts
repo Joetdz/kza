@@ -28,6 +28,15 @@ export class ForecastProductQtyDto {
   @IsNumber()
   @Min(0)
   quantity: number;
+
+  // Surcharge manuelle du budget pub (premier mois). undefined = inchangé,
+  // null = retire la surcharge (revient au calcul automatique). Pas de @Type()
+  // ici : Number(null) vaudrait 0 et écraserait silencieusement l'intention de
+  // "retirer la surcharge" par un budget pub figé à 0.
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  adBudgetOverride?: number | null;
 }
 
 export class SetForecastProductsDto {

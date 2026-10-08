@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, Package, ShoppingCart, CreditCard,
-  BarChart2, Target, Download, X, LogOut, MessageCircle, Shield, Store, Truck, Users, UserCog,
+  BarChart2, Target, Download, X, LogOut, MessageCircle, Shield, Store, Truck, Users, UserCog, PiggyBank,
 } from 'lucide-react';
 import { useStore } from '../../store/useStore';
 import { useAuth } from '../../contexts/AuthContext';
@@ -20,6 +20,7 @@ const nav = [
   { to: '/depenses',   icon: CreditCard,      label: 'Dépenses',    finance: true },
   { to: '/analytique', icon: BarChart2,       label: 'Analytique',  finance: true },
   { to: '/objectifs',  icon: Target,          label: 'Objectifs',   finance: true },
+  { to: '/financement', icon: PiggyBank,      label: 'Levée de fonds', finance: true },
   { to: '/boutique',   icon: Store,           label: 'Ma Boutique' },
   { to: '/export',     icon: Download,        label: 'Export',      finance: true },
   { to: '/whatsapp',   icon: MessageCircle,   label: 'WhatsApp CRM' },
