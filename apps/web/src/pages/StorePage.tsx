@@ -7,10 +7,18 @@ import {
   Sparkles, RefreshCw, Music, Scissors, Image as ImageIcon, ArrowDown, ArrowUp,
 } from 'lucide-react';
 import { mediaApi, uploadApi, type ProductMedia } from '../api';
+import { useStore } from '../store/useStore';
 
 const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api';
 const resolveImg = (url: string | null | undefined) =>
   url ? (url.startsWith('http') ? url : `${BASE.replace('/api', '')}${url}`) : null;
+
+// Même clé que le reste de l'app (store/useStore.ts) — sans ça, le backend ne sait
+// pas pour quel business scoper la requête et retombe sur le business par défaut.
+function getBizHeader(): Record<string, string> {
+  const bizId = localStorage.getItem('kza_business_id');
+  return bizId ? { 'X-Business-Id': bizId } : {};
+}
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const { data: { session } } = await supabase.auth.getSession();
@@ -19,6 +27,7 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
     headers: {
       'Content-Type': 'application/json',
       ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+      ...getBizHeader(),
       ...(init?.headers ?? {}),
     },
   });
@@ -216,6 +225,7 @@ async function apiAuth<T>(path: string, init?: RequestInit): Promise<T> {
     headers: {
       'Content-Type': 'application/json',
       ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+      ...getBizHeader(),
       ...(init?.headers ?? {}),
     },
   });
@@ -230,6 +240,7 @@ async function apiAuthBlob(path: string, init?: RequestInit): Promise<Blob> {
     headers: {
       'Content-Type': 'application/json',
       ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+      ...getBizHeader(),
       ...(init?.headers ?? {}),
     },
   });
@@ -1067,6 +1078,7 @@ function PhotoToVideoStudio({
 // ── StorePage ─────────────────────────────────────────────────────────────────
 
 export function StorePage() {
+  const { currentBusinessId } = useStore();
   const [tab, setTab] = useState<'config' | 'products' | 'creations' | 'share' | 'orders'>('config');
   const [store, setStore] = useState<any>(null);
   const [products, setProducts] = useState<any[]>([]);
@@ -1110,6 +1122,12 @@ export function StorePage() {
   });
 
   useEffect(() => {
+    // Business switché — la boutique affichée doit changer avec lui, pas garder
+    // celle du business précédent le temps que le fetch reparte.
+    setLoading(true);
+    setStore(null);
+    setOrders([]);
+    setMedia([]);
     Promise.all([
       api<any>('/store/my').catch(() => null),
       api<any[]>('/products').catch(() => []),
@@ -1181,7 +1199,7 @@ export function StorePage() {
         }
       }
     }).finally(() => setLoading(false));
-  }, []);
+  }, [currentBusinessId]);
 
   useEffect(() => {
     if (tab === 'orders' && store) {

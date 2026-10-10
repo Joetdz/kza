@@ -92,6 +92,22 @@ export function Analytics() {
     [analytics, sortKey, sortDesc]
   );
 
+  // Total de bas de tableau — sommes directes pour les colonnes additives ; pour
+  // Marge% et ROI, recalculés à partir des sommes (plus juste qu'une somme de %).
+  const tableTotals = useMemo(() => {
+    const totalUnitsSold = sorted.reduce((s, a) => s + a.totalUnitsSold, 0);
+    const totalRevenue = sorted.reduce((s, a) => s + a.totalRevenue, 0);
+    const totalCOGS = sorted.reduce((s, a) => s + a.totalCOGS, 0);
+    const grossProfit = sorted.reduce((s, a) => s + a.grossProfit, 0);
+    const totalAdSpend = sorted.reduce((s, a) => s + a.totalAdSpend, 0);
+    const netProfit = sorted.reduce((s, a) => s + a.netProfit, 0);
+    return {
+      totalUnitsSold, totalRevenue, totalCOGS, grossProfit, totalAdSpend, netProfit,
+      netMarginPct: totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0,
+      roi: totalAdSpend > 0 ? (netProfit / totalAdSpend) * 100 : 0,
+    };
+  }, [sorted]);
+
   const handleSort = (key: SortKey) => {
     if (sortKey === key) setSortDesc(d => !d);
     else { setSortKey(key); setSortDesc(true); }
@@ -339,6 +355,7 @@ export function Analytics() {
                   <th className="text-left px-5 py-3">Produit</th>
                   <th className="text-right px-4 py-3">Unités</th>
                   <th className="text-right px-4 py-3">CA</th>
+                  <th className="text-right px-4 py-3">Coût</th>
                   <th className="text-right px-4 py-3">Marge brute</th>
                   <th className="text-right px-4 py-3">Pub</th>
                   <th className="text-right px-4 py-3">Profit net</th>
@@ -358,6 +375,7 @@ export function Analytics() {
                     </td>
                     <td className="px-4 py-3 text-right text-gray-700">{a.totalUnitsSold}</td>
                     <td className="px-4 py-3 text-right font-medium text-gray-900">{MAD(a.totalRevenue)}</td>
+                    <td className="px-4 py-3 text-right text-gray-500">{MAD(a.totalCOGS)}</td>
                     <td className="px-4 py-3 text-right text-gray-700">{MAD(a.grossProfit)}</td>
                     <td className="px-4 py-3 text-right text-indigo-600">{a.totalAdSpend > 0 ? MAD(a.totalAdSpend) : '—'}</td>
                     <td className={`px-4 py-3 text-right font-semibold ${a.netProfit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
@@ -390,9 +408,25 @@ export function Analytics() {
                 ))}
                 {sorted.length === 0 && (
                   <tr>
-                    <td colSpan={11} className="text-center py-12 text-gray-400">
+                    <td colSpan={12} className="text-center py-12 text-gray-400">
                       Aucune donnée disponible pour la période sélectionnée
                     </td>
+                  </tr>
+                )}
+                {sorted.length > 0 && (
+                  <tr className="bg-gray-50 font-semibold border-t-2 border-gray-200">
+                    <td className="px-5 py-3 text-gray-900">Total</td>
+                    <td className="px-4 py-3 text-right text-gray-900">{tableTotals.totalUnitsSold}</td>
+                    <td className="px-4 py-3 text-right text-gray-900">{MAD(tableTotals.totalRevenue)}</td>
+                    <td className="px-4 py-3 text-right text-gray-600">{MAD(tableTotals.totalCOGS)}</td>
+                    <td className="px-4 py-3 text-right text-gray-900">{MAD(tableTotals.grossProfit)}</td>
+                    <td className="px-4 py-3 text-right text-indigo-700">{tableTotals.totalAdSpend > 0 ? MAD(tableTotals.totalAdSpend) : '—'}</td>
+                    <td className={`px-4 py-3 text-right ${tableTotals.netProfit >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{MAD(tableTotals.netProfit)}</td>
+                    <td className={`px-4 py-3 text-right ${tableTotals.netMarginPct >= 20 ? 'text-emerald-700' : tableTotals.netMarginPct >= 0 ? 'text-amber-600' : 'text-red-600'}`}>{pct(tableTotals.netMarginPct)}</td>
+                    <td className={`px-4 py-3 text-right ${tableTotals.roi >= 50 ? 'text-emerald-700' : tableTotals.roi >= 0 ? 'text-amber-600' : 'text-red-600'}`}>{tableTotals.totalAdSpend > 0 ? pct(tableTotals.roi) : '—'}</td>
+                    <td className="px-4 py-3 text-right text-gray-400">—</td>
+                    <td className="px-4 py-3 text-right text-gray-400">—</td>
+                    <td className="px-4 py-3 text-center text-gray-400">—</td>
                   </tr>
                 )}
               </tbody>
