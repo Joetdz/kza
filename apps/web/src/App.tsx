@@ -35,6 +35,7 @@ import { BusinessAdvisor } from './components/BusinessAdvisor';
 import PwaInstallBanner from './components/PwaInstallBanner';
 import { PushPermissionBanner } from './components/PushPermissionBanner';
 import { GlobalWaNotifier } from './components/GlobalWaNotifier';
+import { RequireModule } from './components/RequireModule';
 import { useStore } from './store/useStore';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 
@@ -194,15 +195,15 @@ function AppInner() {
           <Route path="/ventes" element={<Sales />} />
           <Route path="/depenses" element={<Expenses />} />
           <Route path="/analytique" element={<Analytics />} />
-          <Route path="/objectifs" element={<Goals />} />
-          <Route path="/financement" element={<Fundraising />} />
+          <Route path="/objectifs" element={<RequireModule module="goals"><Goals /></RequireModule>} />
+          <Route path="/financement" element={<RequireModule module="fundraising"><Fundraising /></RequireModule>} />
           <Route path="/export" element={<Export />} />
-          <Route path="/boutique" element={<StorePage />} />
+          <Route path="/boutique" element={<RequireModule module="online_store"><StorePage /></RequireModule>} />
           <Route path="/admin" element={<AdminDashboard />} />
-          <Route path="/logistique" element={<Logistics />} />
+          <Route path="/logistique" element={<RequireModule module="logistics"><Logistics /></RequireModule>} />
           <Route path="/clients" element={<Clients />} />
           <Route path="/equipe" element={<Team />} />
-          <Route path="/whatsapp" element={<WhatsAppLayout />}>
+          <Route path="/whatsapp" element={<RequireModule module="whatsapp"><WhatsAppLayout /></RequireModule>}>
             <Route index element={<Inbox />} />
             <Route path="ia" element={<AIConfig />} />
             <Route path="automatisations" element={<Automations />} />

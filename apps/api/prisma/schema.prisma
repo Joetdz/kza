@@ -15,6 +15,9 @@ model Business {
   userId        String   @map("user_id")
   name          String
   sector        String?
+  // Modules switched on (see BUSINESS_MODULES in @kza/shared). Empty = created before
+  // modules existed → every available module, so nothing changes for them.
+  modules       String[] @default([])
   country       String   @default("CD")
   currency      String   @default("USD")
   whatsappPhone String   @map("whatsapp_phone")

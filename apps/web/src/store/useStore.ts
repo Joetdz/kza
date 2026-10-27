@@ -10,6 +10,8 @@ export interface BusinessRecord {
   id: string;
   name: string;
   sector?: string;
+  /** Switched-on modules (see BUSINESS_MODULES); empty = all available modules. */
+  modules?: string[];
   country: string;
   currency: string;
   whatsappPhone: string;

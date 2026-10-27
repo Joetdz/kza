@@ -14,18 +14,23 @@ import { toast } from '../hooks/useToast';
 import type { Product, StockMovement } from '../types';
 import { logisticsApi, type StockLocation, type LocationStock } from '../api/logistics';
 
+import { useModules } from '../hooks/useModules';
+
 const generateSku = () => 'PRD-' + Math.random().toString(36).slice(2, 8).toUpperCase();
 
-const emptyProduct = (): Omit<Product, 'id' | 'createdAt' | 'updatedAt'> => ({
+// Without the stock module, new catalogue items are services (no quantity to track).
+const emptyProduct = (trackStock = true): Omit<Product, 'id' | 'createdAt' | 'updatedAt'> => ({
   name: '', sku: generateSku(), category: '', quantity: 0, alertThreshold: 5,
   supplier: '', acquisitionCost: 0, sellingPrice: 0, imageUrl: undefined,
-  entryDate: new Date().toISOString().split('T')[0], trackStock: true,
+  entryDate: new Date().toISOString().split('T')[0], trackStock,
 });
 
 
 export function Stock() {
   const { products, movements, loading, addProduct, updateProduct, deleteProduct, addMovement } = useStore();
   const { fmt: MAD, currency } = useCurrency();
+  const { has: hasModule } = useModules();
+  const tracksStock = hasModule('stock');
 
   const [categories, setCategories] = useState<string[]>([]);
 
@@ -91,7 +96,7 @@ export function Stock() {
     }
   };
 
-  const openAdd = () => { setEditing(null); setForm(emptyProduct()); setModalOpen(true); };
+  const openAdd = () => { setEditing(null); setForm(emptyProduct(tracksStock)); setModalOpen(true); };
   const openEdit = (p: Product) => {
     setEditing(p);
     // acquisitionCost stored as unit cost → show as total in form
@@ -239,7 +244,7 @@ export function Stock() {
     <div className="space-y-5 overflow-x-hidden">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 truncate">Gestion du Stock</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 truncate">{tracksStock ? 'Gestion du Stock' : 'Catalogue'}</h1>
           <p className="text-xs sm:text-sm text-gray-500">{products.length} produits enregistrés</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">

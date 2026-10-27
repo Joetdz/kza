@@ -1,4 +1,5 @@
-import { IsString, IsNotEmpty, IsOptional } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsArray, IsIn } from 'class-validator';
+import { ALL_MODULE_KEYS } from '@kza/shared';
 
 export class CreateBusinessDto {
   @IsString() @IsNotEmpty()
@@ -6,6 +7,10 @@ export class CreateBusinessDto {
 
   @IsString() @IsOptional()
   sector?: string;
+
+  /** Omitted → the sector's preset. */
+  @IsOptional() @IsArray() @IsIn(ALL_MODULE_KEYS, { each: true })
+  modules?: string[];
 
   @IsString() @IsOptional()
   country?: string;
@@ -32,6 +37,9 @@ export class UpdateBusinessDto {
 
   @IsString() @IsOptional()
   sector?: string;
+
+  @IsOptional() @IsArray() @IsIn(ALL_MODULE_KEYS, { each: true })
+  modules?: string[];
 
   @IsString() @IsOptional()
   country?: string;

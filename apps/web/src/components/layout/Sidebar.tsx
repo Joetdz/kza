@@ -7,24 +7,27 @@ import { useStore } from '../../store/useStore';
 import { useAuth } from '../../contexts/AuthContext';
 import { useRole } from '../../hooks/useRole';
 import { BusinessSelector } from '../BusinessSelector';
+import { useModules } from '../../hooks/useModules';
+import type { BusinessModuleKey } from '@kza/shared';
 
 const ADMIN_EMAILS = (import.meta.env.VITE_ADMIN_EMAILS ?? '')
   .split(',').map((e: string) => e.trim().toLowerCase()).filter(Boolean);
 
 // `finance: true` hides the link from operators — the server enforces this too,
 // so this is purely so an operator doesn't see links that would 403.
-const nav = [
+// `module` hides the link when that module is switched off for the business.
+const nav: Array<{ to: string; icon: typeof Package; label: string; finance?: boolean; module?: BusinessModuleKey }> = [
   { to: '/',           icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/stock',      icon: Package,         label: 'Stock' },
   { to: '/ventes',     icon: ShoppingCart,    label: 'Ventes',      finance: true },
   { to: '/depenses',   icon: CreditCard,      label: 'Dépenses',    finance: true },
   { to: '/analytique', icon: BarChart2,       label: 'Analytique',  finance: true },
-  { to: '/objectifs',  icon: Target,          label: 'Objectifs',   finance: true },
-  { to: '/financement', icon: PiggyBank,      label: 'Levée de fonds', finance: true },
-  { to: '/boutique',   icon: Store,           label: 'Ma Boutique' },
+  { to: '/objectifs',  icon: Target,          label: 'Objectifs',   finance: true, module: 'goals' },
+  { to: '/financement', icon: PiggyBank,      label: 'Levée de fonds', finance: true, module: 'fundraising' },
+  { to: '/boutique',   icon: Store,           label: 'Ma Boutique', module: 'online_store' },
   { to: '/export',     icon: Download,        label: 'Export',      finance: true },
-  { to: '/whatsapp',   icon: MessageCircle,   label: 'WhatsApp CRM' },
-  { to: '/logistique', icon: Truck,           label: 'Logistique' },
+  { to: '/whatsapp',   icon: MessageCircle,   label: 'WhatsApp CRM', module: 'whatsapp' },
+  { to: '/logistique', icon: Truck,           label: 'Logistique',  module: 'logistics' },
   { to: '/clients',    icon: Users,           label: 'Clients' },
 ];
 
@@ -32,9 +35,13 @@ export function Sidebar() {
   const { sidebarOpen, toggleSidebar } = useStore();
   const { user, signOut } = useAuth();
   const { canSeeFinances, canManageTeam } = useRole();
+  const { has } = useModules();
 
   const isAdmin = !!user?.email && ADMIN_EMAILS.includes(user.email.toLowerCase());
-  const visibleNav = nav.filter(item => !item.finance || canSeeFinances);
+  const visibleNav = nav
+    .filter(item => (!item.finance || canSeeFinances) && (!item.module || has(item.module)))
+    // Without stock tracking, the same page is a catalogue of services.
+    .map(item => item.to === '/stock' && !has('stock') ? { ...item, label: 'Catalogue' } : item);
 
   return (
     <>

@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateBusinessDto, UpdateBusinessDto } from './dto/create-business.dto';
+import { presetModulesForSector } from '@kza/shared';
 
 @Injectable()
 export class BusinessService {
@@ -40,6 +41,7 @@ export class BusinessService {
         userId,
         name: dto.name,
         sector: dto.sector,
+        modules: dto.modules ?? presetModulesForSector(dto.sector),
         country: dto.country ?? 'CD',
         currency: dto.currency ?? 'USD',
         whatsappPhone: dto.whatsappPhone,
@@ -58,6 +60,7 @@ export class BusinessService {
       data: {
         ...(dto.name !== undefined && { name: dto.name }),
         ...(dto.sector !== undefined && { sector: dto.sector }),
+        ...(dto.modules !== undefined && { modules: [...new Set(dto.modules)] }),
         ...(dto.country !== undefined && { country: dto.country }),
         ...(dto.currency !== undefined && { currency: dto.currency }),
         ...(dto.whatsappPhone !== undefined && { whatsappPhone: dto.whatsappPhone }),

@@ -8,18 +8,21 @@ import { useStore } from '../../store/useStore';
 import { useAuth } from '../../contexts/AuthContext';
 import { useCurrency } from '../../hooks/useCurrency';
 import { Sidebar } from './Sidebar';
+import { useModules } from '../../hooks/useModules';
+import type { BusinessModuleKey } from '@kza/shared';
 import { Toaster } from '../ui/Toaster';
 
-const mobileNav = [
+// `module`: hidden when that module is switched off for the business.
+const mobileNav: Array<{ to: string; icon: typeof Package; end: boolean; module?: BusinessModuleKey }> = [
   { to: '/',           icon: LayoutDashboard, end: true  },
   { to: '/stock',      icon: Package,         end: false },
   { to: '/ventes',     icon: ShoppingCart,    end: false },
   { to: '/depenses',   icon: CreditCard,      end: false },
   { to: '/analytique', icon: BarChart2,       end: false },
-  { to: '/objectifs',  icon: Target,          end: false },
-  { to: '/boutique',   icon: Store,           end: false },
+  { to: '/objectifs',  icon: Target,          end: false, module: 'goals' as const },
+  { to: '/boutique',   icon: Store,           end: false, module: 'online_store' as const },
   { to: '/export',     icon: Download,        end: false },
-  { to: '/whatsapp',   icon: MessageCircle,   end: false },
+  { to: '/whatsapp',   icon: MessageCircle,   end: false, module: 'whatsapp' as const },
 ];
 
 export function AppShell() {
@@ -27,6 +30,7 @@ export function AppShell() {
   const { user, signOut } = useAuth();
   const { bizCurrency } = useCurrency();
   const location = useLocation();
+  const { has: hasModule } = useModules();
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -109,7 +113,7 @@ export function AppShell() {
         {/* Mobile bottom nav — scrollable */}
         <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-md border-t border-gray-200 z-20">
           <div className="flex overflow-x-auto scrollbar-hide">
-            {mobileNav.map(({ to, icon: Icon, end }) => (
+            {mobileNav.filter(item => !item.module || hasModule(item.module)).map(({ to, icon: Icon, end }) => (
               <NavLink
                 key={to}
                 to={to}

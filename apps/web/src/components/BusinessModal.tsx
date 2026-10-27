@@ -3,6 +3,9 @@ import { X, Building2, Phone, Globe, DollarSign, Loader2, MapPin, Image, Upload,
 import { ScrollLock } from './ui/ScrollLock';
 import { useStore, type BusinessRecord } from '../store/useStore';
 import { uploadApi } from '../api';
+import {
+  BUSINESS_SECTORS, BUSINESS_MODULES, effectiveModules, presetModulesForSector, type BusinessModuleKey,
+} from '@kza/shared';
 
 const COUNTRIES = [
   { code: 'CD', label: 'R.D. Congo',         flag: '🇨🇩', currency: 'CDF' },
@@ -40,21 +43,7 @@ const CURRENCIES = [
   { code: 'MAD', label: 'Dirham marocain (MAD)' },
 ];
 
-const SECTORS = [
-  { label: 'Commerce général',    emoji: '🏪' },
-  { label: 'Alimentation',        emoji: '🛒' },
-  { label: 'Mode & Vêtements',    emoji: '👗' },
-  { label: 'Électronique',        emoji: '📱' },
-  { label: 'Beauté & Cosmétiques',emoji: '💄' },
-  { label: 'Santé & Pharmacie',   emoji: '💊' },
-  { label: 'Immobilier',          emoji: '🏠' },
-  { label: 'Transport',           emoji: '🚗' },
-  { label: 'Agriculture',         emoji: '🌾' },
-  { label: 'Services',            emoji: '🔧' },
-  { label: 'Restauration',        emoji: '🍽️' },
-  { label: 'Éducation',           emoji: '📚' },
-  { label: 'Autre',               emoji: '✨' },
-];
+const SECTORS = BUSINESS_SECTORS;
 
 const QUIZ_STEPS = 4;
 
@@ -78,6 +67,8 @@ export function BusinessModal({ business, onClose, isFirstBusiness = false }: Pr
     city:           business?.city           ?? '',
     logoUrl:        business?.logoUrl        ?? '',
     isDefault:      business?.isDefault      ?? false,
+    // A business from before modules existed has none recorded — show what it actually has.
+    modules:        business ? [...effectiveModules(business.modules)] as string[] : presetModulesForSector(''),
   });
 
   const [step, setStep] = useState(1);
@@ -85,7 +76,14 @@ export function BusinessModal({ business, onClose, isFirstBusiness = false }: Pr
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [error, setError] = useState('');
 
-  const set = (field: keyof typeof form) => (
+  const toggleModule = (key: BusinessModuleKey) => setForm(f => ({
+    ...f,
+    modules: f.modules.includes(key) ? f.modules.filter(m => m !== key) : [...f.modules, key],
+  }));
+  const sectorPreset = presetModulesForSector(form.sector);
+  const matchesPreset = sectorPreset.length === form.modules.length && sectorPreset.every(m => form.modules.includes(m));
+
+  const set = (field: 'name' | 'sector' | 'country' | 'currency' | 'whatsappPhone' | 'phone' | 'city' | 'logoUrl') => (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
   ) => setForm(f => ({ ...f, [field]: e.target.value }));
 
@@ -219,6 +217,49 @@ export function BusinessModal({ business, onClose, isFirstBusiness = false }: Pr
               <p className="text-xs text-gray-400 mt-1">Affiché sur les factures</p>
             </div>
 
+            {/* Modules */}
+            <div className="pt-1">
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-xs font-semibold text-gray-700">Modules</label>
+                {form.sector && !matchesPreset && (
+                  <button type="button" onClick={() => setForm(f => ({ ...f, modules: sectorPreset }))}
+                    className="text-[11px] font-medium text-indigo-600 hover:text-indigo-700">
+                    Recommandés pour « {form.sector} »
+                  </button>
+                )}
+              </div>
+              <div className="space-y-1.5">
+                {BUSINESS_MODULES.map(m => {
+                  const on = form.modules.includes(m.key);
+                  return (
+                    <div key={m.key}
+                      className={`flex items-start gap-3 px-3 py-2 rounded-xl border ${m.available ? 'border-gray-100' : 'border-dashed border-gray-200 bg-gray-50/60'}`}>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className={`text-xs font-semibold ${m.available ? 'text-gray-800' : 'text-gray-500'}`}>{m.label}</span>
+                          {!m.available && (
+                            <span className="text-[10px] font-medium bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">
+                              Bientôt{on ? ' · prévu' : ''}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-gray-400 leading-snug">{m.description}</p>
+                      </div>
+                      {m.available && (
+                        <button type="button" role="switch" aria-checked={on} aria-label={m.label} onClick={() => toggleModule(m.key)}
+                          className={`relative w-9 h-5 rounded-full transition-colors shrink-0 mt-0.5 ${on ? 'bg-indigo-600' : 'bg-gray-300'}`}>
+                          <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${on ? 'translate-x-4' : 'translate-x-0'}`} />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="text-[11px] text-gray-400 mt-1.5">
+                Désactiver un module le retire du menu. Vos données sont conservées et réapparaissent si vous le réactivez.
+              </p>
+            </div>
+
             {error && <p className="text-xs text-red-600 bg-red-50 rounded-xl px-3 py-2">{error}</p>}
 
             <div className="flex gap-3 pt-2">
@@ -293,13 +334,16 @@ export function BusinessModal({ business, onClose, isFirstBusiness = false }: Pr
         {/* ── Step 2: Secteur ── */}
         {step === 2 && (
           <div className="px-6 pt-5 pb-6 flex flex-col gap-4">
-            <h2 className="text-xl font-bold text-gray-900">Dans quel secteur êtes-vous ?</h2>
+            <div>
+              <h2 className="text-xl font-bold text-gray-900">Dans quel secteur êtes-vous ?</h2>
+              <p className="text-xs text-gray-400 mt-1">KZA active les outils adaptés à votre secteur. Vous pourrez les changer à tout moment.</p>
+            </div>
             <div className="grid grid-cols-3 gap-2 max-h-60 overflow-y-auto pr-0.5">
               {SECTORS.map(s => (
                 <button
                   key={s.label}
                   type="button"
-                  onClick={() => { setForm(f => ({ ...f, sector: s.label })); next(); }}
+                  onClick={() => { setForm(f => ({ ...f, sector: s.label, modules: presetModulesForSector(s.label) })); next(); }}
                   className={[
                     'flex flex-col items-center gap-1.5 px-1 py-3 rounded-xl border-2 text-[11px] text-center font-medium transition-all leading-tight',
                     form.sector === s.label
