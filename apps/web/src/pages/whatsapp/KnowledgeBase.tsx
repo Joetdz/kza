@@ -13,6 +13,8 @@ const CATEGORIES = [
   { value: 'website',    label: 'Site web',    color: 'bg-cyan-100 text-cyan-700' },
   { value: 'social',     label: 'Réseaux sociaux', color: 'bg-sky-100 text-sky-700' },
   { value: 'history',    label: 'Historique WA', color: 'bg-teal-100 text-teal-700' },
+  { value: 'learned',    label: 'Appris',      color: 'bg-lime-100 text-lime-700' },
+  { value: 'unanswered', label: 'Sans réponse', color: 'bg-red-100 text-red-700' },
 ];
 
 const BLANK = {
@@ -71,6 +73,17 @@ export function KnowledgeBase() {
     setTagInput('');
     setShowForm(true);
   };
+
+  // A question the AI couldn't answer becomes a regular FAQ entry once the owner writes the answer.
+  const openAnswer = (e: any) => {
+    setEditId(e.id);
+    setForm({ ...BLANK, title: e.title, category: 'faq', enabled: true });
+    setTagInput('');
+    setShowForm(true);
+  };
+
+  const unansweredCount = entries.filter(e => e.category === 'unanswered').length;
+  const learnedToReview = entries.filter(e => e.category === 'learned' && !e.enabled).length;
 
   const addTag = () => {
     const t = tagInput.trim();
@@ -344,6 +357,34 @@ export function KnowledgeBase() {
       {/* ── MANUAL ENTRIES TAB ── */}
       {activeTab === 'manual' && (
         <>
+          {/* Learning to review */}
+          {(unansweredCount > 0 || learnedToReview > 0) && (
+            <div className="flex flex-wrap gap-2">
+              {unansweredCount > 0 && (
+                <button
+                  onClick={() => setFilterCat('unanswered')}
+                  className="flex-1 min-w-[220px] text-left bg-red-50 border border-red-100 rounded-2xl px-4 py-3 hover:bg-red-100 transition-colors"
+                >
+                  <div className="text-sm font-semibold text-red-700">
+                    {unansweredCount} question{unansweredCount > 1 ? 's' : ''} de clients sans réponse
+                  </div>
+                  <div className="text-xs text-red-600">L'IA n'a pas su répondre. Ajoute la réponse pour qu'elle sache la prochaine fois.</div>
+                </button>
+              )}
+              {learnedToReview > 0 && (
+                <button
+                  onClick={() => setFilterCat('learned')}
+                  className="flex-1 min-w-[220px] text-left bg-lime-50 border border-lime-100 rounded-2xl px-4 py-3 hover:bg-lime-100 transition-colors"
+                >
+                  <div className="text-sm font-semibold text-lime-700">
+                    {learnedToReview} réponse{learnedToReview > 1 ? 's' : ''} apprise{learnedToReview > 1 ? 's' : ''} à valider
+                  </div>
+                  <div className="text-xs text-lime-700">Tirées de tes réponses manuelles. Relis-les et active celles qui sont justes.</div>
+                </button>
+              )}
+            </div>
+          )}
+
           {/* Filters */}
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative flex-1 min-w-[180px]">
@@ -495,11 +536,11 @@ export function KnowledgeBase() {
           )}
 
           {/* Stats */}
-          <div className="flex gap-3">
+          <div className="flex flex-wrap gap-3">
             {CATEGORIES.map(c => {
               const count = entries.filter(e => e.category === c.value).length;
               return (
-                <div key={c.value} className="flex-1 bg-white rounded-xl border border-gray-100 px-3 py-2 text-center">
+                <div key={c.value} className="flex-1 min-w-[90px] bg-white rounded-xl border border-gray-100 px-3 py-2 text-center">
                   <div className="text-lg font-bold text-gray-900">{count}</div>
                   <div className={`text-xs font-medium px-1.5 py-0.5 rounded-full inline-block ${c.color}`}>{c.label}</div>
                 </div>
@@ -529,7 +570,9 @@ export function KnowledgeBase() {
                           <span className="text-xs bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full shrink-0">Script ✓</span>
                         )}
                       </div>
-                      <p className="text-xs text-gray-500 line-clamp-2">{e.content}</p>
+                      {e.category === 'unanswered'
+                        ? <p className="text-xs text-red-500 italic">Pas encore de réponse</p>
+                        : <p className="text-xs text-gray-500 line-clamp-2">{e.content}</p>}
                       {e.closingScript && (
                         <p className="text-xs text-emerald-600 mt-1 line-clamp-1 italic">📌 {e.closingScript}</p>
                       )}
@@ -542,15 +585,26 @@ export function KnowledgeBase() {
                       )}
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
-                      <div
-                        onClick={() => toggleEnabled(e.id, !e.enabled)}
-                        className={`w-8 h-4 rounded-full cursor-pointer transition-colors ${e.enabled ? 'bg-indigo-600' : 'bg-gray-200'}`}
-                      >
-                        <div className={`w-3 h-3 bg-white rounded-full shadow transition-transform mt-0.5 ${e.enabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
-                      </div>
-                      <button onClick={() => openEdit(e)} className="text-gray-400 hover:text-indigo-500 transition-colors p-1">
-                        <Edit2 size={14} />
-                      </button>
+                      {e.category === 'unanswered' ? (
+                        <button
+                          onClick={() => openAnswer(e)}
+                          className="flex items-center gap-1 text-xs font-medium bg-indigo-600 text-white px-2.5 py-1 rounded-lg hover:bg-indigo-700 transition-colors"
+                        >
+                          <Check size={12} /> Répondre
+                        </button>
+                      ) : (
+                        <>
+                          <div
+                            onClick={() => toggleEnabled(e.id, !e.enabled)}
+                            className={`w-8 h-4 rounded-full cursor-pointer transition-colors ${e.enabled ? 'bg-indigo-600' : 'bg-gray-200'}`}
+                          >
+                            <div className={`w-3 h-3 bg-white rounded-full shadow transition-transform mt-0.5 ${e.enabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                          </div>
+                          <button onClick={() => openEdit(e)} className="text-gray-400 hover:text-indigo-500 transition-colors p-1">
+                            <Edit2 size={14} />
+                          </button>
+                        </>
+                      )}
                       <button onClick={() => deleteEntry(e.id)} className="text-gray-400 hover:text-red-500 transition-colors p-1">
                         <Trash2 size={14} />
                       </button>

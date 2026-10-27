@@ -72,6 +72,7 @@ export class AiService {
     if (entries.length > 0) {
       const grouped: Record<string, string[]> = {};
       for (const e of entries) {
+        if (!e.content.trim()) continue; // e.g. an 'unanswered' question switched on before it got an answer
         if (!grouped[e.category]) grouped[e.category] = [];
         let block = `### ${e.title}\n${e.content}`;
 
@@ -218,7 +219,7 @@ Si le client aborde ces sujets, réponds poliment que tu ne peux pas en parler.`
 4. QUANTITÉS EN STOCK : Ne mentionne JAMAIS les quantités disponibles (ex: "il en reste 5", "3 unités", etc.). Dis simplement "c'est disponible" ou "c'est en stock".
 5. PRIX : Si le script de closing ou le contenu de la fiche KB mentionne un prix → utilise CE prix en priorité. N'utilise le prix catalogue (fallback) que si aucun prix n'est mentionné dans la KB.
 6. ⛔ SUBSTITUTION INTERDITE : Si le client demande un produit précis, réponds UNIQUEMENT sur CE produit. Ne propose JAMAIS un autre produit à la place, même si tu penses qu'il conviendrait mieux. Si le produit est en rupture de stock, dis-le et laisse le client choisir. Tu n'as pas le droit de rediriger le client vers un produit différent de celui qu'il a demandé.
-7. Si tu n'as pas la réponse → réponds : "Je vais vérifier ça pour vous et reviens vers vous très vite 🙏" (adapte à la langue du client).
+7. Si tu n'as pas la réponse → réponds : "Je vais vérifier ça pour vous et reviens vers vous très vite 🙏" (adapte à la langue du client), puis ajoute exactement [INCONNU] à la toute fin de ton message. Ce marqueur est retiré avant l'envoi, le client ne le voit jamais. Ne l'ajoute JAMAIS quand tu as répondu à la question.
 8. JAMAIS de markdown dans tes réponses (pas de **, pas de #, pas de tirets -). C'est WhatsApp, texte brut uniquement.
 9. Réponds comme un vrai vendeur humain : naturel, chaleureux, court. Maximum 3 phrases par message.
 10. MESSAGE VAGUE SANS PRODUIT : Si le message du client ne mentionne aucun produit, aucune catégorie, aucune caractéristique ("bonjour", "je veux en savoir plus", "c'est quoi vos produits ?", etc.) → pose UNE question ouverte pour découvrir son besoin. Ex : "Bien sûr ! Qu'est-ce qui vous intéresse ?" ou "Avec plaisir, vous cherchez quelque chose en particulier ?". N'évoque JAMAIS un produit avant que le client en ait parlé lui-même.
@@ -245,7 +246,7 @@ ${leadStatus === 'converted' ? `\n⚠️ STATUT CLIENT : VENTE ACQUISE. La comma
     returningCustomer?: string,
     /** The Click-to-WhatsApp ad this conversation started from, when there is one. */
     adContext?: string,
-  ): Promise<{ text: string; shouldEscalate: boolean; imageUrl?: string } | null> {
+  ): Promise<{ text: string; shouldEscalate: boolean; imageUrl?: string; unansweredQuestion?: string } | null> {
     const aiConfig = await this.getConfig(userId, businessId);
     if (!aiConfig.enabled) return null;
 
@@ -271,6 +272,8 @@ ${leadStatus === 'converted' ? `\n⚠️ STATUT CLIENT : VENTE ACQUISE. La comma
 
     // Build user message (text, image, or transcribed audio)
     let userMessage: any;
+    // What the customer actually asked, in words — the transcription for a voice note.
+    let questionText = newMessage;
     if (mediaBase64 && mediaMimetype) {
       const isAudio = mediaMimetype.startsWith('audio/');
       const isImage = mediaMimetype.startsWith('image/');
@@ -282,6 +285,7 @@ ${leadStatus === 'converted' ? `\n⚠️ STATUT CLIENT : VENTE ACQUISE. La comma
             ? `${transcription}${newMessage ? `\n${newMessage}` : ''}`
             : newMessage || '[Message vocal incompréhensible]';
           userMessage = { role: 'user', content: text };
+          if (transcription) questionText = text;
         } catch (err) {
           this.logger.error('Whisper error:', err);
           userMessage = { role: 'user', content: newMessage || '[Message vocal non transcrit]' };
@@ -351,10 +355,15 @@ ${leadStatus === 'converted' ? `\n⚠️ STATUT CLIENT : VENTE ACQUISE. La comma
       // Extract [IMAGE: url] marker if present
       const imageMatch = raw.match(/\[IMAGE:\s*(https?:\/\/[^\]]+)\]/i);
       const imageUrl = imageMatch?.[1]?.trim() ?? undefined;
-      // Remove the marker from the text sent to client
-      const text = raw.replace(/\[IMAGE:\s*[^\]]+\]/gi, '').trim();
+      // [INCONNU] = the AI had no answer in the KB (rule 7) — the question gets logged
+      // for the owner to answer.
+      const unknown = /\[INCONNU\]/i.test(raw);
+      // Remove the markers from the text sent to client
+      const text = raw.replace(/\[IMAGE:\s*[^\]]+\]/gi, '').replace(/\[INCONNU\]/gi, '').trim();
 
-      return { text, shouldEscalate: false, imageUrl };
+      // A bare "[image]"/"[audio]" placeholder isn't a question the owner can answer.
+      const question = questionText.replace(/^\[(image|audio|video|document|message)\]$/gim, '').trim();
+      return { text, shouldEscalate: false, imageUrl, ...(unknown && question ? { unansweredQuestion: question } : {}) };
     } catch (err) {
       this.logger.error('OpenAI error:', err);
       return null;

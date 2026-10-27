@@ -34,7 +34,13 @@ const C = {
 const AVATAR_COLORS = ['#d9696d','#b36fff','#2c9c8a','#f0a052','#5aa5d8','#e87d9a','#4db06a','#e06c3b'];
 const avatarColor = (phone: string) => AVATAR_COLORS[phone.charCodeAt(0) % AVATAR_COLORS.length];
 
+// WhatsApp's anonymous ID (LID), stored when the real number couldn't be resolved.
+function isLidPhone(phone: string): boolean {
+  return /^\d{14,}@c\.us$/.test(phone);
+}
+
 function formatPhone(phone: string): string {
+  if (isLidPhone(phone)) return 'Numéro masqué';
   const digits = phone.replace(/@.*$/, '');
   return digits.startsWith('+') ? digits : '+' + digits;
 }
@@ -42,6 +48,7 @@ function formatPhone(phone: string): string {
 function initials(c: WaContact): string {
   if (c.displayName) return c.displayName.slice(0, 2).toUpperCase();
   if (c.leadName) return c.leadName.slice(0, 2).toUpperCase();
+  if (isLidPhone(c.phone)) return '?';
   const digits = c.phone.replace(/@.*$/, '');
   return digits.slice(-2);
 }
@@ -312,6 +319,36 @@ export function Inbox() {
   const [filter, setFilter] = useState('');
   const [msgText, setMsgText] = useState('');
 
+  // Contacts stored under WhatsApp's anonymous ID: count first, change only once confirmed.
+  const [repairingLids, setRepairingLids] = useState(false);
+  const repairLids = async () => {
+    setRepairingLids(true);
+    try {
+      const preview = await waApi.repairLids(false);
+      const fixable = preview.renamed + preview.merged;
+      if (fixable === 0) {
+        alert(`${preview.total} contact(s) en numéro masqué : WhatsApp ne révèle le vrai numéro d'aucun d'eux pour l'instant.`);
+        return;
+      }
+      const ok = confirm(
+        `${preview.total} contact(s) en numéro masqué :\n` +
+        `• ${preview.renamed} vont récupérer leur vrai numéro\n` +
+        `• ${preview.merged} sont des doublons d'un contact existant et y seront fusionnés (messages, notes, tags et fiche lead conservés)\n` +
+        `• ${preview.unresolved} restent masqués (WhatsApp ne donne pas leur numéro)\n\n` +
+        `Appliquer la correction ?`,
+      );
+      if (!ok) return;
+      const done = await waApi.repairLids(true);
+      alert(`Correction terminée : ${done.renamed} numéro(s) retrouvé(s), ${done.merged} doublon(s) fusionné(s).`);
+      setSelectedId(null);
+      await loadContacts();
+    } catch (err: any) {
+      alert(err?.message ?? 'La correction a échoué.');
+    } finally {
+      setRepairingLids(false);
+    }
+  };
+
   // Quick replies mirrored from WhatsApp Business: typing "/" in the composer offers them.
   const [quickReplies, setQuickReplies] = useState<Array<{ id: string; shortcut: string; message: string; keywords: string[] }>>([]);
   const qrBusinessId = useStore(s => s.currentBusinessId);
@@ -481,6 +518,15 @@ export function Inbox() {
               <BarChart2 size={15} />
               <span className="hidden sm:inline">Stats produits</span>
             </button>
+            {contacts.some(c => isLidPhone(c.phone)) && (
+              <button onClick={repairLids} disabled={repairingLids}
+                title="Retrouver les vrais numéros des contacts affichés « Numéro masqué »"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-semibold transition-colors hover:bg-[#2a3942] disabled:opacity-50"
+                style={{ color: C.icon }}>
+                <Phone size={15} />
+                <span className="hidden sm:inline">{repairingLids ? 'Correction…' : 'Numéros masqués'}</span>
+              </button>
+            )}
             <button onClick={initDisconnect} title="Déconnecter"
               className="p-1.5 rounded-full hover:bg-[#2a3942] transition-colors">
               <X size={20} style={{ color: C.icon }} />

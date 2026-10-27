@@ -1,4 +1,5 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit, HttpException, HttpStatus, Optional } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { AiService } from './ai.service';
 import { AutomationService } from './automation.service';
@@ -89,11 +90,22 @@ function jidToDb(jid: string): string {
   return jid.replace('@s.whatsapp.net', '@c.us').replace('@lid', '@c.us');
 }
 
+// WhatsApp's anonymous ID (LID) stored in our phone column as "<lid>@c.us" because the
+// real number couldn't be resolved — not a dialable number. Real numbers in our markets
+// are at most 13 digits (225 + 10 for Côte d'Ivoire); LIDs are longer.
+export function isLidPhone(phone: string | null | undefined): boolean {
+  return !!phone && /^\d{14,}@c\.us$/.test(phone);
+}
+
 // Any phone format → Baileys JID (@s.whatsapp.net or @g.us)
 function toJid(phone: string): string {
   if (!phone) return phone;
   if (phone.endsWith('@g.us')) return phone;
   if (phone.endsWith('@s.whatsapp.net')) return phone;
+  if (phone.endsWith('@lid')) return phone;
+  // A contact whose real number WhatsApp never revealed is stored by LID — it's only
+  // reachable at its @lid address, not as a phone number.
+  if (isLidPhone(phone)) return phone.replace('@c.us', '@lid');
   if (phone.endsWith('@c.us')) return phone.replace('@c.us', '@s.whatsapp.net');
   return phone.replace(/\D/g, '') + '@s.whatsapp.net';
 }
@@ -118,6 +130,9 @@ interface CachedMsg {
   mediaUrl?: string | null;
   waId?: string;
   sentAt: string;
+  fromAi?: boolean;
+  /** Sent by the system (automation, order notification, AI image) — not a human reply. */
+  automated?: boolean;
 }
 
 // Messages a contact sent in a rapid burst, accumulated while we wait to see if
@@ -159,6 +174,11 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
   private pendingSendIds = new Map<string, Set<string>>();
   // Per-contact message cache: key = `userId:phone` (50 messages max)
   private msgCache = new Map<string, CachedMsg[]>();
+  // Cache keys already reloaded from wa_messages since the server started
+  private hydratedCaches = new Set<string>();
+  // IDs of messages the system sent straight through the socket (order notifications,
+  // AI images) — they echo back as "fromMe" and must not be mistaken for a human reply.
+  private systemSendIds = new Set<string>();
   // Contact display name cache: key = `userId:jid`
   private contactNames = new Map<string, string>();
   // Keep-alive timers (periodic presence update to maintain session)
@@ -192,6 +212,10 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
   // Trigger label names (case/accent-insensitive) that auto-create a draft order.
   // Short prefixes — matching uses .includes() so "livraison programmée" still matches "livraison".
   private static DRAFT_TRIGGER_LABELS = ['livraison', 'new order', 'commande', 'nouvelle commande'];
+  // WhatsApp Business label names (normalized: lowercase, no accents) that switch the AI
+  // off on a chat — removing the label switches it back on. Exact match only, so an
+  // unrelated label merely containing "ia" never mutes the AI.
+  private static AI_OFF_LABELS = ['ia off', 'ai off', 'sans ia', 'stop ia', 'ia desactivee'];
   // Grace window after connection during which label events are treated as historical and ignored
   private static LABEL_SYNC_GRACE_MS = 45_000; // 45 s — WA replays historical label events during every reconnect
   // How long a connection must hold before the reconnect backoff is considered recovered
@@ -292,12 +316,80 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
     return this.msgCache.get(`${this.waKey(userId, businessId)}:${phone}`) ?? [];
   }
 
+  // The in-memory cache is only a hot layer — wa_messages is the source of truth. A
+  // conversation not yet seen since the server started is reloaded from the DB before
+  // anything reads it, so a restart doesn't leave the AI (or the Inbox) without context.
+  private async hydrateCache(userId: string, businessId: string | null, phone: string): Promise<void> {
+    const key = `${this.waKey(userId, businessId)}:${phone}`;
+    if (this.hydratedCaches.has(key)) return;
+    const rows = await this.prisma.whatsAppMessage.findMany({
+      where: { userId, businessId, contact: { phone } },
+      orderBy: { sentAt: 'desc' },
+      take: 50,
+    }).catch(err => {
+      this.logger.warn(`Cache hydration failed [${key}]: ${err?.message}`);
+      return null;
+    });
+    if (!rows) return; // retried on the next read
+    this.hydratedCaches.add(key);
+
+    // Messages that arrived before hydration are already in the cache — merge, don't duplicate.
+    const live = this.msgCache.get(key) ?? [];
+    const liveIds = new Set(live.map(m => m.waId).filter(Boolean));
+    const fromDb: CachedMsg[] = rows
+      .filter(r => !r.waId || !liveIds.has(r.waId))
+      .map(r => ({
+        direction: r.direction === 'out' ? 'out' : 'in',
+        content: r.content,
+        mediaType: r.mediaType,
+        mediaUrl: r.mediaUrl,
+        waId: r.waId ?? undefined,
+        sentAt: r.sentAt.toISOString(),
+        fromAi: r.fromAi,
+        automated: !!r.automationId,
+      }));
+    const merged = [...fromDb, ...live].sort((a, b) => a.sentAt.localeCompare(b.sentAt)).slice(-50);
+    this.msgCache.set(key, merged);
+  }
+
+  // Fire-and-forget: a DB hiccup must never block sending or replying.
+  private persistMessage(
+    userId: string,
+    businessId: string | null,
+    contactId: string,
+    msg: CachedMsg & { quotedMsgId?: string | null },
+  ): void {
+    if (!msg.waId) return; // never left the device (send failed) — nothing to keep
+    const sentAt = new Date(msg.sentAt);
+    this.prisma.whatsAppMessage.createMany({
+      data: [{
+        userId, businessId, contactId,
+        waId: msg.waId,
+        direction: msg.direction,
+        content: msg.content,
+        mediaUrl: msg.mediaUrl ?? null,
+        mediaType: msg.mediaType ?? null,
+        quotedMsgId: msg.quotedMsgId ?? null,
+        ack: msg.direction === 'in' ? 3 : 1,
+        fromAi: msg.fromAi ?? false,
+        automationId: msg.automated ? 'system' : null,
+        sentAt,
+      }],
+      skipDuplicates: true,
+    }).catch(err => this.logger.warn(`Message persist failed [${contactId}]: ${err?.message}`));
+    this.prisma.whatsAppContact.update({
+      where: { id: contactId },
+      data: { lastMessageAt: sentAt, lastMessageText: msg.content.slice(0, 500) },
+    }).catch(() => {});
+  }
+
   // Public accessor for controller (create-draft-order)
-  getCacheForContact(
+  async getCacheForContact(
     userId: string,
     businessId: string | null,
     phone: string,
-  ): Array<{ direction: string; content: string }> {
+  ): Promise<Array<{ direction: string; content: string }>> {
+    await this.hydrateCache(userId, businessId, phone);
     return this.getCache(userId, businessId, phone).map(m => ({ direction: m.direction, content: m.content }));
   }
 
@@ -338,9 +430,16 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
 
   // Resolve a JID or LID to the real phone number (@c.us format).
   // WhatsApp v7 multi-device uses LIDs in label events instead of phone numbers.
-  private resolvePhone(userId: string, businessId: string | null, jid: string): string {
+  private resolvePhone(userId: string, businessId: string | null, jid: string, altJid?: string | null): string {
     // Already a normal phone JID
     if (jid.endsWith('@s.whatsapp.net')) return jidToDb(jid);
+    // Baileys v7 puts the real number next to the LID on the message key when WhatsApp shares it
+    if (altJid?.endsWith('@s.whatsapp.net')) {
+      const phone = jidToDb(jidNormalizedUser(altJid));
+      const lidRaw = jid.replace(/@lid$/, '').replace(/@c\.us$/, '');
+      this.lidToPhone.set(`${this.waKey(userId, businessId)}:${lidRaw}`, phone);
+      return phone;
+    }
     // Remove the suffix to get the raw ID
     const raw = jid.replace(/@c\.us$/, '').replace(/@lid$/, '').replace(/@s\.whatsapp\.net$/, '');
     // Check if it looks like a real DRC/international phone (≤13 digits)
@@ -869,7 +968,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
       for (const msg of msgs) {
         const jid = msg.key?.remoteJid;
         if (!jid || jid === 'status@broadcast' || jid.endsWith('@g.us') || jid.endsWith('@broadcast')) continue;
-        const phone = jidToDb(jid);
+        const phone = this.resolvePhone(userId, businessId, jid, msg.key?.remoteJidAlt);
         const text = extractText(msg.message) ?? '';
         if (!text) continue;
         const timestamp = Number(msg.messageTimestamp ?? Date.now() / 1000) * 1000;
@@ -936,7 +1035,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
         // Baileys structure: { type: 'add'|'remove', association: { chatId, labelId, type: 'label_chat'|'label_jid' } }
         // The add/remove flag is at data.type, NOT inside data.association.type
         const addOrRemove: string = data?.type ?? data?.association?.type ?? '';
-        if (addOrRemove !== 'add') return;
+        if (addOrRemove !== 'add' && addOrRemove !== 'remove') return;
 
         const assoc = data?.association ?? data;
         const labelId: string = assoc?.labelId ?? assoc?.label_id ?? '';
@@ -957,6 +1056,13 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
         const normalizedName = normalizeStr(labelName);
         const normalizedId   = normalizeStr(labelId);
 
+        // "IA OFF" label: on = AI silent on this chat, removed = AI back on.
+        if (WhatsAppService.AI_OFF_LABELS.includes(normalizedName)) {
+          await this.setAiFromLabel(userId, businessId, sock, chatId, addOrRemove === 'remove');
+          return;
+        }
+        if (addOrRemove !== 'add') return;
+
         const isTrigger =
           WhatsAppService.DRAFT_TRIGGER_LABELS.some(t => normalizedName.includes(t)) ||
           WhatsAppService.DRAFT_TRIGGER_LABELS.some(t => normalizedId.includes(t));
@@ -966,38 +1072,15 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
           return;
         }
 
-        // Resolve LID to real phone number (WhatsApp v7 multi-device uses LIDs in label events)
-        let phone = this.resolvePhone(userId, businessId, chatId);
-        this.logger.log(`Label handler → chatId: ${chatId}, resolved phone: ${phone}`);
-
-        // Detect if LID was not resolved (still has >13 digit number as @c.us)
-        const phoneIsLid = /^\d{13,}@c\.us$/.test(phone);
-
-        if (phoneIsLid) {
-          // Use Baileys v7 built-in LID→PN mapping (backed by auth-state DB + WA USync query)
-          try {
-            const pn: string | null = await (sock as any).signalRepository?.lidMapping?.getPNForLID(chatId);
-            if (pn) {
-              const realPhone = jidToDb(jidNormalizedUser(pn));
-              const lidRaw = chatId.replace(/@lid$/, '').replace(/@c\.us$/, '');
-              this.lidToPhone.set(`${key}:${lidRaw}`, realPhone);
-              this.logger.log(`LID resolved via signalRepository: ${chatId} → ${realPhone}`);
-              phone = realPhone;
-            } else {
-              this.logger.warn(`signalRepository.getPNForLID returned null for ${chatId}`);
-            }
-          } catch (err: any) {
-            this.logger.warn(`getPNForLID failed for ${chatId}: ${err?.message}`);
-          }
-        }
+        const phone = await this.resolveChatPhone(userId, businessId, sock, chatId);
 
         // Build message history from in-memory cache (populated by messages.upsert + messaging-history.set)
         // Also try the LID-format key — messaging-history.set caches messages under the LID remoteJid
-        let history = this.getCacheForContact(userId, businessId, phone);
+        let history = await this.getCacheForContact(userId, businessId, phone);
         if (history.length === 0) {
           const lidKey = jidToDb(chatId); // e.g. 259544957616361@c.us
           if (lidKey !== phone) {
-            history = this.getCacheForContact(userId, businessId, lidKey);
+            history = await this.getCacheForContact(userId, businessId, lidKey);
             if (history.length > 0) {
               this.logger.log(`History found under LID key ${lidKey}: ${history.length} msgs`);
             }
@@ -1024,9 +1107,11 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
         // old conversations. This one doesn't depend on connection timing at all: a
         // label applied to a conversation that hasn't had a message in a while is almost
         // certainly WhatsApp replaying old label state, not the owner acting just now.
-        const STALE_CONVERSATION_MS = 30 * 60 * 1000; // 30 min
+        // 24h, not 30 min: owners routinely label an order an hour or more after the
+        // customer's last message, and that must still create the draft.
+        const STALE_CONVERSATION_MS = 24 * 3600 * 1000;
         if (contact.lastMessageAt && Date.now() - contact.lastMessageAt.getTime() > STALE_CONVERSATION_MS) {
-          this.logger.log(`Skipping label event for ${contact.phone} — last message was ${Math.round((Date.now() - contact.lastMessageAt.getTime()) / 60000)} min ago, likely a replayed historical label`);
+          this.logger.log(`Skipping label event for ${contact.phone} — last message was ${Math.round((Date.now() - contact.lastMessageAt.getTime()) / 3600_000)} h ago, likely a replayed historical label`);
           return;
         }
 
@@ -1045,7 +1130,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
         if (!resolvedCustomerPhone) {
           resolvedCustomerPhone = normalizeDrcPhone(contact.phone) ?? null;
         }
-        if (!resolvedCustomerPhone) {
+        if (!resolvedCustomerPhone && !isLidPhone(phone)) {
           const stripped = phone.replace(/@.*$/, '');
           if (stripped && stripped.length > 0) {
             resolvedCustomerPhone = stripped;
@@ -1262,7 +1347,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
   ): Promise<void> {
     const key = this.waKey(userId, businessId);
     const jid = msg.key.remoteJid!;
-    const phone = jidToDb(jid);
+    const phone = await this.resolveChatPhone(userId, businessId, sock, jid, msg.key.remoteJidAlt);
     const text = extractText(msg.message) ?? '';
     const timestamp = Number(msg.messageTimestamp ?? Date.now() / 1000) * 1000;
 
@@ -1272,6 +1357,8 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
     }));
 
     const contact = await this.upsertContact(userId, businessId, phone, { displayName });
+    // Before this message joins the cache, so the AI sees the whole conversation even after a restart.
+    await this.hydrateCache(userId, businessId, phone);
 
     // ── Media handling ────────────────────────────────────────────────────────────
     let mediaUrl: string | null = null;
@@ -1339,6 +1426,10 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
 
     const quotedMsgId: string | null =
       (msg.message?.extendedTextMessage?.contextInfo?.stanzaId) ?? null;
+
+    this.persistMessage(userId, businessId, contact.id, {
+      direction: 'in', content, mediaType, mediaUrl, waId: msg.key.id ?? undefined, sentAt, quotedMsgId,
+    });
 
     this.emit('message', userId, businessId, {
       contact: { ...contact, unreadCount: 1 },
@@ -1479,7 +1570,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
     }
 
     const hasAgentConfig = !!aiConfig?.systemPrompt?.trim() && aiConfig.enabled;
-    const kbCount = await this.prisma.whatsAppKBEntry.count({ where: { userId, businessId, enabled: true } });
+    const kbCount = await this.prisma.whatsAppKBEntry.count({ where: { userId, businessId, enabled: true, content: { not: '' } } });
     // Quick replies are answers the owner wrote and approved — they count as knowledge
     // exactly like KB entries. Guarded: if the table is missing, the AI must not go silent.
     const quickReplyCount = await this.prisma.waQuickReply
@@ -1547,6 +1638,11 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
       await this.sendImageViaSocket(sock, jid, aiResult.imageUrl).catch(() => {});
     }
 
+    if (aiResult.unansweredQuestion) {
+      this.logUnansweredQuestion(userId, businessId, aiResult.unansweredQuestion).catch(err =>
+        this.logger.warn(`[kb] unanswered question log failed: ${err?.message}`));
+    }
+
     if (aiResult.shouldEscalate) {
       await this.prisma.whatsAppContact.update({ where: { id: batch.contactId }, data: { aiEnabled: false } });
       this.emit('contact-updated', userId, businessId, { contactId: batch.contactId, aiEnabled: false });
@@ -1596,14 +1692,19 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
     msg: WAMessage,
   ): Promise<void> {
     const jid = msg.key.remoteJid!;
-    const phone = jidToDb(jid);
+    const sock = this.sockets.get(this.waKey(userId, businessId));
+    const phone = await this.resolveChatPhone(userId, businessId, sock, jid, msg.key.remoteJidAlt);
     const text = extractText(msg.message) ?? '';
     const timestamp = Number(msg.messageTimestamp ?? Date.now() / 1000) * 1000;
     const sentAt = new Date(timestamp).toISOString();
 
     const contact = await this.upsertContact(userId, businessId, phone);
+    await this.hydrateCache(userId, businessId, phone);
     const content = text || '[message]';
-    this.addToCache(userId, businessId, phone, { direction: 'out', content, waId: msg.key.id ?? undefined, sentAt });
+    const automated = !!msg.key.id && this.systemSendIds.delete(msg.key.id);
+    const cached: CachedMsg = { direction: 'out', content, waId: msg.key.id ?? undefined, sentAt, automated };
+    this.addToCache(userId, businessId, phone, cached);
+    this.persistMessage(userId, businessId, contact.id, cached);
 
     this.emit('message', userId, businessId, {
       contact,
@@ -1686,7 +1787,11 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
     if (waId) this.getPendingSet(userId, businessId).add(waId);
 
     const sentAt = new Date().toISOString();
-    this.addToCache(userId, businessId, phone, { direction: 'out', content: text, waId: waId ?? undefined, sentAt });
+    await this.hydrateCache(userId, businessId, phone);
+    // fromAi === null = automation reply
+    const cached: CachedMsg = { direction: 'out', content: text, waId: waId ?? undefined, sentAt, fromAi: fromAi ?? false, automated: fromAi === null };
+    this.addToCache(userId, businessId, phone, cached);
+    this.persistMessage(userId, businessId, contactId, cached);
 
     this.emit('message', userId, businessId, {
       contact: { id: contactId },
@@ -1707,13 +1812,15 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async sendImageViaSocket(sock: WASocket, jid: string, imageUrl: string): Promise<void> {
+    let sent: any;
     if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
-      await sock.sendMessage(jid, { image: { url: imageUrl } });
+      sent = await sock.sendMessage(jid, { image: { url: imageUrl } });
     } else {
       const fullPath = imageUrl.startsWith('/') ? path.join(process.cwd(), imageUrl) : imageUrl;
       const buffer = fs.readFileSync(fullPath);
-      await sock.sendMessage(jid, { image: buffer });
+      sent = await sock.sendMessage(jid, { image: buffer });
     }
+    if (sent?.key?.id) this.systemSendIds.add(sent.key.id);
   }
 
   // ── Public API methods ────────────────────────────────────────────────────────
@@ -1748,6 +1855,293 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
       .update({ where: { id: contactId }, data: { aiPausedUntil } })
       .catch(() => {});
     this.emit('contact-updated', userId, businessId, { contactId, aiPausedUntil: aiPausedUntil.toISOString() });
+  }
+
+  // Multi-device (Baileys v7) often names a chat by LID instead of phone number —
+  // resolve it to the real number contacts are stored under. Falls back to the LID
+  // (as "<lid>@c.us") only when WhatsApp doesn't reveal the number at all.
+  private async resolveChatPhone(
+    userId: string,
+    businessId: string | null,
+    sock: WASocket | undefined,
+    chatId: string,
+    altJid?: string | null,
+  ): Promise<string> {
+    const key = this.waKey(userId, businessId);
+    let phone = this.resolvePhone(userId, businessId, chatId, altJid);
+
+    if (sock && isLidPhone(phone)) {
+      // Use Baileys v7 built-in LID→PN mapping (backed by auth-state DB + WA USync query)
+      const lidJid = phone.replace('@c.us', '@lid');
+      try {
+        const pn: string | null = await (sock as any).signalRepository?.lidMapping?.getPNForLID(lidJid);
+        if (pn) {
+          const realPhone = jidToDb(jidNormalizedUser(pn));
+          this.lidToPhone.set(`${key}:${lidJid.replace(/@lid$/, '')}`, realPhone);
+          this.logger.log(`LID resolved via signalRepository: ${chatId} → ${realPhone}`);
+          phone = realPhone;
+        } else {
+          this.logger.warn(`signalRepository.getPNForLID returned null for ${chatId}`);
+        }
+      } catch (err: any) {
+        this.logger.warn(`getPNForLID failed for ${chatId}: ${err?.message}`);
+      }
+    }
+    return phone;
+  }
+
+  // Contacts created before LIDs were resolved on arrival are stored under their LID.
+  // Resolves each one to its real number: renamed when that number has no contact yet,
+  // merged into the existing contact otherwise (the same person was split in two).
+  // apply=false only counts, so the owner sees what would change before anything does.
+  async repairLidContacts(
+    userId: string,
+    businessId: string | null,
+    apply: boolean,
+  ): Promise<{ total: number; renamed: number; merged: number; unresolved: number }> {
+    const key = this.waKey(userId, businessId);
+    const sock = this.sockets.get(key);
+    if (!sock || !this.connectedUsers.has(key)) {
+      throw new HttpException('WhatsApp non connecté', HttpStatus.SERVICE_UNAVAILABLE);
+    }
+    const candidates = (await this.prisma.whatsAppContact.findMany({
+      where: { userId, businessId, phone: { endsWith: '@c.us' } },
+    })).filter(c => isLidPhone(c.phone));
+
+    const report = { total: candidates.length, renamed: 0, merged: 0, unresolved: 0 };
+    for (const lidContact of candidates) {
+      const phone = await this.resolveChatPhone(userId, businessId, sock, lidContact.phone.replace('@c.us', '@lid'));
+      if (isLidPhone(phone)) { report.unresolved++; continue; }
+      const existing = await this.prisma.whatsAppContact.findFirst({ where: { userId, businessId, phone } });
+      if (existing) report.merged++; else report.renamed++;
+      if (!apply) continue;
+
+      if (existing) {
+        await this.mergeContacts(existing, lidContact);
+      } else {
+        await this.prisma.whatsAppContact.update({ where: { id: lidContact.id }, data: { phone } });
+      }
+      // Draft orders that copied the LID as the customer's phone get the real number.
+      await this.prisma.manualOrder.updateMany({
+        where: { userId, customerPhone: { in: [lidContact.phone, lidContact.phone.replace(/@.*$/, '')] } },
+        data: { customerPhone: phone.replace(/@.*$/, '') },
+      });
+      for (const p of [lidContact.phone, phone]) {
+        this.msgCache.delete(`${key}:${p}`);
+        this.hydratedCaches.delete(`${key}:${p}`);
+      }
+    }
+    this.logger.log(`[lid-repair] ${key} (${apply ? 'applied' : 'dry run'}): ${JSON.stringify(report)}`);
+    return report;
+  }
+
+  // Moves everything attached to `source` onto `target`, fills target's blank lead
+  // fields from source, then deletes source.
+  private async mergeContacts(target: any, source: any): Promise<void> {
+    const statusRank: Record<string, number> = { cold: 0, lost: 1, warm: 2, hot: 3, converted: 4 };
+    const latest = (a: Date | null, b: Date | null) => (!a ? b : !b ? a : a > b ? a : b);
+    const sourceIsNewer = !!source.lastMessageAt && (!target.lastMessageAt || source.lastMessageAt > target.lastMessageAt);
+
+    await this.prisma.$transaction(async tx => {
+      await tx.whatsAppMessage.updateMany({ where: { contactId: source.id }, data: { contactId: target.id } });
+      await tx.whatsAppNote.updateMany({ where: { contactId: source.id }, data: { contactId: target.id } });
+      await tx.whatsAppProductMention.updateMany({ where: { contactId: source.id }, data: { contactId: target.id } });
+      const tags = await tx.whatsAppContactTag.findMany({ where: { contactId: source.id } });
+      if (tags.length > 0) {
+        await tx.whatsAppContactTag.createMany({
+          data: tags.map(t => ({ contactId: target.id, tagId: t.tagId })),
+          skipDuplicates: true,
+        });
+      }
+      await tx.manualOrder.updateMany({ where: { sourceContactId: source.id }, data: { sourceContactId: target.id } });
+
+      await tx.whatsAppContact.update({
+        where: { id: target.id },
+        data: {
+          displayName: target.displayName ?? source.displayName,
+          assignedAgent: target.assignedAgent ?? source.assignedAgent,
+          source: target.source ?? source.source,
+          leadName: target.leadName ?? source.leadName,
+          leadNeed: target.leadNeed ?? source.leadNeed,
+          leadBudget: target.leadBudget ?? source.leadBudget,
+          leadCity: target.leadCity ?? source.leadCity,
+          leadUrgency: target.leadUrgency ?? source.leadUrgency,
+          leadProduct: target.leadProduct ?? source.leadProduct,
+          leadScore: Math.max(target.leadScore ?? 0, source.leadScore ?? 0),
+          leadStatus: (statusRank[source.leadStatus] ?? 0) > (statusRank[target.leadStatus] ?? 0) ? source.leadStatus : target.leadStatus,
+          // Either side switched the AI off by hand → keep it off.
+          aiEnabled: target.aiEnabled && source.aiEnabled,
+          aiPausedUntil: latest(target.aiPausedUntil, source.aiPausedUntil),
+          lastMessageAt: latest(target.lastMessageAt, source.lastMessageAt),
+          lastMessageText: sourceIsNewer ? source.lastMessageText : target.lastMessageText,
+        },
+      });
+      await tx.whatsAppContact.delete({ where: { id: source.id } });
+    });
+  }
+
+  // The "IA OFF" WhatsApp Business label, applied or removed from the phone.
+  private async setAiFromLabel(
+    userId: string,
+    businessId: string | null,
+    sock: WASocket,
+    chatId: string,
+    aiEnabled: boolean,
+  ): Promise<void> {
+    const phone = await this.resolveChatPhone(userId, businessId, sock, chatId);
+    let contact = await this.prisma.whatsAppContact.findFirst({ where: { userId, businessId, phone } });
+    if (!contact && phone !== jidToDb(chatId)) {
+      contact = await this.prisma.whatsAppContact.findFirst({ where: { userId, businessId, phone: jidToDb(chatId) } });
+    }
+    if (!contact) {
+      this.logger.log(`[ai-label] no contact for ${chatId} — ignoring`);
+      return;
+    }
+    // Switching it back on is an explicit "let the AI answer now" — lift any human-takeover pause too.
+    const data = aiEnabled ? { aiEnabled, aiPausedUntil: null } : { aiEnabled };
+    await this.prisma.whatsAppContact.update({ where: { id: contact.id }, data });
+    this.emit('contact-updated', userId, businessId, { contactId: contact.id, aiEnabled, ...(aiEnabled ? { aiPausedUntil: null } : {}) });
+    this.logger.log(`[ai-label] ${this.waKey(userId, businessId)}:${contact.phone} → AI ${aiEnabled ? 'ON' : 'OFF'}`);
+  }
+
+  // ── Knowledge base learning ──────────────────────────────────────────────────
+  // Both paths only ever create DISABLED entries: nothing reaches the AI until the
+  // owner has read it and switched it on from the Knowledge Base page.
+
+  // A customer question the AI had no answer for (rule 7) — listed for the owner to
+  // answer, once per distinct question.
+  private async logUnansweredQuestion(userId: string, businessId: string | null, question: string): Promise<void> {
+    const title = question.replace(/\s+/g, ' ').trim().slice(0, 200);
+    if (title.length < 3) return;
+    const exists = await this.prisma.whatsAppKBEntry.findFirst({
+      where: { userId, businessId, category: 'unanswered', title: { equals: title, mode: 'insensitive' } },
+      select: { id: true },
+    });
+    if (exists) return;
+    // A business that never answers them shouldn't pile up an endless backlog.
+    const open = await this.prisma.whatsAppKBEntry.count({ where: { userId, businessId, category: 'unanswered' } });
+    if (open >= 200) return;
+    await this.prisma.whatsAppKBEntry.create({
+      data: { userId, businessId, category: 'unanswered', title, content: '', enabled: false, tags: ['sans-réponse'] },
+    });
+    this.logger.log(`[kb] ${this.waKey(userId, businessId)}: unanswered question logged — "${title.slice(0, 80)}"`);
+  }
+
+  // Every night at midnight, the human replies of the past 24h (phone or Inbox) are
+  // paired with the customer messages they answer and run through the same curation as
+  // the pairing-time history import — batched, so the curation prompt is paid once per
+  // 15 pairs instead of once per reply. What's worth keeping becomes a disabled KB draft.
+  @Cron('0 0 * * *', { timeZone: 'Africa/Kinshasa' })
+  async learnFromHumanRepliesNightly(): Promise<void> {
+    const since = new Date(Date.now() - 24 * 3600_000);
+    const answered = await this.prisma.whatsAppMessage.findMany({
+      where: { direction: 'out', fromAi: false, automationId: null, sentAt: { gte: since } },
+      select: { userId: true, businessId: true, contactId: true },
+      distinct: ['contactId'],
+    });
+    const byBusiness = new Map<string, { userId: string; businessId: string | null; contactIds: string[] }>();
+    for (const a of answered) {
+      const k = this.waKey(a.userId, a.businessId);
+      if (!byBusiness.has(k)) byBusiness.set(k, { userId: a.userId, businessId: a.businessId, contactIds: [] });
+      byBusiness.get(k)!.contactIds.push(a.contactId);
+    }
+    this.logger.log(`[kb-nightly] ${byBusiness.size} business(es) with human replies in the last 24h`);
+    // One business at a time — a nightly job has no reason to burst the OpenAI quota.
+    for (const [k, b] of byBusiness) {
+      await this.learnForBusiness(b.userId, b.businessId, b.contactIds, since).catch(err =>
+        this.logger.warn(`[kb-nightly] ${k} failed: ${err?.message}`));
+    }
+  }
+
+  private async learnForBusiness(userId: string, businessId: string | null, contactIds: string[], since: Date): Promise<void> {
+    const MAX_PAIRS = 60;
+    const DAY = 24 * 3600_000;
+    const placeholder = /^\[[a-z]+\]$/i; // "[image]", "[message]"… — nothing to learn from
+    const pairs: { question: string; answer: string }[] = [];
+    const seen = new Set<string>();
+
+    for (const contactId of contactIds) {
+      if (pairs.length >= MAX_PAIRS) break;
+      // A day of margin before `since`: a reply just after midnight can answer a question from the evening before.
+      const msgs = await this.prisma.whatsAppMessage.findMany({
+        where: { contactId, sentAt: { gte: new Date(since.getTime() - DAY) } },
+        orderBy: { sentAt: 'asc' },
+        select: { direction: true, content: true, fromAi: true, automationId: true, sentAt: true },
+      });
+      const isHuman = (m: typeof msgs[number]) =>
+        m.direction === 'out' && !m.fromAi && !m.automationId && !placeholder.test(m.content);
+
+      for (let i = 0; i < msgs.length && pairs.length < MAX_PAIRS; i++) {
+        const answer = msgs[i];
+        if (!isHuman(answer) || answer.sentAt < since) continue;
+        const asked: string[] = [];
+        for (let j = i - 1; j >= 0; j--) {
+          const m = msgs[j];
+          if (m.direction === 'out') {
+            if (isHuman(m)) break; // already answered by an earlier human reply
+            continue; // the AI's (possibly wrong) attempt, or a system message — the human is correcting or completing it
+          }
+          if (answer.sentAt.getTime() - m.sentAt.getTime() > DAY) break;
+          if (placeholder.test(m.content)) continue;
+          asked.unshift(m.content);
+        }
+        const question = asked.join('\n').trim();
+        if (question.length < 5 || answer.content.trim().length < 5) continue;
+        const dedupeKey = question.toLowerCase().replace(/\s+/g, ' ');
+        if (seen.has(dedupeKey)) continue;
+        seen.add(dedupeKey);
+        pairs.push({ question: question.slice(0, 300), answer: answer.content.slice(0, 1500) });
+      }
+    }
+    if (pairs.length === 0) return;
+
+    const products = await this.prisma.product.findMany({ where: { userId, businessId }, select: { id: true, name: true } });
+    const CHUNK = 15;
+    let kept = 0;
+    for (let i = 0; i < pairs.length; i += CHUNK) {
+      const chunk = pairs.slice(i, i + CHUNK);
+      const results = await this.aiService.curateHistoryBatch(userId, businessId, chunk, products);
+      for (let j = 0; j < chunk.length; j++) {
+        const r = results[j];
+        if (!r?.keep || !r.content.trim()) continue;
+        if (await this.saveLearnedEntry(userId, businessId, chunk[j].question, r)) kept++;
+      }
+    }
+    this.logger.log(`[kb-nightly] ${this.waKey(userId, businessId)}: ${pairs.length} human repl(ies) reviewed, ${kept} kept as KB draft(s)`);
+  }
+
+  private async saveLearnedEntry(
+    userId: string,
+    businessId: string | null,
+    question: string,
+    result: { content: string; productId: string | null; productName: string | null },
+  ): Promise<boolean> {
+    const data = {
+      category: 'learned',
+      title: (result.productName ? `[${result.productName}] ` : '') + question.replace(/\s+/g, ' ').slice(0, 120),
+      content: result.content,
+      productId: result.productId,
+      enabled: false,
+      tags: result.productName ? ['réponse-humaine', result.productName] : ['réponse-humaine'],
+    };
+
+    // This exact question was flagged as unanswered by the AI — the human just answered
+    // it, so the flag turns into the draft instead of leaving both behind.
+    const flagged = await this.prisma.whatsAppKBEntry.findFirst({
+      where: { userId, businessId, category: 'unanswered', title: { equals: question.replace(/\s+/g, ' ').trim().slice(0, 200), mode: 'insensitive' } },
+      select: { id: true },
+    });
+    if (flagged) {
+      await this.prisma.whatsAppKBEntry.update({ where: { id: flagged.id }, data });
+      return true;
+    }
+    const duplicate = await this.prisma.whatsAppKBEntry.findFirst({
+      where: { userId, businessId, title: { equals: data.title, mode: 'insensitive' } },
+      select: { id: true },
+    });
+    if (duplicate) return false;
+    await this.prisma.whatsAppKBEntry.create({ data: { userId, businessId, ...data } });
+    return true;
   }
 
   // Imports a business's own website/Facebook/Instagram page as knowledge base entries.
@@ -1869,11 +2263,13 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
               : ext === '.webp' ? 'image/webp'
               : ext === '.gif' ? 'image/gif'
               : 'image/jpeg';
-            await currentSock.sendMessage(jid, { image: buffer, caption: text, mimetype });
+            const sent = await currentSock.sendMessage(jid, { image: buffer, caption: text, mimetype });
+            if (sent?.key?.id) this.systemSendIds.add(sent.key.id);
           } else {
             // No image — plain text
             this.logger.log(`notifyOrder [${key}]: sending text to ${jid}`);
-            await currentSock.sendMessage(jid, { text });
+            const sent = await currentSock.sendMessage(jid, { text });
+            if (sent?.key?.id) this.systemSendIds.add(sent.key.id);
           }
 
           resolve(true);
@@ -1924,8 +2320,9 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
           id: c.id,
           phone: c.phone,
           displayName: liveDisplayName ?? c.displayName ?? c.phone,
-          lastMessageAt: last?.sentAt ?? null,
-          lastMessageText: last?.content ?? null,
+          // Falls back to the DB copy for contacts whose cache wasn't reloaded since a restart.
+          lastMessageAt: last?.sentAt ?? c.lastMessageAt?.toISOString() ?? null,
+          lastMessageText: last?.content ?? c.lastMessageText ?? null,
           unreadCount: 0,
           isRead: true,
           isArchived: c.isArchived ?? false,
@@ -1952,6 +2349,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
       const db = await this.prisma.whatsAppContact.findFirst({ where: { id: contactId, userId, businessId } });
       if (db) phone = db.phone;
     }
+    await this.hydrateCache(userId, businessId, phone);
     const cache = this.getCache(userId, businessId, phone);
     return cache.slice(-limit).map((m, i) => ({
       id: m.waId ?? `cached-${i}`,
@@ -1963,7 +2361,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
       mediaUrl: m.mediaUrl ?? null,
       quotedMsgId: null,
       ack: m.direction === 'in' ? 3 : 2,
-      fromAi: false,
+      fromAi: m.fromAi ?? false,
       sentAt: m.sentAt,
     }));
   }
@@ -2061,8 +2459,8 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
       if (!cacheKey.startsWith(waPrefix)) continue;
       const jid = cacheKey.slice(waPrefix.length);
       if (jid.endsWith('@g.us') || jid.includes('@broadcast') || jid === 'status@broadcast') continue;
-      const phone = jidToDb(jid);
-      if (phone.endsWith('@lid')) continue;
+      const phone = this.resolvePhone(userId, businessId, jid);
+      if (isLidPhone(phone)) continue; // no real number — nothing to put in the audience
       contacts.push({ phone, displayName: name });
     }
 
@@ -2149,7 +2547,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
       const text = extractText(msg.message) ?? '';
       if (!text) continue;
       flat.push({
-        phone: jidToDb(jid),
+        phone: this.resolvePhone(userId, businessId, jid, msg.key?.remoteJidAlt),
         direction: msg.key.fromMe ? 'out' : 'in',
         content: text,
         waId: msg.key.id ?? null,

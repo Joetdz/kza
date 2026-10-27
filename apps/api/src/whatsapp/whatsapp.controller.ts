@@ -2,7 +2,7 @@ import {
   Controller, Get, Post, Patch, Delete, Body, Param, Query, Req,
   NotFoundException,
 } from '@nestjs/common';
-import { WhatsAppService } from './whatsapp.service';
+import { WhatsAppService, isLidPhone } from './whatsapp.service';
 import { AiService } from './ai.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CurrentUser, AuthUser } from '../auth/current-user.decorator';
@@ -110,6 +110,13 @@ export class WhatsAppController {
   async connect(@CurrentUser() user: AuthUser) {
     await this.wa.connectFresh(user.ownerId, this.biz(user));
     return { message: 'Connexion initialisée' };
+  }
+
+  // Contacts stored under WhatsApp's anonymous ID (LID) instead of their number —
+  // `apply: false` only counts what would change.
+  @Post('contacts/repair-lids')
+  repairLidContacts(@Body() body: { apply?: boolean }, @CurrentUser() user: AuthUser) {
+    return this.wa.repairLidContacts(user.ownerId, this.biz(user), body?.apply === true);
   }
 
   @Post('disconnect')
@@ -554,8 +561,8 @@ export class WhatsAppController {
     });
     if (!contact) throw new NotFoundException('Contact introuvable');
 
-    // Get conversation history from in-memory cache
-    const history = this.wa.getCacheForContact(user.ownerId, businessId, contact.phone);
+    // Conversation history (cache, reloaded from DB if needed)
+    const history = await this.wa.getCacheForContact(user.ownerId, businessId, contact.phone);
 
     // Load catalog then extract order details with AI
     const products = await this.prisma.product.findMany({
@@ -599,7 +606,8 @@ export class WhatsAppController {
         businessId: bizId,
         orderNumber: nextOrderNumber,
         customerName: contact.leadName ?? contact.displayName ?? 'Client WhatsApp',
-        customerPhone: contact.phone ?? null,
+        // A LID isn't a number a delivery driver can call.
+        customerPhone: contact.phone && !isLidPhone(contact.phone) ? contact.phone : null,
         city: details.city ?? contact.leadCity ?? '',
         address: details.address ?? '',
         deliveryFee: details.deliveryFeeCdf ?? 0,

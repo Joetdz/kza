@@ -1,7 +1,13 @@
 import { IsArray, IsBoolean, IsIn, IsOptional, IsString } from 'class-validator';
 
+// 'learned' = drafted from a human's manual reply; 'unanswered' = a customer question the
+// AI couldn't answer, waiting for the owner to write the answer.
+export const KB_CATEGORIES = [
+  'faq', 'product', 'policy', 'script', 'snippet', 'correction', 'website', 'social', 'history', 'learned', 'unanswered',
+];
+
 export class KbEntryDto {
-  @IsIn(['faq', 'product', 'policy', 'script', 'snippet', 'correction', 'website', 'social', 'history'])
+  @IsIn(KB_CATEGORIES)
   category: string;
 
   @IsString()
@@ -24,7 +30,7 @@ export class KbEntryDto {
 }
 
 export class UpdateKbEntryDto {
-  @IsOptional() @IsIn(['faq', 'product', 'policy', 'script', 'snippet'])
+  @IsOptional() @IsIn(KB_CATEGORIES)
   category?: string;
 
   @IsOptional() @IsString()

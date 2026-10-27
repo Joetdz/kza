@@ -30,6 +30,10 @@ export const waApi = {
   connect: () => req<void>('/whatsapp/connect', { method: 'POST' }),
   connectPairing: (phone: string) => req<void>('/whatsapp/connect-pairing', { method: 'POST', body: JSON.stringify({ phone }) }),
   disconnect: () => req<void>('/whatsapp/disconnect', { method: 'POST' }),
+  repairLids: (apply: boolean) =>
+    req<{ total: number; renamed: number; merged: number; unresolved: number }>(
+      '/whatsapp/contacts/repair-lids', { method: 'POST', body: JSON.stringify({ apply }) },
+    ),
 
   // Contacts
   getContacts: (params?: { filter?: string; search?: string; tag?: string }) => {
