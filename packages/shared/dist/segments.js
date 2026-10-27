@@ -1,0 +1,307 @@
+"use strict";
+// ─── Customer segments ───────────────────────────────────────────────────────
+// Who KZA serves, what hurts them and what KZA does about it. One source of truth
+// for the sign-up wizard (which modules to switch on, which problems we solve),
+// and later the vocabulary, dashboards and landing pages.
+//
+// A business stores its segment key in `businesses.sector`. Businesses created
+// before segments existed keep their old sector label (see LEGACY_SECTOR_SEGMENT).
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.ORG_SIZES = exports.SALES_CHANNELS = exports.OTHER_SEGMENT_KEY = exports.SEGMENTS = exports.SEGMENT_FAMILIES = exports.VALUE_PILLARS = void 0;
+exports.segmentByKey = segmentByKey;
+exports.modulesForProfile = modulesForProfile;
+exports.defaultModulesFor = defaultModulesFor;
+exports.solutionLabel = solutionLabel;
+exports.solutionStatus = solutionStatus;
+exports.segmentForSector = segmentForSector;
+exports.sectorLabel = sectorLabel;
+const modules_1 = require("./modules");
+/** KZA's promise, whatever the segment. */
+exports.VALUE_PILLARS = [
+    { title: 'Maîtriser son activité', text: 'Stocks, ventes, dépenses, clients, créances et bénéfices au même endroit.' },
+    { title: 'Vendre davantage', text: 'Une boutique en ligne, des commandes et les demandes WhatsApp gérées au même endroit.' },
+    { title: 'Gagner du temps grâce à l\'IA', text: 'Réponses aux questions répétitives, présentation des produits, commandes et rendez-vous.' },
+    { title: 'Prendre de meilleures décisions', text: 'Marges, performances, dépenses, trésorerie et opportunités de croissance.' },
+];
+exports.SEGMENT_FAMILIES = [
+    { key: 'commerce', label: 'Je vends des produits', emoji: '🛍️', hint: 'Boutique, marché, gros, réseaux sociaux' },
+    { key: 'services', label: 'Je vends des services', emoji: '🛠️', hint: 'Salon, réparation, agence, prestations' },
+    { key: 'production', label: 'Je fabrique ou je cuisine', emoji: '🍞', hint: 'Production, restaurant, agriculture' },
+    { key: 'network', label: 'Entreprise structurée', emoji: '🏢', hint: 'Plusieurs sites, livraison, B2B' },
+];
+// What answers a problem: an always-on part of KZA, a module, or something not built yet.
+const CORE_FEATURES = {
+    catalogue: 'Catalogue',
+    sales: 'Ventes',
+    expenses: 'Dépenses',
+    analytics: 'Analyses & marges',
+    clients: 'Fichier clients',
+    team: 'Équipe & permissions',
+    businesses: 'Plusieurs entreprises',
+    simple: 'Simple, gratuit pour démarrer',
+};
+const PLANNED_FEATURES = {
+    interventions: 'Suivi des interventions',
+    purchases: 'Achats & fournisseurs',
+    transfers: 'Transferts de stock',
+    b2b_pricing: 'Tarifs par client',
+};
+exports.SEGMENTS = [
+    // ── A. Commerce de produits physiques ──────────────────────────────────────
+    {
+        key: 'retail', family: 'commerce', label: 'Boutique de détail', emoji: '🏪',
+        examples: 'Vêtements, chaussures, cosmétiques, téléphones, électronique, alimentation, articles ménagers',
+        problems: [
+            { text: 'Je ne sais pas exactement combien de produits il me reste.', solvedBy: 'stock' },
+            { text: 'Mes ventes et dépenses sont dans des cahiers ou plusieurs fichiers.', solvedBy: 'sales' },
+            { text: 'J\'ai du mal à calculer mon bénéfice réel.', solvedBy: 'analytics' },
+            { text: 'J\'oublie des créances ou je suis mal les paiements.', solvedBy: 'credit' },
+            { text: 'Je ne sais pas quels produits se vendent le mieux.', solvedBy: 'analytics' },
+            { text: 'Je perds du temps à répondre aux mêmes questions sur WhatsApp.', solvedBy: 'whatsapp' },
+        ],
+        value: 'Stock, ventes, dépenses et marges suivis au quotidien, un catalogue en ligne et une IA qui répond à vos clients sur WhatsApp.',
+        modules: ['stock', 'variants', 'whatsapp', 'online_store', 'credit', 'goals'],
+    },
+    {
+        key: 'wholesale', family: 'commerce', label: 'Grossiste ou distributeur', emoji: '📦',
+        examples: 'Importateurs, distributeurs de marques, semi-grossistes, fournisseurs de détaillants',
+        problems: [
+            { text: 'Je gère de grandes quantités et beaucoup de références.', solvedBy: 'stock' },
+            { text: 'Il y a des erreurs dans les commandes et les livraisons.', solvedBy: 'logistics' },
+            { text: 'Mes prix changent selon les quantités achetées.', solvedBy: 'invoices' },
+            { text: 'Mes revendeurs me doivent beaucoup d\'argent.', solvedBy: 'credit' },
+            { text: 'Je ne connais pas ma rentabilité par client ou par produit.', solvedBy: 'analytics' },
+            { text: 'Mon stock est dispersé dans plusieurs dépôts.', solvedBy: 'logistics' },
+        ],
+        value: 'Stock par dépôt, prix dégressifs, factures, suivi des créances revendeurs et analyses par client et par produit.',
+        modules: ['stock', 'variants', 'invoices', 'credit', 'logistics', 'whatsapp', 'goals'],
+    },
+    {
+        key: 'market', family: 'commerce', label: 'Marché ou commerce de proximité', emoji: '🧺',
+        examples: 'Produits frais, boutique de quartier, vendeurs ambulants, petits commerçants',
+        problems: [
+            { text: 'J\'ai beaucoup de petites ventes chaque jour, difficiles à suivre.', solvedBy: 'sales' },
+            { text: 'Mon argent personnel et celui du commerce se mélangent.', solvedBy: 'expenses' },
+            { text: 'Je ne connais ni mon stock restant ni mes bénéfices.', solvedBy: 'stock' },
+            { text: 'Je ne vois pas bien ce que me doivent mes clients et ce que je dois.', solvedBy: 'credit' },
+            { text: 'J\'ai peur qu\'un logiciel soit trop compliqué ou trop cher.', solvedBy: 'simple' },
+        ],
+        value: 'Une vente enregistrée en quelques secondes depuis le téléphone, la caisse du jour, le stock et les dettes clients, à un coût adapté.',
+        modules: ['stock', 'credit'],
+    },
+    {
+        key: 'social_seller', family: 'commerce', label: 'Vente sur WhatsApp et réseaux sociaux', emoji: '📲',
+        examples: 'WhatsApp, Facebook, Instagram, TikTok, boutique en ligne, avec ou sans magasin',
+        problems: [
+            { text: 'Mes commandes sont éparpillées entre messages privés et appels.', solvedBy: 'whatsapp' },
+            { text: 'Des prospects sont oubliés ou n\'ont jamais de réponse.', solvedBy: 'whatsapp' },
+            { text: 'On me demande sans arrêt les prix, tailles, couleurs et caractéristiques.', solvedBy: 'online_store' },
+            { text: 'Des commandes sont mal notées ou livrées avec des erreurs.', solvedBy: 'logistics' },
+            { text: 'Si je ne suis pas disponible, personne ne répond aux clients.', solvedBy: 'whatsapp' },
+        ],
+        value: 'Un catalogue et une boutique en ligne, un CRM WhatsApp qui suit chaque prospect et une IA qui répond même quand vous êtes occupé.',
+        modules: ['whatsapp', 'online_store', 'stock', 'variants', 'logistics'],
+    },
+    // ── B. Prestataires de services ────────────────────────────────────────────
+    {
+        key: 'beauty', family: 'services', label: 'Beauté et bien-être', emoji: '💇',
+        examples: 'Coiffure, barbier, institut de beauté, maquillage, onglerie, spa',
+        problems: [
+            { text: 'Mes rendez-vous sont mal organisés, avec des doubles réservations.', solvedBy: 'agenda' },
+            { text: 'J\'ai du mal à gérer les horaires, les prestations et leur durée.', solvedBy: 'agenda' },
+            { text: 'Mes clients oublient leurs rendez-vous.', solvedBy: 'agenda' },
+            { text: 'Je ne connais pas mes revenus par prestation.', solvedBy: 'analytics' },
+            { text: 'J\'ai du mal à fidéliser mes clients.', solvedBy: 'clients' },
+        ],
+        value: 'Vos prestations, un agenda sans double réservation, des rendez-vous pris par l\'IA sur WhatsApp, des rappels automatiques et le suivi de vos revenus.',
+        modules: ['agenda', 'whatsapp', 'goals'],
+    },
+    {
+        key: 'repair', family: 'services', label: 'Réparation et maintenance', emoji: '🔧',
+        examples: 'Téléphones, informatique, électroménager, garage, maintenance technique',
+        problems: [
+            { text: 'J\'ai du mal à suivre les demandes, les clients et les travaux en cours.', solvedBy: 'interventions' },
+            { text: 'Mes pièces détachées sont mal suivies.', solvedBy: 'stock' },
+            { text: 'Le coût de mes interventions et mes marges ne sont pas clairs.', solvedBy: 'analytics' },
+            { text: 'Mes clients se plaignent des retards et du manque d\'information.', solvedBy: 'whatsapp' },
+            { text: 'L\'historique des réparations est difficile à retrouver.', solvedBy: 'interventions' },
+        ],
+        value: 'Pièces en stock, rendez-vous, devis et factures, clients informés sur WhatsApp et marges claires. Le suivi détaillé des interventions arrive bientôt.',
+        modules: ['stock', 'agenda', 'invoices', 'credit', 'whatsapp'],
+    },
+    {
+        key: 'pro_services', family: 'services', label: 'Prestataire professionnel ou créatif', emoji: '🎨',
+        examples: 'Agence de communication, photographe, designer, consultant, développeur, formateur, imprimeur',
+        problems: [
+            { text: 'Mes devis, factures et paiements sont difficiles à suivre.', solvedBy: 'invoices' },
+            { text: 'Mes revenus sont irréguliers et mes charges mal contrôlées.', solvedBy: 'expenses' },
+            { text: 'J\'ai du mal à suivre mes prospects et mes clients réguliers.', solvedBy: 'whatsapp' },
+            { text: 'Je ne connais pas la rentabilité de chaque prestation.', solvedBy: 'analytics' },
+        ],
+        value: 'Vos services, devis et factures, suivi des paiements et des prospects, et des indicateurs pour piloter vos revenus.',
+        modules: ['invoices', 'credit', 'whatsapp', 'goals', 'agenda'],
+    },
+    {
+        key: 'home_services', family: 'services', label: 'Services à domicile ou aux entreprises', emoji: '🧹',
+        examples: 'Nettoyage, installation, entretien, événementiel, services aux entreprises',
+        problems: [
+            { text: 'Les demandes de mes clients sont difficiles à organiser.', solvedBy: 'whatsapp' },
+            { text: 'Je fais mes devis et factures à la main.', solvedBy: 'invoices' },
+            { text: 'Je suis mal mes dépenses et mes équipes.', solvedBy: 'expenses' },
+            { text: 'Je perds de vue les prestations à faire et les paiements attendus.', solvedBy: 'agenda' },
+        ],
+        value: 'Demandes centralisées, devis et factures, agenda des prestations et suivi financier. La planification des équipes viendra ensuite.',
+        modules: ['agenda', 'invoices', 'credit', 'whatsapp'],
+    },
+    // ── C. Production, transformation et métiers de bouche ─────────────────────
+    {
+        key: 'producer', family: 'production', label: 'Production et transformation', emoji: '🏭',
+        examples: 'Boulangerie, pâtisserie, cosmétiques, atelier de confection, petite unité agroalimentaire',
+        problems: [
+            { text: 'Je suis mal mes matières premières et mes produits finis.', solvedBy: 'stock' },
+            { text: 'Je calcule mal mon coût de production.', solvedBy: 'recipes' },
+            { text: 'Je perds des matières premières.', solvedBy: 'lots' },
+            { text: 'Je n\'arrive pas à relier mes achats, ma production et mes ventes.', solvedBy: 'purchases' },
+            { text: 'Je ne vois pas ma marge par produit.', solvedBy: 'analytics' },
+        ],
+        value: 'Stock, ventes, dépenses et rentabilité par produit. Les recettes et le coût de revient arrivent bientôt.',
+        modules: ['stock', 'recipes', 'lots', 'whatsapp', 'online_store', 'goals'],
+    },
+    {
+        key: 'restaurant', family: 'production', label: 'Restaurant ou traiteur', emoji: '🍽️',
+        examples: 'Restaurant, snack, fast-food, café, bar, traiteur, restauration collective',
+        problems: [
+            { text: 'Je gaspille et je perds des produits périssables.', solvedBy: 'lots' },
+            { text: 'J\'ai du mal à maîtriser le coût des ingrédients.', solvedBy: 'recipes' },
+            { text: 'Commandes et livraisons sont mal coordonnées.', solvedBy: 'logistics' },
+            { text: 'Je ne connais pas la marge de chaque plat.', solvedBy: 'recipes' },
+            { text: 'Je tombe en rupture pendant le service.', solvedBy: 'stock' },
+        ],
+        value: 'Ventes, commandes, livraisons, stock et dépenses suivis. Les recettes et les dates de péremption arrivent bientôt.',
+        modules: ['stock', 'recipes', 'lots', 'logistics', 'whatsapp', 'agenda'],
+    },
+    {
+        key: 'agriculture', family: 'production', label: 'Agriculture et commerce agricole', emoji: '🌾',
+        examples: 'Producteurs, collecteurs, coopératives, céréales, intrants agricoles',
+        problems: [
+            { text: 'Les prix varient et mes marges sont difficiles à suivre.', solvedBy: 'analytics' },
+            { text: 'J\'ai des pertes, des produits abîmés et des écarts de quantité.', solvedBy: 'stock' },
+            { text: 'Je n\'arrive pas à tracer mes achats et mes ventes.', solvedBy: 'lots' },
+            { text: 'J\'ai plusieurs lieux de stockage et des clients professionnels.', solvedBy: 'logistics' },
+        ],
+        value: 'Stock par lieu de stockage, ventes, clients et marges. Le suivi par lot et par récolte arrive bientôt.',
+        modules: ['stock', 'lots', 'logistics', 'credit', 'invoices', 'whatsapp'],
+    },
+    // ── D. PME structurées et opérations multi-sites ───────────────────────────
+    {
+        key: 'multi_site', family: 'network', label: 'Plusieurs magasins ou dépôts', emoji: '🏬',
+        examples: 'Chaîne de boutiques, enseigne locale, succursales, dépôts',
+        problems: [
+            { text: 'Je n\'ai pas de vue d\'ensemble sur mes différents sites.', solvedBy: 'businesses' },
+            { text: 'Il y a des écarts de stock entre les sites.', solvedBy: 'logistics' },
+            { text: 'Je n\'arrive pas à comparer mes équipes et mes points de vente.', solvedBy: 'analytics' },
+            { text: 'Je contrôle mal qui voit les chiffres financiers.', solvedBy: 'team' },
+            { text: 'Les transferts de stock entre sites sont difficiles à suivre.', solvedBy: 'transfers' },
+        ],
+        value: 'Plusieurs espaces de travail, stock par emplacement, équipe et permissions, et analyses par point de vente.',
+        modules: ['stock', 'logistics', 'goals', 'whatsapp', 'credit', 'invoices'],
+    },
+    {
+        key: 'delivery', family: 'network', label: 'Livraison et logistique', emoji: '🛵',
+        examples: 'Livreurs indépendants, petite société de transport, livraison du dernier kilomètre',
+        problems: [
+            { text: 'J\'ai du mal à attribuer les commandes aux livreurs.', solvedBy: 'logistics' },
+            { text: 'Je ne vois pas où en sont les livraisons.', solvedBy: 'logistics' },
+            { text: 'Retours, paiements à la livraison et incidents sont difficiles à gérer.', solvedBy: 'logistics' },
+            { text: 'Vendeurs, clients et transporteurs se coordonnent mal.', solvedBy: 'whatsapp' },
+        ],
+        value: 'Commandes, portail partenaire avec les statuts de livraison et paiements à la livraison suivis.',
+        modules: ['logistics', 'whatsapp'],
+    },
+    {
+        key: 'b2b', family: 'network', label: 'Vente aux entreprises (B2B)', emoji: '🤝',
+        examples: 'Fournitures de bureau, matériel informatique, équipements, produits professionnels',
+        problems: [
+            { text: 'Ma prospection et mes relances ne sont pas organisées.', solvedBy: 'whatsapp' },
+            { text: 'Mes devis et commandes sont complexes.', solvedBy: 'invoices' },
+            { text: 'Mes conditions commerciales changent selon les clients.', solvedBy: 'b2b_pricing' },
+            { text: 'Mes clients paient en retard.', solvedBy: 'credit' },
+            { text: 'Je vois mal les performances de mes commerciaux.', solvedBy: 'analytics' },
+        ],
+        value: 'Historique clients, catalogue et tarifs, devis et factures, suivi des créances et rapports commerciaux.',
+        modules: ['invoices', 'credit', 'stock', 'whatsapp', 'goals'],
+    },
+];
+/** For activities that fit no segment: everything that exists, nothing hidden. */
+exports.OTHER_SEGMENT_KEY = 'other';
+// ─── How they work — adjusts the segment's modules ──────────────────────────
+exports.SALES_CHANNELS = [
+    { key: 'shop', label: 'En magasin ou au marché', adds: [] },
+    { key: 'social', label: 'Sur WhatsApp et les réseaux', adds: ['whatsapp'] },
+    { key: 'online', label: 'Sur une boutique en ligne', adds: ['online_store', 'logistics'] },
+    { key: 'b2b', label: 'À d\'autres entreprises', adds: ['invoices', 'credit'] },
+];
+exports.ORG_SIZES = [
+    { key: 'solo', label: 'Je travaille seul', adds: [] },
+    { key: 'team', label: 'Avec une petite équipe', adds: [] },
+    { key: 'multi', label: 'Plusieurs points de vente', adds: ['logistics', 'goals'] },
+];
+function segmentByKey(key) {
+    return exports.SEGMENTS.find(s => s.key === key);
+}
+/** Modules to start with, from the segment and the way the business works. */
+function modulesForProfile(segmentKey, work) {
+    const segment = segmentByKey(segmentKey);
+    if (!segment)
+        return [...modules_1.AVAILABLE_MODULE_KEYS];
+    const set = new Set(segment.modules);
+    for (const c of work?.channels ?? [])
+        exports.SALES_CHANNELS.find(x => x.key === c)?.adds.forEach(m => set.add(m));
+    exports.ORG_SIZES.find(x => x.key === work?.org)?.adds.forEach(m => set.add(m));
+    if (work?.sellsOnCredit === true)
+        set.add('credit');
+    if (work?.sellsOnCredit === false)
+        set.delete('credit');
+    return modules_1.ALL_MODULE_KEYS.filter(m => set.has(m));
+}
+/** Modules for a new business when the client sent none: segment key or legacy sector label. */
+function defaultModulesFor(sector) {
+    return segmentByKey(sector) ? modulesForProfile(sector) : (0, modules_1.presetModulesForSector)(sector);
+}
+function solutionLabel(key) {
+    return CORE_FEATURES[key]
+        ?? PLANNED_FEATURES[key]
+        ?? modules_1.BUSINESS_MODULES.find(m => m.key === key)?.label
+        ?? key;
+}
+/** Whether this business, with these modules, has what solves the problem. */
+function solutionStatus(key, modules) {
+    if (key in CORE_FEATURES)
+        return 'on';
+    const mod = modules_1.BUSINESS_MODULES.find(m => m.key === key);
+    if (!mod || !mod.available)
+        return 'soon';
+    return modules.includes(key) ? 'on' : 'off';
+}
+// ─── Businesses created before segments ─────────────────────────────────────
+/** Old sector labels that map cleanly onto a segment. The others stay as they are. */
+const LEGACY_SECTOR_SEGMENT = {
+    'Commerce général': 'retail',
+    'Commerce de gros': 'wholesale',
+    'Alimentation': 'retail',
+    'Mode & Vêtements': 'retail',
+    'Électronique': 'retail',
+    'Restauration': 'restaurant',
+    'Agriculture': 'agriculture',
+};
+function segmentForSector(sector) {
+    return segmentByKey(sector) ?? segmentByKey(LEGACY_SECTOR_SEGMENT[sector ?? '']);
+}
+/** Human label for whatever is stored in `sector` (segment key, legacy label or 'other'). */
+function sectorLabel(sector) {
+    if (!sector)
+        return '';
+    if (sector === exports.OTHER_SEGMENT_KEY)
+        return 'Autre activité';
+    return segmentByKey(sector)?.label ?? sector;
+}

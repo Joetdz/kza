@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { sectorLabel } from '@kza/shared';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   AreaChart, Area, Cell, PieChart, Pie, Legend,
@@ -1365,7 +1366,7 @@ function TabBusinesses() {
     const rows = filtered.map(b => [
       b.name,
       b.ownerEmail ?? '',
-      b.sector ?? '',
+      sectorLabel(b.sector),
       b.city ?? '',
       b.country,
       b.currency,
@@ -1448,7 +1449,7 @@ function TabBusinesses() {
                     <td className="px-4 py-3 text-xs text-gray-500">{b.ownerEmail ?? '—'}</td>
                     <td className="px-4 py-3">
                       {b.sector
-                        ? <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 text-xs whitespace-nowrap">{b.sector}</span>
+                        ? <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 text-xs whitespace-nowrap">{sectorLabel(b.sector)}</span>
                         : <span className="text-gray-300 text-xs">—</span>}
                     </td>
                     <td className="px-4 py-3 text-xs text-gray-600 whitespace-nowrap">{b.city ?? '—'}</td>

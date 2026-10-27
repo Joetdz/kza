@@ -1,10 +1,13 @@
 import { useState, useRef } from 'react';
-import { X, Building2, Phone, Globe, DollarSign, Loader2, MapPin, Image, Upload, ArrowRight, ArrowLeft } from 'lucide-react';
+import { X, Building2, Phone, Globe, DollarSign, Loader2, MapPin, Image, Upload, ArrowRight, ArrowLeft, Check, Clock } from 'lucide-react';
 import { ScrollLock } from './ui/ScrollLock';
 import { useStore, type BusinessRecord } from '../store/useStore';
 import { uploadApi } from '../api';
 import {
-  BUSINESS_SECTORS, BUSINESS_MODULES, effectiveModules, presetModulesForSector, type BusinessModuleKey,
+  BUSINESS_MODULES, effectiveModules, defaultModulesFor, type BusinessModuleKey,
+  SEGMENTS, SEGMENT_FAMILIES, SALES_CHANNELS, ORG_SIZES, OTHER_SEGMENT_KEY,
+  segmentByKey, sectorLabel, modulesForProfile, solutionLabel, solutionStatus,
+  type SegmentFamilyKey, type WorkProfile,
 } from '@kza/shared';
 
 const COUNTRIES = [
@@ -43,9 +46,7 @@ const CURRENCIES = [
   { code: 'MAD', label: 'Dirham marocain (MAD)' },
 ];
 
-const SECTORS = BUSINESS_SECTORS;
-
-const QUIZ_STEPS = 4;
+const QUIZ_STEPS = 6;
 
 interface Props {
   business?: BusinessRecord;
@@ -68,10 +69,12 @@ export function BusinessModal({ business, onClose, isFirstBusiness = false }: Pr
     logoUrl:        business?.logoUrl        ?? '',
     isDefault:      business?.isDefault      ?? false,
     // A business from before modules existed has none recorded — show what it actually has.
-    modules:        business ? [...effectiveModules(business.modules)] as string[] : presetModulesForSector(''),
+    modules:        business ? [...effectiveModules(business.modules)] as string[] : defaultModulesFor(''),
   });
 
   const [step, setStep] = useState(1);
+  const [family, setFamily] = useState<SegmentFamilyKey | null>(null);
+  const [work, setWork] = useState<WorkProfile>({ channels: [], org: null, sellsOnCredit: null });
   const [saving, setSaving] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [error, setError] = useState('');
@@ -80,7 +83,7 @@ export function BusinessModal({ business, onClose, isFirstBusiness = false }: Pr
     ...f,
     modules: f.modules.includes(key) ? f.modules.filter(m => m !== key) : [...f.modules, key],
   }));
-  const sectorPreset = presetModulesForSector(form.sector);
+  const sectorPreset = defaultModulesFor(form.sector);
   const matchesPreset = sectorPreset.length === form.modules.length && sectorPreset.every(m => form.modules.includes(m));
 
   const set = (field: 'name' | 'sector' | 'country' | 'currency' | 'whatsappPhone' | 'phone' | 'city' | 'logoUrl') => (
@@ -94,6 +97,9 @@ export function BusinessModal({ business, onClose, isFirstBusiness = false }: Pr
 
   const next = () => {
     if (step === 1 && !form.name.trim()) { setError('Le nom est requis.'); return; }
+    if (step === 5 && !form.whatsappPhone.trim()) { setError('Le numéro WhatsApp est requis.'); return; }
+    // Leaving the "how do you work" step: the answers decide which modules start switched on.
+    if (step === 4) setForm(f => ({ ...f, modules: modulesForProfile(f.sector, work) }));
     setError('');
     setStep(s => Math.min(s + 1, QUIZ_STEPS));
   };
@@ -181,7 +187,16 @@ export function BusinessModal({ business, onClose, isFirstBusiness = false }: Pr
               <label className="block text-xs font-semibold text-gray-700 mb-1.5">Secteur d'activité</label>
               <select value={form.sector} onChange={set('sector')} className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
                 <option value="">-- Choisir --</option>
-                {SECTORS.map(s => <option key={s.label} value={s.label}>{s.emoji} {s.label}</option>)}
+                {/* A business from before segments keeps its old label until it picks one */}
+                {form.sector && form.sector !== OTHER_SEGMENT_KEY && !segmentByKey(form.sector) && (
+                  <option value={form.sector}>{form.sector}</option>
+                )}
+                {SEGMENT_FAMILIES.map(fam => (
+                  <optgroup key={fam.key} label={fam.label}>
+                    {SEGMENTS.filter(s => s.family === fam.key).map(s => <option key={s.key} value={s.key}>{s.emoji} {s.label}</option>)}
+                  </optgroup>
+                ))}
+                <option value={OTHER_SEGMENT_KEY}>✨ Autre activité</option>
               </select>
             </div>
 
@@ -224,7 +239,7 @@ export function BusinessModal({ business, onClose, isFirstBusiness = false }: Pr
                 {form.sector && !matchesPreset && (
                   <button type="button" onClick={() => setForm(f => ({ ...f, modules: sectorPreset }))}
                     className="text-[11px] font-medium text-indigo-600 hover:text-indigo-700">
-                    Recommandés pour « {form.sector} »
+                    Recommandés pour « {sectorLabel(form.sector)} »
                   </button>
                 )}
               </div>
@@ -276,13 +291,32 @@ export function BusinessModal({ business, onClose, isFirstBusiness = false }: Pr
   }
 
   // ─── CREATE MODE — quiz ──────────────────────────────────────────────────────
+  const segment = segmentByKey(form.sector);
+  const familySegments = SEGMENTS.filter(s => s.family === family);
+  const chipCls = (on: boolean) => [
+    'px-3 py-2 rounded-xl border-2 text-xs font-medium transition-all text-left',
+    on ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-gray-100 hover:border-indigo-200 text-gray-600',
+  ].join(' ');
+
+  const pickSegment = (key: string) => {
+    setForm(f => ({ ...f, sector: key }));
+    setError('');
+    setStep(4);
+  };
+
+  const back = () => {
+    // "Autre activité" skips the segment list, so going back skips it too.
+    if (step === 4 && !segment) { setError(''); setStep(2); return; }
+    prev();
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
       <ScrollLock />
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[92vh] flex flex-col overflow-hidden">
 
         {/* Progress bar */}
-        <div className="h-1 bg-gray-100">
+        <div className="h-1 bg-gray-100 shrink-0">
           <div
             className="h-full bg-indigo-500 transition-all duration-500 ease-out"
             style={{ width: `${(step / QUIZ_STEPS) * 100}%` }}
@@ -290,9 +324,9 @@ export function BusinessModal({ business, onClose, isFirstBusiness = false }: Pr
         </div>
 
         {/* Top nav */}
-        <div className="flex items-center justify-between px-4 pt-4">
+        <div className="flex items-center justify-between px-4 pt-4 shrink-0">
           <button
-            onClick={prev}
+            onClick={back}
             disabled={step === 1}
             className="p-2 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors disabled:invisible"
           >
@@ -305,6 +339,8 @@ export function BusinessModal({ business, onClose, isFirstBusiness = false }: Pr
             </button>
           ) : <div className="w-9" />}
         </div>
+
+        <div className="overflow-y-auto">
 
         {/* ── Step 1: Nom ── */}
         {step === 1 && (
@@ -331,70 +367,102 @@ export function BusinessModal({ business, onClose, isFirstBusiness = false }: Pr
           </div>
         )}
 
-        {/* ── Step 2: Secteur ── */}
+        {/* ── Step 2: Famille d'activité ── */}
         {step === 2 && (
           <div className="px-6 pt-5 pb-6 flex flex-col gap-4">
             <div>
-              <h2 className="text-xl font-bold text-gray-900">Dans quel secteur êtes-vous ?</h2>
-              <p className="text-xs text-gray-400 mt-1">KZA active les outils adaptés à votre secteur. Vous pourrez les changer à tout moment.</p>
+              <h2 className="text-xl font-bold text-gray-900">Que fait votre entreprise ?</h2>
+              <p className="text-xs text-gray-400 mt-1">KZA s'adapte à votre activité. Vous pourrez tout changer plus tard.</p>
             </div>
-            <div className="grid grid-cols-3 gap-2 max-h-60 overflow-y-auto pr-0.5">
-              {SECTORS.map(s => (
+            <div className="grid grid-cols-2 gap-2">
+              {SEGMENT_FAMILIES.map(fam => (
                 <button
-                  key={s.label}
+                  key={fam.key}
                   type="button"
-                  onClick={() => { setForm(f => ({ ...f, sector: s.label, modules: presetModulesForSector(s.label) })); next(); }}
-                  className={[
-                    'flex flex-col items-center gap-1.5 px-1 py-3 rounded-xl border-2 text-[11px] text-center font-medium transition-all leading-tight',
-                    form.sector === s.label
-                      ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
-                      : 'border-gray-100 hover:border-indigo-200 hover:bg-indigo-50/40 text-gray-600',
-                  ].join(' ')}
+                  onClick={() => { setFamily(fam.key); setStep(3); }}
+                  className={`flex flex-col items-start gap-1.5 p-3 rounded-xl border-2 text-left transition-all ${
+                    family === fam.key ? 'border-indigo-500 bg-indigo-50' : 'border-gray-100 hover:border-indigo-200 hover:bg-indigo-50/40'
+                  }`}
                 >
-                  <span className="text-xl leading-none">{s.emoji}</span>
-                  <span>{s.label}</span>
+                  <span className="text-2xl leading-none">{fam.emoji}</span>
+                  <span className="text-sm font-semibold text-gray-800 leading-tight">{fam.label}</span>
+                  <span className="text-[11px] text-gray-400 leading-snug">{fam.hint}</span>
                 </button>
               ))}
             </div>
             <button
               type="button"
-              onClick={next}
+              onClick={() => { setFamily(null); pickSegment(OTHER_SEGMENT_KEY); }}
               className="text-xs text-gray-400 hover:text-gray-600 underline self-center transition-colors"
             >
-              Passer cette étape
+              Mon activité n'est pas dans la liste
             </button>
           </div>
         )}
 
-        {/* ── Step 3: Localisation + Devise ── */}
+        {/* ── Step 3: Segment précis ── */}
         {step === 3 && (
-          <div className="px-6 pt-5 pb-8 flex flex-col gap-4">
-            <h2 className="text-xl font-bold text-gray-900">Où êtes-vous basé ?</h2>
+          <div className="px-6 pt-5 pb-6 flex flex-col gap-3">
+            <h2 className="text-xl font-bold text-gray-900">Laquelle vous ressemble le plus ?</h2>
+            {familySegments.map(s => (
+              <button
+                key={s.key}
+                type="button"
+                onClick={() => pickSegment(s.key)}
+                className={`flex items-start gap-3 p-3 rounded-xl border-2 text-left transition-all ${
+                  form.sector === s.key ? 'border-indigo-500 bg-indigo-50' : 'border-gray-100 hover:border-indigo-200 hover:bg-indigo-50/40'
+                }`}
+              >
+                <span className="text-2xl leading-none mt-0.5">{s.emoji}</span>
+                <span className="min-w-0">
+                  <span className="block text-sm font-semibold text-gray-800">{s.label}</span>
+                  <span className="block text-[11px] text-gray-400 leading-snug mt-0.5">{s.examples}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* ── Step 4: Façon de travailler ── */}
+        {step === 4 && (
+          <div className="px-6 pt-5 pb-8 flex flex-col gap-5">
+            <h2 className="text-xl font-bold text-gray-900">Comment travaillez-vous ?</h2>
 
             <div>
-              <label className="block text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Pays</label>
-              <select value={form.country} onChange={e => handleCountryChange(e.target.value)} className={inputCls}>
-                {COUNTRIES.map(c => <option key={c.code} value={c.code}>{c.flag}  {c.label}</option>)}
-              </select>
+              <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Où vendez-vous ? (plusieurs choix)</p>
+              <div className="grid grid-cols-2 gap-2">
+                {SALES_CHANNELS.map(c => {
+                  const on = work.channels.includes(c.key);
+                  return (
+                    <button key={c.key} type="button" className={chipCls(on)}
+                      onClick={() => setWork(w => ({ ...w, channels: on ? w.channels.filter(x => x !== c.key) : [...w.channels, c.key] }))}>
+                      {c.label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             <div>
-              <label className="block text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Ville (optionnel)</label>
-              <input
-                type="text"
-                value={form.city}
-                onChange={set('city')}
-                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); next(); } }}
-                placeholder="Kinshasa, Lubumbashi…"
-                className={inputCls}
-              />
+              <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Votre organisation</p>
+              <div className="grid grid-cols-3 gap-2">
+                {ORG_SIZES.map(o => (
+                  <button key={o.key} type="button" className={chipCls(work.org === o.key)}
+                    onClick={() => setWork(w => ({ ...w, org: o.key }))}>
+                    {o.label}
+                  </button>
+                ))}
+              </div>
             </div>
 
             <div>
-              <label className="block text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Devise</label>
-              <select value={form.currency} onChange={set('currency')} className={inputCls}>
-                {CURRENCIES.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}
-              </select>
+              <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Vos clients paient-ils parfois plus tard ?</p>
+              <div className="grid grid-cols-2 gap-2">
+                <button type="button" className={chipCls(work.sellsOnCredit === true)}
+                  onClick={() => setWork(w => ({ ...w, sellsOnCredit: true }))}>Oui, je fais crédit</button>
+                <button type="button" className={chipCls(work.sellsOnCredit === false)}
+                  onClick={() => setWork(w => ({ ...w, sellsOnCredit: false }))}>Non, toujours comptant</button>
+              </div>
             </div>
 
             <button onClick={next} className={primaryCls}>
@@ -403,34 +471,48 @@ export function BusinessModal({ business, onClose, isFirstBusiness = false }: Pr
           </div>
         )}
 
-        {/* ── Step 4: WhatsApp + Logo + Créer ── */}
-        {step === 4 && (
-          <form onSubmit={handleSubmit} className="px-6 pt-5 pb-8 flex flex-col gap-4">
-            <h2 className="text-xl font-bold text-gray-900">Votre numéro WhatsApp Business</h2>
+        {/* ── Step 5: Coordonnées ── */}
+        {step === 5 && (
+          <div className="px-6 pt-5 pb-8 flex flex-col gap-4">
+            <h2 className="text-xl font-bold text-gray-900">Vos coordonnées</h2>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Pays</label>
+                <select value={form.country} onChange={e => handleCountryChange(e.target.value)} className={inputCls}>
+                  {COUNTRIES.map(c => <option key={c.code} value={c.code}>{c.flag}  {c.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Devise</label>
+                <select value={form.currency} onChange={set('currency')} className={inputCls}>
+                  {CURRENCIES.map(c => <option key={c.code} value={c.code}>{c.code}</option>)}
+                </select>
+              </div>
+            </div>
 
             <div>
+              <label className="block text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Ville (optionnel)</label>
+              <input type="text" value={form.city} onChange={set('city')} placeholder="Kinshasa, Lubumbashi…" className={inputCls} />
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Numéro WhatsApp Business</label>
               <input
                 type="tel"
                 value={form.whatsappPhone}
                 onChange={set('whatsappPhone')}
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); next(); } }}
                 placeholder="+243 81 234 5678"
                 className={inputCls}
-                autoFocus
-                required
               />
-              <p className="text-[11px] text-gray-400 mt-1.5">Utilisé pour connecter KZA à votre WhatsApp Business</p>
+              <p className="text-[11px] text-gray-400 mt-1.5">Utilisé pour connecter KZA à votre WhatsApp</p>
             </div>
 
             <div>
               <label className="block text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Téléphone de contact (optionnel)</label>
-              <input
-                type="tel"
-                value={form.phone}
-                onChange={set('phone')}
-                placeholder="+243 81 234 5678"
-                className={inputCls}
-              />
-              <p className="text-[11px] text-gray-400 mt-1">Affiché sur les factures (peut différer du WA)</p>
+              <input type="tel" value={form.phone} onChange={set('phone')} placeholder="+243 81 234 5678" className={inputCls} />
+              <p className="text-[11px] text-gray-400 mt-1">Affiché sur les factures (peut différer du WhatsApp)</p>
             </div>
 
             {/* Logo optionnel */}
@@ -459,12 +541,80 @@ export function BusinessModal({ business, onClose, isFirstBusiness = false }: Pr
 
             {error && <p className="text-xs text-red-600 bg-red-50 rounded-xl px-3 py-2">{error}</p>}
 
-            <button type="submit" disabled={saving} className={`${primaryCls} mt-1`}>
+            <button onClick={next} className={primaryCls}>
+              Suivant <ArrowRight size={15} />
+            </button>
+          </div>
+        )}
+
+        {/* ── Step 6: Récapitulatif — ce que KZA règle pour eux ── */}
+        {step === 6 && (
+          <form onSubmit={handleSubmit} className="px-6 pt-5 pb-8 flex flex-col gap-5">
+            <div>
+              <span className="text-[11px] font-bold text-indigo-500 uppercase tracking-widest">
+                {segment ? `${segment.emoji} ${segment.label}` : '✨ Votre activité'}
+              </span>
+              <h2 className="text-xl font-bold text-gray-900 mt-1">Votre KZA est prêt</h2>
+              <p className="text-xs text-gray-500 mt-1.5 leading-relaxed">
+                {segment?.value ?? 'Tous les outils de KZA sont activés. Désactivez ceux dont vous n\'avez pas besoin.'}
+              </p>
+            </div>
+
+            {segment && (
+              <div>
+                <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Ce que KZA règle pour vous</p>
+                <ul className="space-y-2">
+                  {segment.problems.map(p => {
+                    const status = solutionStatus(p.solvedBy, form.modules);
+                    return (
+                      <li key={p.text} className="flex items-start gap-2.5">
+                        <span className={`mt-0.5 w-4 h-4 rounded-full flex items-center justify-center shrink-0 ${
+                          status === 'on' ? 'bg-emerald-100 text-emerald-600' : status === 'soon' ? 'bg-amber-100 text-amber-600' : 'bg-gray-100 text-gray-400'
+                        }`}>
+                          {status === 'soon' ? <Clock size={10} /> : <Check size={10} />}
+                        </span>
+                        <span className="min-w-0 text-xs leading-snug">
+                          <span className="text-gray-600">{p.text}</span>
+                          <span className={`block text-[11px] font-medium mt-0.5 ${
+                            status === 'on' ? 'text-emerald-600' : status === 'soon' ? 'text-amber-600' : 'text-gray-400'
+                          }`}>
+                            → {solutionLabel(p.solvedBy)}{status === 'soon' ? ' (bientôt)' : status === 'off' ? ' (désactivé)' : ''}
+                          </span>
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
+
+            <div>
+              <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Vos modules</p>
+              <div className="flex flex-wrap gap-1.5">
+                {BUSINESS_MODULES.filter(m => m.available).map(m => {
+                  const on = form.modules.includes(m.key);
+                  return (
+                    <button key={m.key} type="button" onClick={() => toggleModule(m.key)} title={m.description}
+                      className={`flex items-center gap-1 px-2.5 py-1.5 rounded-full border text-[11px] font-medium transition-colors ${
+                        on ? 'border-indigo-200 bg-indigo-50 text-indigo-700' : 'border-gray-200 text-gray-400 hover:text-gray-600'
+                      }`}>
+                      {on && <Check size={11} />}{m.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-[11px] text-gray-400 mt-2">Vous pourrez les changer à tout moment dans les réglages du business.</p>
+            </div>
+
+            {error && <p className="text-xs text-red-600 bg-red-50 rounded-xl px-3 py-2">{error}</p>}
+
+            <button type="submit" disabled={saving} className={primaryCls}>
               {saving && <Loader2 size={15} className="animate-spin" />}
-              {saving ? 'Création…' : 'Créer mon business'}
+              {saving ? 'Création…' : 'Créer mon espace'}
             </button>
           </form>
         )}
+        </div>
       </div>
     </div>
   );

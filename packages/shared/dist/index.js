@@ -18,3 +18,4 @@ __exportStar(require("./schemas"), exports);
 __exportStar(require("./types"), exports);
 __exportStar(require("./modules"), exports);
 __exportStar(require("./time"), exports);
+__exportStar(require("./segments"), exports);
