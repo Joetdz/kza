@@ -25,6 +25,17 @@ export declare const CreateProductSchema: z.ZodObject<{
     variantLabel: z.ZodOptional<z.ZodNullable<z.ZodString>>;
     /** Length of one booking of this service, in minutes (agenda module). */
     durationMinutes: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
+    /** Volume pricing: [{ minQty, unitPrice }] (invoices module). */
+    priceTiers: z.ZodOptional<z.ZodNullable<z.ZodArray<z.ZodObject<{
+        minQty: z.ZodNumber;
+        unitPrice: z.ZodNumber;
+    }, "strip", z.ZodTypeAny, {
+        minQty: number;
+        unitPrice: number;
+    }, {
+        minQty: number;
+        unitPrice: number;
+    }>, "many">>>;
 }, "strip", z.ZodTypeAny, {
     name: string;
     sku: string;
@@ -40,6 +51,10 @@ export declare const CreateProductSchema: z.ZodObject<{
     variantGroup?: string | null | undefined;
     variantLabel?: string | null | undefined;
     durationMinutes?: number | null | undefined;
+    priceTiers?: {
+        minQty: number;
+        unitPrice: number;
+    }[] | null | undefined;
 }, {
     name: string;
     quantity: number;
@@ -55,6 +70,10 @@ export declare const CreateProductSchema: z.ZodObject<{
     variantGroup?: string | null | undefined;
     variantLabel?: string | null | undefined;
     durationMinutes?: number | null | undefined;
+    priceTiers?: {
+        minQty: number;
+        unitPrice: number;
+    }[] | null | undefined;
 }>;
 export declare const UpdateProductSchema: z.ZodObject<{
     name: z.ZodOptional<z.ZodString>;
@@ -71,6 +90,16 @@ export declare const UpdateProductSchema: z.ZodObject<{
     variantGroup: z.ZodOptional<z.ZodOptional<z.ZodNullable<z.ZodString>>>;
     variantLabel: z.ZodOptional<z.ZodOptional<z.ZodNullable<z.ZodString>>>;
     durationMinutes: z.ZodOptional<z.ZodOptional<z.ZodNullable<z.ZodNumber>>>;
+    priceTiers: z.ZodOptional<z.ZodOptional<z.ZodNullable<z.ZodArray<z.ZodObject<{
+        minQty: z.ZodNumber;
+        unitPrice: z.ZodNumber;
+    }, "strip", z.ZodTypeAny, {
+        minQty: number;
+        unitPrice: number;
+    }, {
+        minQty: number;
+        unitPrice: number;
+    }>, "many">>>>;
 }, "strip", z.ZodTypeAny, {
     name?: string | undefined;
     sku?: string | undefined;
@@ -86,6 +115,10 @@ export declare const UpdateProductSchema: z.ZodObject<{
     variantGroup?: string | null | undefined;
     variantLabel?: string | null | undefined;
     durationMinutes?: number | null | undefined;
+    priceTiers?: {
+        minQty: number;
+        unitPrice: number;
+    }[] | null | undefined;
 }, {
     name?: string | undefined;
     sku?: string | undefined;
@@ -101,6 +134,10 @@ export declare const UpdateProductSchema: z.ZodObject<{
     variantGroup?: string | null | undefined;
     variantLabel?: string | null | undefined;
     durationMinutes?: number | null | undefined;
+    priceTiers?: {
+        minQty: number;
+        unitPrice: number;
+    }[] | null | undefined;
 }>;
 export declare const ProductSchema: z.ZodObject<{
     name: z.ZodString;
@@ -120,6 +157,17 @@ export declare const ProductSchema: z.ZodObject<{
     variantLabel: z.ZodOptional<z.ZodNullable<z.ZodString>>;
     /** Length of one booking of this service, in minutes (agenda module). */
     durationMinutes: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
+    /** Volume pricing: [{ minQty, unitPrice }] (invoices module). */
+    priceTiers: z.ZodOptional<z.ZodNullable<z.ZodArray<z.ZodObject<{
+        minQty: z.ZodNumber;
+        unitPrice: z.ZodNumber;
+    }, "strip", z.ZodTypeAny, {
+        minQty: number;
+        unitPrice: number;
+    }, {
+        minQty: number;
+        unitPrice: number;
+    }>, "many">>>;
 } & {
     id: z.ZodString;
     createdAt: z.ZodString;
@@ -142,6 +190,10 @@ export declare const ProductSchema: z.ZodObject<{
     variantGroup?: string | null | undefined;
     variantLabel?: string | null | undefined;
     durationMinutes?: number | null | undefined;
+    priceTiers?: {
+        minQty: number;
+        unitPrice: number;
+    }[] | null | undefined;
 }, {
     name: string;
     quantity: number;
@@ -160,6 +212,10 @@ export declare const ProductSchema: z.ZodObject<{
     variantGroup?: string | null | undefined;
     variantLabel?: string | null | undefined;
     durationMinutes?: number | null | undefined;
+    priceTiers?: {
+        minQty: number;
+        unitPrice: number;
+    }[] | null | undefined;
 }>;
 export declare const CreateMovementSchema: z.ZodObject<{
     productId: z.ZodString;
@@ -170,14 +226,14 @@ export declare const CreateMovementSchema: z.ZodObject<{
 }, "strip", z.ZodTypeAny, {
     quantity: number;
     type: "in" | "out";
-    productId: string;
     date: string;
+    productId: string;
     reason: string;
 }, {
     quantity: number;
     type: "in" | "out";
-    productId: string;
     date: string;
+    productId: string;
     reason?: string | undefined;
 }>;
 export declare const MovementSchema: z.ZodObject<{
@@ -192,18 +248,18 @@ export declare const MovementSchema: z.ZodObject<{
 }, "strip", z.ZodTypeAny, {
     quantity: number;
     type: "in" | "out";
+    date: string;
     id: string;
     createdAt: string;
     productId: string;
-    date: string;
     reason: string;
 }, {
     quantity: number;
     type: "in" | "out";
+    date: string;
     id: string;
     createdAt: string;
     productId: string;
-    date: string;
     reason?: string | undefined;
 }>;
 export declare const SaleItemSchema: z.ZodObject<{
@@ -212,12 +268,12 @@ export declare const SaleItemSchema: z.ZodObject<{
     unitPrice: z.ZodNumber;
 }, "strip", z.ZodTypeAny, {
     quantity: number;
-    productId: string;
     unitPrice: number;
+    productId: string;
 }, {
     quantity: number;
-    productId: string;
     unitPrice: number;
+    productId: string;
 }>;
 export declare const CreateSaleSchema: z.ZodObject<{
     items: z.ZodArray<z.ZodObject<{
@@ -226,12 +282,12 @@ export declare const CreateSaleSchema: z.ZodObject<{
         unitPrice: z.ZodNumber;
     }, "strip", z.ZodTypeAny, {
         quantity: number;
-        productId: string;
         unitPrice: number;
+        productId: string;
     }, {
         quantity: number;
-        productId: string;
         unitPrice: number;
+        productId: string;
     }>, "many">;
     channel: z.ZodEnum<["WhatsApp", "Meta Ads", "TikTok", "Instagram", "Boutique", "Autre"]>;
     date: z.ZodString;
@@ -241,12 +297,12 @@ export declare const CreateSaleSchema: z.ZodObject<{
     customerName: z.ZodOptional<z.ZodString>;
     customerPhone: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
-    status: "paid" | "pending" | "cancelled" | "credit";
+    status: "paid" | "cancelled" | "pending" | "credit";
     date: string;
     items: {
         quantity: number;
-        productId: string;
         unitPrice: number;
+        productId: string;
     }[];
     channel: "WhatsApp" | "Meta Ads" | "TikTok" | "Instagram" | "Boutique" | "Autre";
     note?: string | undefined;
@@ -257,11 +313,11 @@ export declare const CreateSaleSchema: z.ZodObject<{
     date: string;
     items: {
         quantity: number;
-        productId: string;
         unitPrice: number;
+        productId: string;
     }[];
     channel: "WhatsApp" | "Meta Ads" | "TikTok" | "Instagram" | "Boutique" | "Autre";
-    status?: "paid" | "pending" | "cancelled" | "credit" | undefined;
+    status?: "paid" | "cancelled" | "pending" | "credit" | undefined;
     note?: string | undefined;
     deliveryZone?: string | undefined;
     customerName?: string | undefined;
@@ -274,12 +330,12 @@ export declare const SaleSchema: z.ZodObject<{
         unitPrice: z.ZodNumber;
     }, "strip", z.ZodTypeAny, {
         quantity: number;
-        productId: string;
         unitPrice: number;
+        productId: string;
     }, {
         quantity: number;
-        productId: string;
         unitPrice: number;
+        productId: string;
     }>, "many">;
     channel: z.ZodEnum<["WhatsApp", "Meta Ads", "TikTok", "Instagram", "Boutique", "Autre"]>;
     date: z.ZodString;
@@ -292,14 +348,14 @@ export declare const SaleSchema: z.ZodObject<{
     deliveryZone: z.ZodOptional<z.ZodString>;
     createdAt: z.ZodString;
 }, "strip", z.ZodTypeAny, {
-    status: "paid" | "pending" | "cancelled" | "credit";
+    status: "paid" | "cancelled" | "pending" | "credit";
+    date: string;
     id: string;
     createdAt: string;
-    date: string;
     items: {
         quantity: number;
-        productId: string;
         unitPrice: number;
+        productId: string;
     }[];
     channel: "WhatsApp" | "Meta Ads" | "TikTok" | "Instagram" | "Boutique" | "Autre";
     note?: string | undefined;
@@ -307,14 +363,14 @@ export declare const SaleSchema: z.ZodObject<{
     customerName?: string | undefined;
     customerPhone?: string | undefined;
 }, {
-    status: "paid" | "pending" | "cancelled" | "credit";
+    status: "paid" | "cancelled" | "pending" | "credit";
+    date: string;
     id: string;
     createdAt: string;
-    date: string;
     items: {
         quantity: number;
-        productId: string;
         unitPrice: number;
+        productId: string;
     }[];
     channel: "WhatsApp" | "Meta Ads" | "TikTok" | "Instagram" | "Boutique" | "Autre";
     note?: string | undefined;
@@ -353,15 +409,15 @@ export declare const UpdateExpenseSchema: z.ZodObject<{
     date: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
     category?: string | undefined;
-    productId?: string | undefined;
     date?: string | undefined;
+    productId?: string | undefined;
     channel?: "WhatsApp" | "Meta Ads" | "TikTok" | "Instagram" | "Boutique" | "Autre" | undefined;
     amount?: number | undefined;
     description?: string | undefined;
 }, {
     category?: string | undefined;
-    productId?: string | undefined;
     date?: string | undefined;
+    productId?: string | undefined;
     channel?: "WhatsApp" | "Meta Ads" | "TikTok" | "Instagram" | "Boutique" | "Autre" | undefined;
     amount?: number | undefined;
     description?: string | undefined;
@@ -378,18 +434,18 @@ export declare const ExpenseSchema: z.ZodObject<{
     createdAt: z.ZodString;
 }, "strip", z.ZodTypeAny, {
     category: string;
+    date: string;
     id: string;
     createdAt: string;
-    date: string;
     amount: number;
     description: string;
     productId?: string | undefined;
     channel?: "WhatsApp" | "Meta Ads" | "TikTok" | "Instagram" | "Boutique" | "Autre" | undefined;
 }, {
     category: string;
+    date: string;
     id: string;
     createdAt: string;
-    date: string;
     amount: number;
     productId?: string | undefined;
     channel?: "WhatsApp" | "Meta Ads" | "TikTok" | "Instagram" | "Boutique" | "Autre" | undefined;

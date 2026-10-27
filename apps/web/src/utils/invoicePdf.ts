@@ -10,7 +10,7 @@ export interface InvoiceBusiness {
   logoUrl?: string;
 }
 
-function formatMoney(amount: number, currency: string): string {
+export function formatMoney(amount: number, currency: string): string {
   try {
     return new Intl.NumberFormat('fr-FR', {
       style: 'currency',
@@ -23,7 +23,7 @@ function formatMoney(amount: number, currency: string): string {
   }
 }
 
-async function loadImageBase64(url: string): Promise<string | null> {
+export async function loadImageBase64(url: string): Promise<string | null> {
   try {
     const res = await fetch(url);
     if (!res.ok) return null;

@@ -47,7 +47,7 @@ export declare const BUSINESS_MODULES: readonly [{
     readonly key: "invoices";
     readonly label: "Devis & factures";
     readonly description: "Devis et factures PDF, prix dégressifs par quantité.";
-    readonly available: false;
+    readonly available: true;
 }, {
     readonly key: "lots";
     readonly label: "Lots & péremption";

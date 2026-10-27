@@ -24,6 +24,7 @@ import { InvestorsModule } from './investors/investors.module';
 import { FundraisingModule } from './fundraising/fundraising.module';
 import { AgendaModule } from './agenda/agenda.module';
 import { CreditModule } from './credit/credit.module';
+import { DocumentsModule } from './documents/documents.module';
 
 @Module({
   imports: [
@@ -54,6 +55,7 @@ import { CreditModule } from './credit/credit.module';
     FundraisingModule,
     AgendaModule,
     CreditModule,
+    DocumentsModule,
   ],
   providers: [
     {

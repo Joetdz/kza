@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, Package, ShoppingCart, CreditCard,
-  BarChart2, Target, Download, X, LogOut, MessageCircle, Shield, Store, Truck, Users, UserCog, PiggyBank, CalendarDays, Wallet,
+  BarChart2, Target, Download, X, LogOut, MessageCircle, Shield, Store, Truck, Users, UserCog, PiggyBank, CalendarDays, Wallet, FileText,
 } from 'lucide-react';
 import { useStore } from '../../store/useStore';
 import { useAuth } from '../../contexts/AuthContext';
@@ -22,6 +22,7 @@ const nav: Array<{ to: string; icon: typeof Package; label: string; finance?: bo
   { to: '/stock',      icon: Package,         label: 'Stock' },
   { to: '/ventes',     icon: ShoppingCart,    label: 'Ventes',      finance: true },
   { to: '/creances',   icon: Wallet,          label: 'Créances',    finance: true, module: 'credit' },
+  { to: '/factures',   icon: FileText,        label: 'Devis & factures', finance: true, module: 'invoices' },
   { to: '/depenses',   icon: CreditCard,      label: 'Dépenses',    finance: true },
   { to: '/analytique', icon: BarChart2,       label: 'Analytique',  finance: true },
   { to: '/objectifs',  icon: Target,          label: 'Objectifs',   finance: true, module: 'goals' },

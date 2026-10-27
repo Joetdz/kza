@@ -46,6 +46,8 @@ exports.CreateProductSchema = zod_1.z.object({
     variantLabel: zod_1.z.string().nullable().optional(),
     /** Length of one booking of this service, in minutes (agenda module). */
     durationMinutes: zod_1.z.number().int().positive().nullable().optional(),
+    /** Volume pricing: [{ minQty, unitPrice }] (invoices module). */
+    priceTiers: zod_1.z.array(zod_1.z.object({ minQty: zod_1.z.number().positive(), unitPrice: zod_1.z.number().positive() })).nullable().optional(),
 });
 exports.UpdateProductSchema = exports.CreateProductSchema.partial();
 exports.ProductSchema = exports.CreateProductSchema.extend({

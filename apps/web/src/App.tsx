@@ -25,6 +25,7 @@ import { Clients } from './pages/Clients';
 import { Team } from './pages/Team';
 import { Agenda } from './pages/Agenda';
 import { Credit } from './pages/Credit';
+import { Documents } from './pages/Documents';
 import { AcceptInvite } from './pages/AcceptInvite';
 import { PartnerPortal } from './pages/PartnerPortal';
 import { Pricing } from './pages/Pricing';
@@ -206,6 +207,7 @@ function AppInner() {
           <Route path="/clients" element={<Clients />} />
           <Route path="/agenda" element={<RequireModule module="agenda"><Agenda /></RequireModule>} />
           <Route path="/creances" element={<RequireModule module="credit"><Credit /></RequireModule>} />
+          <Route path="/factures" element={<RequireModule module="invoices"><Documents /></RequireModule>} />
           <Route path="/equipe" element={<Team />} />
           <Route path="/whatsapp" element={<RequireModule module="whatsapp"><WhatsAppLayout /></RequireModule>}>
             <Route index element={<Inbox />} />

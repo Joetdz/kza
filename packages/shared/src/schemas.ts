@@ -53,6 +53,8 @@ export const CreateProductSchema = z.object({
   variantLabel: z.string().nullable().optional(),
   /** Length of one booking of this service, in minutes (agenda module). */
   durationMinutes: z.number().int().positive().nullable().optional(),
+  /** Volume pricing: [{ minQty, unitPrice }] (invoices module). */
+  priceTiers: z.array(z.object({ minQty: z.number().positive(), unitPrice: z.number().positive() })).nullable().optional(),
 });
 
 export const UpdateProductSchema = CreateProductSchema.partial();
