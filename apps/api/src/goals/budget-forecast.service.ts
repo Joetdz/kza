@@ -1,6 +1,7 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateBudgetForecastDto, SetForecastProductsDto, CreateForecastExpenseDto } from './dto/budget-forecast.dto';
+import { MonthlyClosingService } from './monthly-closing.service';
 
 // One forecast per business — get-or-create keeps the frontend from having to handle
 // "no forecast yet" as a separate state. Everything downstream (revenue, COGS, ad
@@ -10,9 +11,20 @@ import { UpdateBudgetForecastDto, SetForecastProductsDto, CreateForecastExpenseD
 // horizon, and any manually-added forecast OPEX lines.
 @Injectable()
 export class BudgetForecastService {
-  constructor(private prisma: PrismaService) {}
+  private readonly logger = new Logger(BudgetForecastService.name);
+
+  constructor(private prisma: PrismaService, private closing: MonthlyClosingService) {}
 
   async getOrCreate(userId: string, businessId?: string) {
+    // Months that ended since the last visit are closed first, and the forecast moves
+    // on to the current month — so what comes back only ever plans open months.
+    if (businessId) {
+      try {
+        await this.closing.syncBusiness(businessId);
+      } catch (e: any) {
+        this.logger.error(`Clôture mensuelle ${businessId} : ${e?.message ?? e}`);
+      }
+    }
     const where = businessId ? { userId_businessId: { userId, businessId } } : undefined;
     let forecast = where
       ? await this.prisma.budgetForecast.findUnique({
@@ -34,6 +46,11 @@ export class BudgetForecastService {
   }
 
   async update(dto: UpdateBudgetForecastDto, userId: string, businessId?: string) {
+    // A closed month cannot be planned again: the forecast starts this month at the earliest.
+    if (dto.startMonth && businessId) {
+      const current = await this.closing.currentMonth(businessId);
+      if (dto.startMonth < current) throw new BadRequestException(`Mois clôturé : le prévisionnel commence au plus tôt en ${current}.`);
+    }
     const forecast = await this.getOrCreate(userId, businessId);
     return this.prisma.budgetForecast.update({
       where: { id: forecast.id },

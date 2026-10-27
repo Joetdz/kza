@@ -1,3 +1,4 @@
+import type { MonthlyClosing } from '@kza/shared';
 import type { Product, Sale, Expense, SalesGoal, StockMovement, RecurringExpense, BudgetForecast } from '../types';
 import { supabase } from '../lib/supabase';
 
@@ -223,6 +224,8 @@ export const goalsApi = {
 
 // ─── Budget prévisionnel ────────────────────────────────────────
 export const budgetForecastApi = {
+  /** Closed months (read-only history) and the business's current month. */
+  closings: () => req<{ currentMonth: string | null; closings: MonthlyClosing[] }>('/goals/closings'),
   get: () => req<BudgetForecast>('/goals/budget-forecast'),
   update: (body: { startMonth?: string; monthlyGrowthPct?: number; horizonMonths?: number }) =>
     req<BudgetForecast>('/goals/budget-forecast', { method: 'PATCH', body: JSON.stringify(body) }),

@@ -1,7 +1,11 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Plus, Trash2, Edit2, Calculator, Target, TrendingUp, ChevronDown, ChevronRight } from 'lucide-react';
+import { Plus, Trash2, Edit2, Calculator, Target, TrendingUp, ChevronDown, ChevronRight, Lock, History } from 'lucide-react';
 import { useStore } from '../store/useStore';
-import { computeBudgetForecast, computeRealizedByProduct, computeAdSpendPerUnit } from '../utils/calculations';
+import { computeBudgetForecast, computeAdSpendPerUnit } from '../utils/calculations';
+import {
+  CLOSING_START_MONTH, computeMonthRealized, countingContext, localMonth, monthLabel, planAchievementPct,
+  timeZoneForCountry, type MonthlyClosing,
+} from '@kza/shared';
 import { useCurrency } from '../hooks/useCurrency';
 import { Modal } from '../components/ui/Modal';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
@@ -28,7 +32,9 @@ function savePref(key: string, value: unknown) {
 }
 
 export function Goals() {
-  const { products, sales, expenses } = useStore();
+  const { products, sales, expenses, businesses, currentBusinessId } = useStore();
+  const country = businesses.find(b => b.id === currentBusinessId)?.country;
+  const timeZone = timeZoneForCountry(country);
   const { fmt } = useCurrency();
 
   const [mainTab, setMainTab] = useState<MainTab>('objectifs');
@@ -46,6 +52,11 @@ export function Goals() {
   const [deleteExpenseId, setDeleteExpenseId] = useState<string | null>(null);
   const [showOtherExpenses, setShowOtherExpenses] = useState(() => loadPref('kza_goals_show_other_expenses', false));
   const [pubExpanded, setPubExpanded] = useState(() => loadPref('kza_goals_pub_expanded', false));
+  // Closed months: frozen history, never recomputed. currentMonth is the business's own
+  // calendar month (its time zone), as the server sees it.
+  const [closings, setClosings] = useState<MonthlyClosing[]>([]);
+  const [serverMonth, setServerMonth] = useState<string | null>(null);
+  const currentMonth = serverMonth ?? localMonth(new Date(), timeZone);
   const [selectedMonth, setSelectedMonth] = useState(() => loadPref('kza_goals_selected_month', new Date().toISOString().slice(0, 7)));
 
   useEffect(() => savePref('kza_goals_show_other_expenses', showOtherExpenses), [showOtherExpenses]);
@@ -53,8 +64,12 @@ export function Goals() {
   useEffect(() => savePref('kza_goals_selected_month', selectedMonth), [selectedMonth]);
 
   useEffect(() => {
+    // The forecast first: fetching it closes any month that has just ended.
     Promise.all([budgetForecastApi.get(), recurringExpensesApi.getAll()])
       .then(([f, r]) => {
+        budgetForecastApi.closings()
+          .then(c => { setClosings(c.closings); setServerMonth(c.currentMonth); })
+          .catch(() => {});
         setForecast(f);
         setRecurringExpenses(r);
         const map: Record<string, string> = {};
@@ -72,8 +87,8 @@ export function Goals() {
 
   const forecastMonths = useMemo(() => {
     if (!forecast) return [];
-    return computeBudgetForecast(products, sales, expenses, recurringExpenses, forecast);
-  }, [products, sales, expenses, recurringExpenses, forecast]);
+    return computeBudgetForecast(products, sales, expenses, recurringExpenses, forecast, currentMonth);
+  }, [products, sales, expenses, recurringExpenses, forecast, currentMonth]);
 
   const forecastOpexCategories = useMemo(() => {
     const cats = new Set<string>();
@@ -88,11 +103,22 @@ export function Goals() {
   const adSpendPerUnit = useMemo(() => computeAdSpendPerUnit(products, sales, expenses), [products, sales, expenses]);
 
   // ─── Objectif vs Budget prévisionnel vs Réalisé (mois sélectionné) ──────────
+  // A past month is closed: shown from its snapshot only, whatever happened since.
+  const isClosed = selectedMonth < currentMonth;
+  const closing = closings.find(c => c.month === selectedMonth) ?? null;
+  const countingCtx = useMemo(() => countingContext(closings, timeZone), [closings, timeZone]);
   const currentForecastMonth = useMemo(
-    () => forecastMonths.find(m => m.monthKey === selectedMonth),
-    [forecastMonths, selectedMonth],
+    () => isClosed ? (closing?.data.plan ?? undefined) : forecastMonths.find(m => m.monthKey === selectedMonth),
+    [isClosed, closing, forecastMonths, selectedMonth],
   );
-  const realizedByProduct = useMemo(() => computeRealizedByProduct(sales, selectedMonth), [sales, selectedMonth]);
+  // Open months count late entries (recorded after their own month was closed).
+  const realized = useMemo(
+    () => isClosed ? (closing?.data.realized ?? null) : computeMonthRealized(selectedMonth, products, sales, expenses, countingCtx),
+    [isClosed, closing, selectedMonth, products, sales, expenses, countingCtx],
+  );
+  const realizedByProduct = realized?.qtyByProduct ?? {};
+  // Names as they were at closing, so a deleted or renamed product still reads right.
+  const productName = (id: string) => closing?.data.products[id]?.name ?? products.find(p => p.id === id)?.name ?? 'Produit supprimé';
 
   const comparisonRows = useMemo(() => {
     const productIds = new Set<string>();
@@ -104,10 +130,10 @@ export function Goals() {
       const realizedQty = realizedByProduct[productId] ?? 0;
       const reference = forecastQty ?? 0;
       const pct = reference > 0 ? Math.min(100, (realizedQty / reference) * 100) : 0;
-      return { productId, productName: product?.name ?? 'Produit inconnu', forecastQty, realizedQty, pct };
+      return { productId, productName: isClosed ? productName(productId) : (product?.name ?? 'Produit inconnu'), forecastQty, realizedQty, pct };
     }).filter(r => r.forecastQty !== null)
       .sort((a, b) => b.pct - a.pct);
-  }, [currentForecastMonth, realizedByProduct, products]);
+  }, [currentForecastMonth, realizedByProduct, products, isClosed, closing]);
 
   // Progression globale du mois = moyenne de la progression (réalisé/prévisionnel) par
   // produit — même sens que les barres individuelles, résumé en un seul indicateur.
@@ -117,13 +143,7 @@ export function Goals() {
   );
 
   // ─── Dépenses : Prévu (budget prévisionnel) vs Réalisé (vraies dépenses du mois) ──
-  const realizedExpensesByCategory = useMemo(() => {
-    const result: Record<string, number> = {};
-    expenses
-      .filter(e => e.date.slice(0, 7) === selectedMonth)
-      .forEach(e => { result[e.category] = (result[e.category] ?? 0) + e.amount; });
-    return result;
-  }, [expenses, selectedMonth]);
+  const realizedExpensesByCategory = realized?.expensesByCategory ?? {};
 
   const pubExpenseRow = useMemo(() => {
     const forecastAmount = currentForecastMonth?.adBudget ?? 0;
@@ -134,16 +154,7 @@ export function Goals() {
 
   // Détail pub par produit (dérouable) — seule dépense rattachée à des produits
   // individuels (via Expense.productId), donc la seule à pouvoir se décliner ainsi.
-  const realizedPubByProduct = useMemo(() => {
-    const result: Record<string, number> = {};
-    expenses
-      .filter(e => e.category === 'pub' && e.date.slice(0, 7) === selectedMonth)
-      .forEach(e => {
-        const key = e.productId ?? '__none__';
-        result[key] = (result[key] ?? 0) + e.amount;
-      });
-    return result;
-  }, [expenses, selectedMonth]);
+  const realizedPubByProduct = realized?.pubByProduct ?? {};
 
   const pubByProductRows = useMemo(() => {
     const productIds = new Set<string>();
@@ -154,7 +165,7 @@ export function Goals() {
       const forecastAmount = currentForecastMonth?.adBudgetByProduct[productId] ?? 0;
       const realizedAmount = realizedPubByProduct[productId] ?? 0;
       const pct = forecastAmount > 0 ? Math.min(100, (realizedAmount / forecastAmount) * 100) : 0;
-      return { productId, productName: products.find(p => p.id === productId)?.name ?? 'Produit inconnu', forecastAmount, realizedAmount, pct };
+      return { productId, productName: productName(productId), forecastAmount, realizedAmount, pct };
     }).sort((a, b) => b.realizedAmount - a.realizedAmount);
 
     // Dépenses pub réelles sans produit rattaché — pas de prévu correspondant (le
@@ -163,12 +174,13 @@ export function Goals() {
       rows.push({ productId: '__none__', productName: 'Sans produit rattaché', forecastAmount: 0, realizedAmount: realizedPubByProduct['__none__'], pct: 0 });
     }
     return rows;
-  }, [currentForecastMonth, realizedPubByProduct, products]);
+  }, [currentForecastMonth, realizedPubByProduct, products, closing]);
 
   // Autres catégories d'OPEX connues (dépenses récurrentes) — optionnelles, repliées
   // par défaut derrière une case à cocher pour ne pas noyer la pub dans le détail.
   const otherExpenseRows = useMemo(() => {
-    return forecastOpexCategories
+    const categories = isClosed ? Object.keys(currentForecastMonth?.knownOpexByCategory ?? {}) : forecastOpexCategories;
+    return categories
       .filter(cat => cat !== 'pub')
       .map(cat => {
         const forecastAmount = currentForecastMonth?.knownOpexByCategory[cat] ?? 0;
@@ -176,7 +188,20 @@ export function Goals() {
         const pct = forecastAmount > 0 ? Math.min(100, (realizedAmount / forecastAmount) * 100) : 0;
         return { category: cat, forecastAmount, realizedAmount, pct };
       });
-  }, [forecastOpexCategories, currentForecastMonth, realizedExpensesByCategory]);
+  }, [isClosed, forecastOpexCategories, currentForecastMonth, realizedExpensesByCategory]);
+
+  // History of closed months, most recent first.
+  const history = useMemo(() => closings.map(c => ({
+    month: c.month,
+    label: c.data.label,
+    closedAt: c.closedAt,
+    plannedRevenue: c.data.plan?.revenue ?? null,
+    revenue: c.data.realized.revenue,
+    plannedProfit: c.data.plan?.ebitda ?? null,
+    profit: c.data.realized.profit,
+    achievement: planAchievementPct(c.data.plan, c.data.realized),
+  })), [closings]);
+
 
   const updateForecastSettings = async (patch: { startMonth?: string; monthlyGrowthPct?: number; horizonMonths?: number }) => {
     if (!forecast) return;
@@ -284,7 +309,34 @@ export function Goals() {
         ))}
       </div>
 
-      {mainTab === 'objectifs' && <>
+      {mainTab === 'objectifs' && isClosed && (
+        closing ? (
+          <div className="flex items-start gap-2.5 px-4 py-3 rounded-2xl bg-gray-100 border border-gray-200 text-sm text-gray-700">
+            <Lock size={16} className="mt-0.5 shrink-0 text-gray-500" />
+            <span>
+              <span className="font-semibold">{closing.data.label} est clôturé</span> depuis le {new Date(closing.closedAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}.
+              {' '}Historique en lecture seule : ces chiffres ne changent plus. Une vente ou une dépense oubliée compte pour le mois en cours.
+            </span>
+          </div>
+        ) : (
+          <div className="flex items-start gap-2.5 px-4 py-3 rounded-2xl bg-gray-50 border border-gray-200 text-sm text-gray-500">
+            <History size={16} className="mt-0.5 shrink-0" />
+            <span>
+              {selectedMonth < CLOSING_START_MONTH
+                ? `Pas d'historique pour ce mois : la clôture mensuelle a commencé en ${monthLabel(CLOSING_START_MONTH)}.`
+                : "Pas d'historique pour ce mois : aucun budget prévisionnel n'existait encore."}
+            </span>
+          </div>
+        )
+      )}
+
+      {mainTab === 'objectifs' && !isClosed && (realized?.lateEntries ?? 0) > 0 && (
+        <p className="text-xs text-gray-500 px-1">
+          Inclut {realized!.lateEntries} vente(s) ou dépense(s) enregistrée(s) ce mois-ci mais datée(s) d'un mois déjà clôturé.
+        </p>
+      )}
+
+      {mainTab === 'objectifs' && (!isClosed || closing) && <>
       {comparisonRows.length > 0 && (
         <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-2xl p-5 text-white">
           <div className="flex items-center gap-3 mb-3">
@@ -475,8 +527,10 @@ export function Goals() {
                 <label className="text-xs font-medium text-gray-600 mb-1 block">Mois de départ</label>
                 <input
                   type="month"
-                  value={forecast.startMonth || new Date().toISOString().slice(0, 7)}
-                  onChange={e => updateForecastSettings({ startMonth: e.target.value })}
+                  min={currentMonth}
+                  value={forecast.startMonth || currentMonth}
+                  // Closed months can't be planned again.
+                  onChange={e => { if (e.target.value >= currentMonth) updateForecastSettings({ startMonth: e.target.value }); }}
                   className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300"
                 />
               </div>
@@ -609,6 +663,49 @@ export function Goals() {
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+          </div>
+
+          {/* History of closed months — frozen at each month's end */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            <div className="p-4 pb-3 flex items-center gap-2">
+              <Lock size={15} className="text-gray-400" />
+              <div>
+                <h2 className="font-semibold text-gray-900 text-sm">Historique des mois clôturés</h2>
+                <p className="text-xs text-gray-400">Figé à la fin de chaque mois : prévu et réalisé ne changent plus.</p>
+              </div>
+            </div>
+            {history.length === 0 ? (
+              <p className="text-xs text-gray-400 px-4 pb-4">Aucun mois clôturé pour l'instant — le premier le sera à la fin de {monthLabel(currentMonth)}.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-100">
+                      <th className="text-left font-medium text-gray-500 px-4 py-2">Mois</th>
+                      <th className="text-right font-medium text-gray-500 px-3 py-2">CA prévu</th>
+                      <th className="text-right font-medium text-gray-500 px-3 py-2">CA réalisé</th>
+                      <th className="text-right font-medium text-gray-500 px-3 py-2">Bénéfice prévu</th>
+                      <th className="text-right font-medium text-gray-500 px-3 py-2">Bénéfice réalisé</th>
+                      <th className="text-right font-medium text-gray-500 px-4 py-2">Objectifs atteints</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {history.map(h => (
+                      <tr key={h.month} className="border-b border-gray-50 hover:bg-gray-50 cursor-pointer"
+                        onClick={() => { setSelectedMonth(h.month); setMainTab('objectifs'); }}
+                        title="Voir le détail de ce mois">
+                        <td className="px-4 py-2.5 font-medium text-gray-800 capitalize">{h.label}</td>
+                        <td className="text-right px-3 py-2.5 text-gray-500">{h.plannedRevenue != null ? fmt(h.plannedRevenue) : '—'}</td>
+                        <td className="text-right px-3 py-2.5 font-semibold text-gray-900">{fmt(h.revenue)}</td>
+                        <td className="text-right px-3 py-2.5 text-gray-500">{h.plannedProfit != null ? fmt(h.plannedProfit) : '—'}</td>
+                        <td className={`text-right px-3 py-2.5 font-semibold ${h.profit >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{fmt(h.profit)}</td>
+                        <td className="text-right px-4 py-2.5 text-gray-700">{h.achievement != null ? `${Math.round(h.achievement)} %` : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>

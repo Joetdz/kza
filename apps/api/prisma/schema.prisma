@@ -331,6 +331,20 @@ model BudgetForecastExpense {
   @@map("budget_forecast_expenses")
 }
 
+// A month that has ended, frozen: its plan and what was achieved (ClosingData in
+// @kza/shared). Written once by the closing job, never updated — a database trigger
+// refuses any UPDATE (migration 021).
+model MonthlyClosing {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  businessId String   @map("business_id") @db.Uuid
+  month      String   // "YYYY-MM", the business's calendar month
+  closedAt   DateTime @default(now()) @map("closed_at")
+  data       Json
+
+  @@unique([businessId, month])
+  @@map("monthly_closings")
+}
+
 // ─── WhatsApp CRM ─────────────────────────────────────────────────────────────
 
 model WhatsAppSession {

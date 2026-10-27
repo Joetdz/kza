@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Patch, Delete, Body, Param } from '@nestjs/common';
 import { GoalsService } from './goals.service';
 import { BudgetForecastService } from './budget-forecast.service';
+import { MonthlyClosingService } from './monthly-closing.service';
 import { CreateGoalDto } from './dto/create-goal.dto';
 import { UpdateBudgetForecastDto, SetForecastProductsDto, CreateForecastExpenseDto } from './dto/budget-forecast.dto';
 import { CurrentUser, AuthUser } from '../auth/current-user.decorator';
@@ -12,7 +13,19 @@ export class GoalsController {
   constructor(
     private readonly service: GoalsService,
     private readonly forecast: BudgetForecastService,
+    private readonly closing: MonthlyClosingService,
   ) {}
+
+  /** Closed months, most recent first — read-only history. */
+  @Get('closings')
+  async closings(@CurrentUser() user: AuthUser) {
+    if (!user.businessId) return { currentMonth: null, closings: [] };
+    const [currentMonth, closings] = await Promise.all([
+      this.closing.currentMonth(user.businessId),
+      this.closing.list(user.businessId),
+    ]);
+    return { currentMonth, closings };
+  }
 
   @Get('budget-forecast')
   getForecast(@CurrentUser() user: AuthUser) {
