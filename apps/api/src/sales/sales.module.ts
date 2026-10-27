@@ -7,5 +7,6 @@ import { WhatsAppModule } from '../whatsapp/whatsapp.module';
   imports: [WhatsAppModule],
   controllers: [SalesController],
   providers: [SalesService],
+  exports: [SalesService],
 })
 export class SalesModule {}

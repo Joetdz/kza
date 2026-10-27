@@ -19,3 +19,4 @@ __exportStar(require("./types"), exports);
 __exportStar(require("./modules"), exports);
 __exportStar(require("./time"), exports);
 __exportStar(require("./segments"), exports);
+__exportStar(require("./documents"), exports);

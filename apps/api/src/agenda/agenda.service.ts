@@ -1,7 +1,7 @@
 import { ConflictException, Inject, Injectable, Logger, NotFoundException, forwardRef } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import {
-  COUNTRY_INFO, addDays, hasModule, localToUtc, minutesToTime, timeToMinutes, timeZoneForCountry, utcToLocal,
+  addDays, hasModule, localToUtc, minutesToTime, timeToMinutes, timeZoneForCountry, toInternationalPhone, utcToLocal,
 } from '@kza/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { WhatsAppService } from '../whatsapp/whatsapp.service';
@@ -345,7 +345,7 @@ ${lines.length ? lines.join('\n') : '(aucun créneau libre dans les 7 prochains 
       if (conf.reminderHours <= 0) continue;
       if (appt.startAt.getTime() - Date.now() > conf.reminderHours * 3600_000) continue;
 
-      const phone = internationalPhone(appt.customerPhone!, conf.country);
+      const phone = toInternationalPhone(appt.customerPhone!, conf.country);
       if (!phone) continue;
       const local = utcToLocal(appt.startAt, conf.timeZone);
       const day = local.date === utcToLocal(new Date(), conf.timeZone).date ? "aujourd'hui" : `le ${frenchDate(local.date)}`;
@@ -357,17 +357,6 @@ ${lines.length ? lines.join('\n') : '(aucun créneau libre dans les 7 prochains 
       }
     }
   }
-}
-
-// "0812345678" / "+243 81 234 5678" / "243812345678@c.us" → "243812345678". null for a LID.
-function internationalPhone(raw: string, country: string): string | null {
-  const digits = raw.replace(/@.*$/, '').replace(/\D/g, '');
-  if (!digits || digits.length > 13) return null;
-  const dial = COUNTRY_INFO[country]?.dialCode ?? '';
-  if (dial && digits.startsWith(dial)) return digits;
-  if (dial && digits.startsWith('0')) return dial + digits.slice(1);
-  if (dial && digits.length <= 9) return dial + digits;
-  return digits;
 }
 
 function frenchDate(date: string): string {

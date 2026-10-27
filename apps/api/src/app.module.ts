@@ -23,6 +23,8 @@ import { PushModule } from './push/push.module';
 import { InvestorsModule } from './investors/investors.module';
 import { FundraisingModule } from './fundraising/fundraising.module';
 import { AgendaModule } from './agenda/agenda.module';
+import { CreditModule } from './credit/credit.module';
+import { DocumentsModule } from './documents/documents.module';
 
 @Module({
   imports: [
@@ -52,6 +54,8 @@ import { AgendaModule } from './agenda/agenda.module';
     InvestorsModule,
     FundraisingModule,
     AgendaModule,
+    CreditModule,
+    DocumentsModule,
   ],
   providers: [
     {

@@ -1,9 +1,19 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateProductDto, CreateVariantsDto } from './dto/create-product.dto';
 
 const clean = (s: string | null | undefined): string | null => s?.replace(/\s+/g, ' ').trim() || null;
 const variantName = (group: string, label: string) => `${group} — ${label}`;
+
+// Keeps only usable tiers, sorted by quantity; none left → no volume pricing.
+const cleanTiers = (tiers: { minQty: number; unitPrice: number }[] | null | undefined) => {
+  const ok = (tiers ?? [])
+    .map(t => ({ minQty: Number(t.minQty), unitPrice: Number(t.unitPrice) }))
+    .filter(t => t.minQty > 0 && t.unitPrice > 0)
+    .sort((a, b) => a.minQty - b.minQty);
+  return ok.length ? ok : null;
+};
 
 @Injectable()
 export class ProductsService {
@@ -43,6 +53,7 @@ export class ProductsService {
         entryDate: new Date(dto.entryDate),
         trackStock: dto.trackStock ?? true,
         durationMinutes: dto.durationMinutes ?? null,
+        priceTiers: cleanTiers(dto.priceTiers) ?? undefined,
         userId,
         ...(businessId ? { businessId } : {}),
       },
@@ -90,6 +101,7 @@ export class ProductsService {
         ...(dto.entryDate !== undefined && { entryDate: new Date(dto.entryDate) }),
         ...(dto.trackStock !== undefined && { trackStock: dto.trackStock }),
         ...(dto.durationMinutes !== undefined && { durationMinutes: dto.durationMinutes }),
+        ...(dto.priceTiers !== undefined && { priceTiers: cleanTiers(dto.priceTiers) ?? Prisma.DbNull }),
       },
     });
 

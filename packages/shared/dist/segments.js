@@ -323,6 +323,8 @@ const step = {
     agenda: (label = 'Définir vos horaires') => ({ label, to: '/agenda', module: 'agenda' }),
     logistics: (label = 'Ajouter vos dépôts et livreurs') => ({ label, to: '/logistique', module: 'logistics' }),
     team: (label = 'Inviter votre équipe') => ({ label, to: '/equipe' }),
+    quote: (label = 'Créer votre premier devis') => ({ label, to: '/factures', module: 'invoices' }),
+    credit: (label = 'Suivre ce que vos clients vous doivent') => ({ label, to: '/creances', module: 'credit' }),
 };
 const DEFAULT_EXPERIENCE = {
     terms: PRODUCT_TERMS,
@@ -337,13 +339,13 @@ exports.SEGMENT_EXPERIENCE = {
     },
     wholesale: {
         terms: { catalogue: 'Stock', item: 'référence', items: 'références', feminine: true },
-        navFirst: ['/stock', '/ventes', '/clients', '/logistique'],
-        firstSteps: [step.products('Ajouter vos références'), step.logistics('Déclarer vos dépôts'), step.sale('Enregistrer une commande revendeur'), step.team()],
+        navFirst: ['/stock', '/ventes', '/factures', '/creances', '/clients', '/logistique'],
+        firstSteps: [step.products('Ajouter vos références et prix de gros'), step.logistics('Déclarer vos dépôts'), step.sale('Enregistrer une commande revendeur'), step.credit('Suivre ce que vous doivent vos revendeurs'), step.team()],
     },
     market: {
         terms: PRODUCT_TERMS,
-        navFirst: ['/ventes', '/stock', '/depenses'],
-        firstSteps: [step.products('Ajouter ce que vous vendez'), step.sale('Enregistrer vos ventes du jour'), step.expense('Noter vos dépenses du jour')],
+        navFirst: ['/ventes', '/stock', '/depenses', '/creances'],
+        firstSteps: [step.products('Ajouter ce que vous vendez'), step.sale('Enregistrer vos ventes du jour'), step.expense('Noter vos dépenses du jour'), step.credit('Noter qui vous doit de l\'argent')],
     },
     social_seller: {
         terms: PRODUCT_TERMS,
@@ -357,18 +359,18 @@ exports.SEGMENT_EXPERIENCE = {
     },
     repair: {
         terms: { catalogue: 'Pièces & services', item: 'article', items: 'articles' },
-        navFirst: ['/agenda', '/ventes', '/stock', '/clients'],
-        firstSteps: [step.products('Ajouter vos pièces et services'), step.agenda(), step.sale('Enregistrer une réparation'), step.whatsapp()],
+        navFirst: ['/agenda', '/ventes', '/factures', '/stock', '/clients'],
+        firstSteps: [step.products('Ajouter vos pièces et services'), step.agenda(), step.quote('Faire un devis de réparation'), step.sale('Enregistrer une réparation'), step.whatsapp()],
     },
     pro_services: {
         terms: OFFER_TERMS,
-        navFirst: ['/ventes', '/clients', '/whatsapp'],
-        firstSteps: [step.products('Ajouter vos services'), step.sale('Enregistrer une prestation'), step.expense('Noter vos charges'), step.whatsapp()],
+        navFirst: ['/factures', '/ventes', '/creances', '/clients', '/whatsapp'],
+        firstSteps: [step.products('Ajouter vos services'), step.quote(), step.expense('Noter vos charges'), step.credit('Suivre vos paiements attendus'), step.whatsapp()],
     },
     home_services: {
         terms: OFFER_TERMS,
-        navFirst: ['/agenda', '/ventes', '/clients'],
-        firstSteps: [step.products('Ajouter vos services'), step.agenda('Définir vos créneaux'), step.sale('Enregistrer une prestation'), step.team()],
+        navFirst: ['/agenda', '/factures', '/ventes', '/clients'],
+        firstSteps: [step.products('Ajouter vos services'), step.agenda('Définir vos créneaux'), step.quote(), step.sale('Enregistrer une prestation'), step.team()],
     },
     producer: {
         terms: PRODUCT_TERMS,
@@ -382,7 +384,7 @@ exports.SEGMENT_EXPERIENCE = {
     },
     agriculture: {
         terms: PRODUCT_TERMS,
-        navFirst: ['/stock', '/ventes', '/logistique'],
+        navFirst: ['/stock', '/ventes', '/logistique', '/creances'],
         firstSteps: [step.products(), step.logistics('Déclarer vos lieux de stockage'), step.expense('Noter vos achats'), step.sale()],
     },
     multi_site: {
@@ -397,8 +399,8 @@ exports.SEGMENT_EXPERIENCE = {
     },
     b2b: {
         terms: PRODUCT_TERMS,
-        navFirst: ['/clients', '/ventes', '/whatsapp', '/stock'],
-        firstSteps: [step.products('Ajouter votre catalogue'), step.sale('Enregistrer une commande client'), step.whatsapp(), step.team('Inviter vos commerciaux')],
+        navFirst: ['/clients', '/factures', '/ventes', '/creances', '/whatsapp', '/stock'],
+        firstSteps: [step.products('Ajouter votre catalogue et vos tarifs'), step.quote(), step.sale('Enregistrer une commande client'), step.credit('Suivre les paiements clients'), step.team('Inviter vos commerciaux')],
     },
 };
 function experienceFor(sector) {

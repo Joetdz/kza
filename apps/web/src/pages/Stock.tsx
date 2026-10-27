@@ -49,6 +49,7 @@ export function Stock() {
   const { terms } = useSegment();
   const variantsEnabled = hasModule('variants');
   const agendaEnabled = hasModule('agenda');
+  const invoicesEnabled = hasModule('invoices');
 
   // Variant creation: one model name + axes (Taille: S, M, L / Couleur: Rouge, Bleu).
   const [variantMode, setVariantMode] = useState(false);
@@ -168,7 +169,7 @@ export function Stock() {
   const openEdit = (p: Product) => {
     setEditing(p);
     // acquisitionCost stored as unit cost → show as total in form
-    setForm({ name: p.name, sku: p.sku, category: p.category, quantity: p.quantity, alertThreshold: p.alertThreshold, supplier: p.supplier, acquisitionCost: p.acquisitionCost * p.quantity, sellingPrice: p.sellingPrice ?? 0, imageUrl: p.imageUrl, entryDate: p.entryDate, trackStock: p.trackStock ?? true, variantGroup: p.variantGroup ?? null, variantLabel: p.variantLabel ?? null, durationMinutes: p.durationMinutes ?? null });
+    setForm({ name: p.name, sku: p.sku, category: p.category, quantity: p.quantity, alertThreshold: p.alertThreshold, supplier: p.supplier, acquisitionCost: p.acquisitionCost * p.quantity, sellingPrice: p.sellingPrice ?? 0, imageUrl: p.imageUrl, entryDate: p.entryDate, trackStock: p.trackStock ?? true, variantGroup: p.variantGroup ?? null, variantLabel: p.variantLabel ?? null, durationMinutes: p.durationMinutes ?? null, priceTiers: p.priceTiers ?? null });
     setVariantMode(false); setAddingToGroup(null);
     setModalOpen(true);
   };
@@ -733,6 +734,36 @@ export function Stock() {
             )}
             {field('sellingPrice', `Prix de vente unitaire (${currency})`, 'number', undefined, variantMode ? 'Même prix pour toutes les variantes — modifiable ensuite pour chacune' : 'Prix auquel vous vendez une unité à votre client')}
           </div>
+
+          {/* Volume pricing: from N units, a lower unit price (quotes apply it automatically) */}
+          {invoicesEnabled && !variantMode && (
+            <div className="space-y-2 p-4 bg-gray-50 rounded-2xl border border-gray-100">
+              <p className="text-sm font-semibold text-gray-900">Prix dégressifs</p>
+              {(form.priceTiers ?? []).map((t, i) => (
+                <div key={i} className="flex items-center gap-2 text-sm">
+                  <span className="text-gray-500 text-xs">À partir de</span>
+                  <NumberInput
+                    value={t.minQty}
+                    onChange={v => setForm(f => ({ ...f, priceTiers: (f.priceTiers ?? []).map((x, j) => j === i ? { ...x, minQty: v } : x) }))}
+                    className="w-20 border border-gray-200 rounded-lg px-2 py-1 text-sm text-right outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
+                  />
+                  <span className="text-gray-500 text-xs">unités :</span>
+                  <NumberInput
+                    value={t.unitPrice}
+                    onChange={v => setForm(f => ({ ...f, priceTiers: (f.priceTiers ?? []).map((x, j) => j === i ? { ...x, unitPrice: v } : x) }))}
+                    className="w-24 border border-gray-200 rounded-lg px-2 py-1 text-sm text-right outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
+                  />
+                  <span className="text-gray-400 text-xs">{currency}/u</span>
+                  <button type="button" onClick={() => setForm(f => ({ ...f, priceTiers: (f.priceTiers ?? []).filter((_, j) => j !== i) }))}
+                    className="p-1 text-gray-400 hover:text-red-500"><X size={14} /></button>
+                </div>
+              ))}
+              <button type="button"
+                onClick={() => setForm(f => ({ ...f, priceTiers: [...(f.priceTiers ?? []), { minQty: (f.priceTiers?.at(-1)?.minQty ?? 0) + 10, unitPrice: f.sellingPrice }] }))}
+                className="text-xs font-medium text-indigo-600 hover:text-indigo-700">+ Ajouter un palier</button>
+              <p className="text-[11px] text-gray-400">Appliqués automatiquement dans les devis et factures selon la quantité.</p>
+            </div>
+          )}
 
           {/* Variant axes: each line is one characteristic, its values comma-separated */}
           {variantMode && !editing && (

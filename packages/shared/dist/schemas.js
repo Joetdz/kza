@@ -6,7 +6,8 @@ const zod_1 = require("zod");
 exports.SALE_CHANNELS = ['WhatsApp', 'Meta Ads', 'TikTok', 'Instagram', 'Boutique', 'Autre'];
 exports.EXPENSE_CATEGORIES = ['pub', 'transport', 'stock', 'other'];
 exports.MOVEMENT_TYPES = ['in', 'out'];
-exports.SALE_STATUSES = ['paid', 'pending', 'cancelled'];
+// 'credit' = goods handed over, money still owed (module "credit") — stock leaves like a paid sale.
+exports.SALE_STATUSES = ['paid', 'pending', 'cancelled', 'credit'];
 // ─── Zones de livraison ───────────────────────────────────────────────────────
 exports.KINSHASA_COMMUNES = [
     'Bandalungwa', 'Barumbu', 'Bumbu', 'Gombe', 'Kalamu', 'Kasa-Vubu',
@@ -45,6 +46,8 @@ exports.CreateProductSchema = zod_1.z.object({
     variantLabel: zod_1.z.string().nullable().optional(),
     /** Length of one booking of this service, in minutes (agenda module). */
     durationMinutes: zod_1.z.number().int().positive().nullable().optional(),
+    /** Volume pricing: [{ minQty, unitPrice }] (invoices module). */
+    priceTiers: zod_1.z.array(zod_1.z.object({ minQty: zod_1.z.number().positive(), unitPrice: zod_1.z.number().positive() })).nullable().optional(),
 });
 exports.UpdateProductSchema = exports.CreateProductSchema.partial();
 exports.ProductSchema = exports.CreateProductSchema.extend({

@@ -3,3 +3,4 @@ export * from './types';
 export * from './modules';
 export * from './time';
 export * from './segments';
+export * from './documents';

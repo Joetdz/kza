@@ -65,6 +65,11 @@ export class CreateProductDto {
   @Min(5)
   @IsOptional()
   durationMinutes?: number | null;
+
+  /** Volume pricing: [{ minQty, unitPrice }] (invoices module). */
+  @IsOptional()
+  @IsArray()
+  priceTiers?: { minQty: number; unitPrice: number }[] | null;
 }
 
 // One model and all its variants in one go — e.g. labels ["S / Rouge", "M / Rouge"].

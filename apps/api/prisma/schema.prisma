@@ -96,6 +96,9 @@ model Product {
   variantLabel    String?  @map("variant_label")
   // How long one booking of this service lasts (module "agenda"); null = the agenda's default.
   durationMinutes Int?     @map("duration_minutes")
+  // Volume pricing (module "invoices"): [{ minQty: 10, unitPrice: 9.5 }, …] — the tier
+  // with the highest minQty not above the quantity wins; below every tier, sellingPrice.
+  priceTiers      Json?    @map("price_tiers")
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt     @map("updated_at")
   userId          String?  @map("user_id")
@@ -145,11 +148,17 @@ model Sale {
   deliveryZone  String?    @map("delivery_zone")
   customerName  String?    @map("customer_name")
   customerPhone String?    @map("customer_phone")
+  // Credit sales (status "credit", module "credit"): when the balance is due if there is
+  // no instalment plan, and when the customer was last reminded on WhatsApp.
+  dueDate        DateTime? @map("due_date") @db.Date
+  lastReminderAt DateTime? @map("last_reminder_at")
   createdAt     DateTime   @default(now()) @map("created_at")
   userId        String?    @map("user_id")
   businessId    String?    @map("business_id") @db.Uuid
 
-  items SaleItem[]
+  items        SaleItem[]
+  payments     SalePayment[]
+  installments SaleInstallment[]
 
   @@index([userId])
   @@index([businessId])
@@ -167,6 +176,40 @@ model SaleItem {
   product Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
 
   @@map("sale_items")
+}
+
+// Money received against a credit sale — several partial payments until it is settled.
+model SalePayment {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  saleId     String   @map("sale_id") @db.Uuid
+  amount     Float
+  date       DateTime @db.Date
+  // cash | mobile_money | bank | other
+  method     String   @default("cash")
+  note       String?
+  userId     String   @map("user_id")
+  businessId String?  @map("business_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  sale Sale @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  @@index([saleId])
+  @@index([businessId])
+  @@map("sale_payments")
+}
+
+// Planned instalments of a credit sale (e.g. school fees in 3 parts). Payments cover
+// them oldest first; an instalment is settled once covered.
+model SaleInstallment {
+  id      String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  saleId  String   @map("sale_id") @db.Uuid
+  dueDate DateTime @map("due_date") @db.Date
+  amount  Float
+
+  sale Sale @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  @@index([saleId])
+  @@map("sale_installments")
 }
 
 model Expense {
@@ -1039,4 +1082,42 @@ model Appointment {
   @@index([businessId, startAt])
   @@index([userId, startAt])
   @@map("appointments")
+}
+
+// ─── Devis & factures (module "invoices") ────────────────────────────────────
+// A quote or an invoice, numbered per business and per year (DEV-2026-0001,
+// FAC-2026-0001). Lines are free text or linked to a product.
+model CommercialDocument {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId          String    @map("user_id")
+  businessId      String?   @map("business_id") @db.Uuid
+  // quote | invoice
+  type            String
+  number          String
+  year            Int
+  seq             Int
+  customerName    String    @map("customer_name")
+  customerPhone   String?   @map("customer_phone")
+  customerAddress String?   @map("customer_address")
+  // [{ productId?, description, quantity, unitPrice }]
+  items           Json      @default("[]")
+  // Flat amount off the subtotal
+  discount        Float     @default(0)
+  // VAT / tax in percent, applied after the discount
+  taxRate         Float     @default(0) @map("tax_rate")
+  notes           String?
+  // quote: draft | sent | accepted | refused — invoice: unpaid | paid | cancelled
+  status          String
+  issueDate       DateTime  @map("issue_date") @db.Date
+  // quote: valid until — invoice: payment due
+  dueDate         DateTime? @map("due_date") @db.Date
+  // The quote an invoice came from, and the sale created from either
+  sourceQuoteId   String?   @map("source_quote_id") @db.Uuid
+  saleId          String?   @map("sale_id") @db.Uuid
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  @@unique([userId, businessId, type, year, seq])
+  @@index([businessId, type])
+  @@map("commercial_documents")
 }

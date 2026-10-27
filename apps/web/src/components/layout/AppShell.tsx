@@ -2,7 +2,7 @@ import { Outlet, NavLink, useLocation } from 'react-router-dom';
 import { Menu, Calendar, LogOut, User } from 'lucide-react';
 import {
   LayoutDashboard, Package, ShoppingCart, CreditCard,
-  BarChart2, Target, MessageCircle, Store, Download, CalendarDays, Truck, Users,
+  BarChart2, Target, MessageCircle, Store, Download, CalendarDays, Truck, Users, Wallet, FileText,
 } from 'lucide-react';
 import { useStore } from '../../store/useStore';
 import { useAuth } from '../../contexts/AuthContext';
@@ -27,6 +27,8 @@ const mobileNav: Array<{ to: string; icon: typeof Package; end: boolean; module?
   { to: '/whatsapp',   icon: MessageCircle,   end: false, module: 'whatsapp' as const },
   { to: '/logistique', icon: Truck,           end: false, module: 'logistics' as const },
   { to: '/clients',    icon: Users,           end: false },
+  { to: '/creances',   icon: Wallet,          end: false, module: 'credit' as const },
+  { to: '/factures',   icon: FileText,        end: false, module: 'invoices' as const },
 ];
 
 export function AppShell() {
