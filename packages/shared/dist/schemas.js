@@ -6,7 +6,8 @@ const zod_1 = require("zod");
 exports.SALE_CHANNELS = ['WhatsApp', 'Meta Ads', 'TikTok', 'Instagram', 'Boutique', 'Autre'];
 exports.EXPENSE_CATEGORIES = ['pub', 'transport', 'stock', 'other'];
 exports.MOVEMENT_TYPES = ['in', 'out'];
-exports.SALE_STATUSES = ['paid', 'pending', 'cancelled'];
+// 'credit' = goods handed over, money still owed (module "credit") — stock leaves like a paid sale.
+exports.SALE_STATUSES = ['paid', 'pending', 'cancelled', 'credit'];
 // ─── Zones de livraison ───────────────────────────────────────────────────────
 exports.KINSHASA_COMMUNES = [
     'Bandalungwa', 'Barumbu', 'Bumbu', 'Gombe', 'Kalamu', 'Kasa-Vubu',

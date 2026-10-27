@@ -2,7 +2,7 @@ import { z } from 'zod';
 export declare const SALE_CHANNELS: readonly ["WhatsApp", "Meta Ads", "TikTok", "Instagram", "Boutique", "Autre"];
 export declare const EXPENSE_CATEGORIES: readonly ["pub", "transport", "stock", "other"];
 export declare const MOVEMENT_TYPES: readonly ["in", "out"];
-export declare const SALE_STATUSES: readonly ["paid", "pending", "cancelled"];
+export declare const SALE_STATUSES: readonly ["paid", "pending", "cancelled", "credit"];
 export declare const KINSHASA_COMMUNES: readonly ["Bandalungwa", "Barumbu", "Bumbu", "Gombe", "Kalamu", "Kasa-Vubu", "Kimbanseke", "Kinshasa", "Kisenso", "Lemba", "Limete", "Lingwala", "Makala", "Maluku", "Masina", "Matete", "Mont-Ngafula", "Ndjili", "Ngaba", "Ngaliema", "Ngiri-Ngiri", "Nsele", "Selembao", "Kintambo"];
 export declare const RDC_VILLES: readonly ["Lubumbashi", "Mbuji-Mayi", "Kananga", "Kisangani", "Bukavu", "Goma", "Kolwezi", "Likasi", "Boma", "Matadi", "Mbandaka", "Butembo", "Uvira", "Kalemie", "Mwene-Ditu", "Gandajika", "Kikwit", "Tshikapa", "Ilebo", "Bandundu", "Gemena", "Lisala", "Bumba", "Zongo"];
 export declare const DELIVERY_ZONES: readonly [...string[], "Lubumbashi", "Mbuji-Mayi", "Kananga", "Kisangani", "Bukavu", "Goma", "Kolwezi", "Likasi", "Boma", "Matadi", "Mbandaka", "Butembo", "Uvira", "Kalemie", "Mwene-Ditu", "Gandajika", "Kikwit", "Tshikapa", "Ilebo", "Bandundu", "Gemena", "Lisala", "Bumba", "Zongo", "Autre ville"];
@@ -236,12 +236,12 @@ export declare const CreateSaleSchema: z.ZodObject<{
     channel: z.ZodEnum<["WhatsApp", "Meta Ads", "TikTok", "Instagram", "Boutique", "Autre"]>;
     date: z.ZodString;
     note: z.ZodOptional<z.ZodString>;
-    status: z.ZodDefault<z.ZodEnum<["paid", "pending", "cancelled"]>>;
+    status: z.ZodDefault<z.ZodEnum<["paid", "pending", "cancelled", "credit"]>>;
     deliveryZone: z.ZodOptional<z.ZodString>;
     customerName: z.ZodOptional<z.ZodString>;
     customerPhone: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
-    status: "paid" | "pending" | "cancelled";
+    status: "paid" | "pending" | "cancelled" | "credit";
     date: string;
     items: {
         quantity: number;
@@ -261,7 +261,7 @@ export declare const CreateSaleSchema: z.ZodObject<{
         unitPrice: number;
     }[];
     channel: "WhatsApp" | "Meta Ads" | "TikTok" | "Instagram" | "Boutique" | "Autre";
-    status?: "paid" | "pending" | "cancelled" | undefined;
+    status?: "paid" | "pending" | "cancelled" | "credit" | undefined;
     note?: string | undefined;
     deliveryZone?: string | undefined;
     customerName?: string | undefined;
@@ -288,11 +288,11 @@ export declare const SaleSchema: z.ZodObject<{
     customerPhone: z.ZodOptional<z.ZodString>;
 } & {
     id: z.ZodString;
-    status: z.ZodEnum<["paid", "pending", "cancelled"]>;
+    status: z.ZodEnum<["paid", "pending", "cancelled", "credit"]>;
     deliveryZone: z.ZodOptional<z.ZodString>;
     createdAt: z.ZodString;
 }, "strip", z.ZodTypeAny, {
-    status: "paid" | "pending" | "cancelled";
+    status: "paid" | "pending" | "cancelled" | "credit";
     id: string;
     createdAt: string;
     date: string;
@@ -307,7 +307,7 @@ export declare const SaleSchema: z.ZodObject<{
     customerName?: string | undefined;
     customerPhone?: string | undefined;
 }, {
-    status: "paid" | "pending" | "cancelled";
+    status: "paid" | "pending" | "cancelled" | "credit";
     id: string;
     createdAt: string;
     date: string;

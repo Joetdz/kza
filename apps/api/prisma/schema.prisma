@@ -145,11 +145,17 @@ model Sale {
   deliveryZone  String?    @map("delivery_zone")
   customerName  String?    @map("customer_name")
   customerPhone String?    @map("customer_phone")
+  // Credit sales (status "credit", module "credit"): when the balance is due if there is
+  // no instalment plan, and when the customer was last reminded on WhatsApp.
+  dueDate        DateTime? @map("due_date") @db.Date
+  lastReminderAt DateTime? @map("last_reminder_at")
   createdAt     DateTime   @default(now()) @map("created_at")
   userId        String?    @map("user_id")
   businessId    String?    @map("business_id") @db.Uuid
 
-  items SaleItem[]
+  items        SaleItem[]
+  payments     SalePayment[]
+  installments SaleInstallment[]
 
   @@index([userId])
   @@index([businessId])
@@ -167,6 +173,40 @@ model SaleItem {
   product Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
 
   @@map("sale_items")
+}
+
+// Money received against a credit sale — several partial payments until it is settled.
+model SalePayment {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  saleId     String   @map("sale_id") @db.Uuid
+  amount     Float
+  date       DateTime @db.Date
+  // cash | mobile_money | bank | other
+  method     String   @default("cash")
+  note       String?
+  userId     String   @map("user_id")
+  businessId String?  @map("business_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  sale Sale @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  @@index([saleId])
+  @@index([businessId])
+  @@map("sale_payments")
+}
+
+// Planned instalments of a credit sale (e.g. school fees in 3 parts). Payments cover
+// them oldest first; an instalment is settled once covered.
+model SaleInstallment {
+  id      String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  saleId  String   @map("sale_id") @db.Uuid
+  dueDate DateTime @map("due_date") @db.Date
+  amount  Float
+
+  sale Sale @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  @@index([saleId])
+  @@map("sale_installments")
 }
 
 model Expense {

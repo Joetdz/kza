@@ -17,3 +17,9 @@ export declare function timeToMinutes(time: string): number;
 export declare function minutesToTime(minutes: number): string;
 /** "2026-10-28" + n days */
 export declare function addDays(date: string, days: number): string;
+/**
+ * Any spelling of a customer's number → international digits for WhatsApp:
+ * "0812345678" / "+243 81 234 5678" / "243812345678@c.us" → "243812345678".
+ * null for a WhatsApp LID or garbage — never a dialable number.
+ */
+export declare function toInternationalPhone(raw: string, country: string): string | null;

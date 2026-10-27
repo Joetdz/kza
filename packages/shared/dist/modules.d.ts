@@ -42,7 +42,7 @@ export declare const BUSINESS_MODULES: readonly [{
     readonly key: "credit";
     readonly label: "Créances & échéances";
     readonly description: "Crédit client, paiements en plusieurs tranches et relances.";
-    readonly available: false;
+    readonly available: true;
 }, {
     readonly key: "invoices";
     readonly label: "Devis & factures";

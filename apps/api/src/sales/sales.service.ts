@@ -2,6 +2,9 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateSaleDto } from './dto/create-sale.dto';
 
+// A credit sale has left the shop just like a paid one: both take the stock out.
+const takesStock = (status: string) => status === 'paid' || status === 'credit';
+
 @Injectable()
 export class SalesService {
   constructor(private prisma: PrismaService) {}
@@ -35,7 +38,7 @@ export class SalesService {
       include: { items: true },
     });
 
-    if (sale.status === 'paid') {
+    if (takesStock(sale.status)) {
       await Promise.all(
         sale.items
           .filter(item => !!item.productId)
@@ -60,8 +63,8 @@ export class SalesService {
     if (businessId ? sale.businessId !== businessId : sale.userId !== userId) throw new NotFoundException('Vente introuvable');
     const bizData = businessId ? { businessId } : {};
 
-    const waspaid = sale.status === 'paid';
-    const becomespaid = newStatus === 'paid';
+    const waspaid = takesStock(sale.status);
+    const becomespaid = takesStock(newStatus);
     const updated = await this.prisma.sale.update({ where: { id }, data: { status: newStatus }, include: { items: true } });
     const eligibleItems = sale.items.filter(i => !!i.productId);
 
@@ -87,7 +90,7 @@ export class SalesService {
     const bizData = businessId ? { businessId } : {};
 
     await this.prisma.sale.delete({ where: { id } });
-    if (sale.status === 'paid') {
+    if (takesStock(sale.status)) {
       await Promise.all(
         sale.items.filter(item => !!item.productId).flatMap(item => [
           this.prisma.product.update({ where: { id: item.productId! }, data: { quantity: { increment: item.quantity } } }),

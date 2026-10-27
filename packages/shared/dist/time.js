@@ -11,6 +11,7 @@ exports.utcToLocal = utcToLocal;
 exports.timeToMinutes = timeToMinutes;
 exports.minutesToTime = minutesToTime;
 exports.addDays = addDays;
+exports.toInternationalPhone = toInternationalPhone;
 exports.COUNTRY_INFO = {
     CD: { timeZone: 'Africa/Kinshasa', dialCode: '243' },
     CG: { timeZone: 'Africa/Brazzaville', dialCode: '242' },
@@ -74,4 +75,22 @@ function addDays(date, days) {
     const d = new Date(`${date}T00:00:00Z`);
     d.setUTCDate(d.getUTCDate() + days);
     return d.toISOString().slice(0, 10);
+}
+/**
+ * Any spelling of a customer's number → international digits for WhatsApp:
+ * "0812345678" / "+243 81 234 5678" / "243812345678@c.us" → "243812345678".
+ * null for a WhatsApp LID or garbage — never a dialable number.
+ */
+function toInternationalPhone(raw, country) {
+    const digits = raw.replace(/@.*$/, '').replace(/\D/g, '');
+    if (!digits || digits.length > 13)
+        return null;
+    const dial = exports.COUNTRY_INFO[country]?.dialCode ?? '';
+    if (dial && digits.startsWith(dial))
+        return digits;
+    if (dial && digits.startsWith('0'))
+        return dial + digits.slice(1);
+    if (dial && digits.length <= 9)
+        return dial + digits;
+    return digits;
 }

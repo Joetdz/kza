@@ -13,13 +13,15 @@ import { downloadInvoice, getInvoiceBase64 } from '../utils/invoicePdf';
 import { salesApi } from '../api';
 import type { SaleChannel, SaleItem, SaleStatus } from '../types';
 import { SALE_STATUSES, KINSHASA_COMMUNES, RDC_VILLES } from '@kza/shared';
+import { useModules } from '../hooks/useModules';
 
 const PAGE_SIZE = 10;
 
-const STATUS_BADGE: Record<SaleStatus, { color: 'green' | 'amber' | 'red'; label: string }> = {
+const STATUS_BADGE: Record<SaleStatus, { color: 'green' | 'amber' | 'red' | 'indigo'; label: string }> = {
   paid: { color: 'green', label: 'Payé' },
   pending: { color: 'amber', label: 'En attente' },
   cancelled: { color: 'red', label: 'Annulé' },
+  credit: { color: 'indigo', label: 'À crédit' },
 };
 
 const CHANNEL_BADGE: Record<SaleChannel, 'green' | 'blue' | 'gray' | 'amber' | 'purple' | 'indigo'> = {
@@ -52,6 +54,9 @@ export function Sales() {
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [note, setNote] = useState('');
   const [status, setStatus] = useState<SaleStatus>('paid');
+  const { has: hasModule } = useModules();
+  // "À crédit" only exists for businesses using the credit module (an existing credit sale still shows it).
+  const statusesFor = (current?: SaleStatus) => SALE_STATUSES.filter(st => st !== 'credit' || hasModule('credit') || current === 'credit');
   const [deliveryZone, setDeliveryZone] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
@@ -368,13 +373,14 @@ export function Sales() {
 
               {/* Status selector */}
               <div className="flex gap-1 mb-3">
-                {SALE_STATUSES.map(s => {
+                {statusesFor(sale.status).map(s => {
                   const cfg = STATUS_BADGE[s];
                   const active = sale.status === s;
                   const colors: Record<string, string> = {
                     paid: active ? 'bg-emerald-600 text-white' : 'text-emerald-700 hover:bg-emerald-50',
                     pending: active ? 'bg-amber-500 text-white' : 'text-amber-700 hover:bg-amber-50',
                     cancelled: active ? 'bg-red-500 text-white' : 'text-red-600 hover:bg-red-50',
+                    credit: active ? 'bg-indigo-600 text-white' : 'text-indigo-700 hover:bg-indigo-50',
                   };
                   return (
                     <button
@@ -559,12 +565,13 @@ export function Sales() {
           <div>
             <label className="text-xs font-medium text-gray-600 mb-2 block">Statut *</label>
             <div className="flex gap-2">
-              {SALE_STATUSES.map(s => (
+              {statusesFor().map(s => (
                 <button key={s} onClick={() => setStatus(s)}
                   className={`flex-1 py-2 rounded-xl text-sm font-medium border transition-colors ${
                     status === s
                       ? s === 'paid' ? 'bg-emerald-600 text-white border-emerald-600'
                         : s === 'pending' ? 'bg-amber-500 text-white border-amber-500'
+                        : s === 'credit' ? 'bg-indigo-600 text-white border-indigo-600'
                         : 'bg-red-500 text-white border-red-500'
                       : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
                   }`}>

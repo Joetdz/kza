@@ -166,7 +166,7 @@ async function buildDoc(sale: Sale, products: Product[], business?: InvoiceBusin
   doc.setTextColor(30, 30, 30);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
-  const statusLabel = sale.status === 'paid' ? 'Payé' : sale.status === 'pending' ? 'En attente' : 'Annulé';
+  const statusLabel = sale.status === 'paid' ? 'Payé' : sale.status === 'pending' ? 'En attente' : sale.status === 'credit' ? 'À crédit' : 'Annulé';
   doc.text(`Statut : ${statusLabel}`, 14, finalY + 5);
   if (sale.deliveryZone) {
     doc.text(`Zone de livraison : ${sale.deliveryZone}`, 14, finalY + 11);

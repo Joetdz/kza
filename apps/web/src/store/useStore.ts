@@ -6,6 +6,9 @@ import { toast } from '../hooks/useToast';
 
 export type BusinessRole = 'owner' | 'manager' | 'operator';
 
+// A credit sale has left the shop just like a paid one: both take the stock out.
+const takesStock = (status?: string) => status === 'paid' || status === 'credit';
+
 export interface BusinessRecord {
   id: string;
   name: string;
@@ -249,7 +252,7 @@ export const useStore = create<AppStore>()((set, get) => ({
       const created = await salesApi.create(s);
       set(state => {
         const update: Partial<typeof state> = { sales: [created, ...state.sales] };
-        if (created.status === 'paid') {
+        if (takesStock(created.status)) {
           update.products = state.products.map(p => {
             const item = created.items.find(i => i.productId === p.id);
             if (!item) return p;
@@ -272,7 +275,7 @@ export const useStore = create<AppStore>()((set, get) => ({
       });
       toast.success('Vente enregistrée');
       // Sync authoritative quantities from DB in background
-      if (created.status === 'paid') {
+      if (takesStock(created.status)) {
         productsApi.getAll().then(products => set({ products })).catch(() => {});
       }
     } catch { toast.error('Erreur lors de l\'enregistrement de la vente'); throw new Error(); }
@@ -284,8 +287,8 @@ export const useStore = create<AppStore>()((set, get) => ({
       const updated = await salesApi.updateStatus(id, newStatus);
       set(s => {
         const oldSale = s.sales.find(sale => sale.id === id);
-        const waspaid = oldSale?.status === 'paid';
-        const becomespaid = newStatus === 'paid';
+        const waspaid = takesStock(oldSale?.status);
+        const becomespaid = takesStock(newStatus);
         const newState: Partial<typeof s> = {
           sales: s.sales.map(sale => sale.id === id ? { ...sale, status: updated.status } : sale),
         };
@@ -341,12 +344,12 @@ export const useStore = create<AppStore>()((set, get) => ({
   deleteSale: async (id) => {
     try {
       // Capture paid status before removing from store
-      const wasPaid = get().sales.find(sale => sale.id === id)?.status === 'paid';
+      const wasPaid = takesStock(get().sales.find(sale => sale.id === id)?.status);
       await salesApi.remove(id);
       set(s => {
         const sale = s.sales.find(sale => sale.id === id);
         const update: Partial<typeof s> = { sales: s.sales.filter(sale => sale.id !== id) };
-        if (sale?.status === 'paid') {
+        if (takesStock(sale?.status)) {
           update.products = s.products.map(p => {
             const item = sale.items.find(i => i.productId === p.id);
             if (!item) return p;

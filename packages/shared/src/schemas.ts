@@ -5,7 +5,8 @@ import { z } from 'zod';
 export const SALE_CHANNELS = ['WhatsApp', 'Meta Ads', 'TikTok', 'Instagram', 'Boutique', 'Autre'] as const;
 export const EXPENSE_CATEGORIES = ['pub', 'transport', 'stock', 'other'] as const;
 export const MOVEMENT_TYPES = ['in', 'out'] as const;
-export const SALE_STATUSES = ['paid', 'pending', 'cancelled'] as const;
+// 'credit' = goods handed over, money still owed (module "credit") — stock leaves like a paid sale.
+export const SALE_STATUSES = ['paid', 'pending', 'cancelled', 'credit'] as const;
 
 // ─── Zones de livraison ───────────────────────────────────────────────────────
 
