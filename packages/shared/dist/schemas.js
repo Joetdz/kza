@@ -39,6 +39,10 @@ exports.CreateProductSchema = zod_1.z.object({
     imageUrl: zod_1.z.string().optional(),
     entryDate: zod_1.z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
     trackStock: zod_1.z.boolean().default(true),
+    /** Model this product is a variant of ("T-shirt"); null for a plain product. */
+    variantGroup: zod_1.z.string().nullable().optional(),
+    /** What distinguishes this variant ("M / Rouge"). */
+    variantLabel: zod_1.z.string().nullable().optional(),
 });
 exports.UpdateProductSchema = exports.CreateProductSchema.partial();
 exports.ProductSchema = exports.CreateProductSchema.extend({

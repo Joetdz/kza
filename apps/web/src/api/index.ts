@@ -42,6 +42,13 @@ export const productsApi = {
   remove: (id: string) =>
     req<{ id: string }>(`/products/${id}`, { method: 'DELETE' }),
   reconcile: () => req<{ products: Product[]; fixedCount: number }>('/products/reconcile', { method: 'POST' }),
+  createVariants: (body: {
+    group: string; labels: string[]; quantities?: Record<string, number>; prices?: Record<string, number>;
+    category: string; alertThreshold: number; supplier: string; acquisitionCost: number; sellingPrice: number;
+    imageUrl?: string; entryDate: string; trackStock: boolean;
+  }) => req<Product[]>('/products/variants', { method: 'POST', body: JSON.stringify(body) }),
+  renameVariantGroup: (from: string, to: string) =>
+    req<Product[]>('/products/variant-groups/rename', { method: 'PATCH', body: JSON.stringify({ from, to }) }),
 };
 
 // ─── Movements ───────────────────────────────────────────────

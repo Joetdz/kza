@@ -1,6 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateProductDto } from './dto/create-product.dto';
+import { CreateProductDto, CreateVariantsDto } from './dto/create-product.dto';
+
+const clean = (s: string | null | undefined): string | null => s?.replace(/\s+/g, ' ').trim() || null;
+const variantName = (group: string, label: string) => `${group} — ${label}`;
 
 @Injectable()
 export class ProductsService {
@@ -22,9 +25,13 @@ export class ProductsService {
       } while (++attempts < 10);
     }
 
+    const group = clean(dto.variantGroup);
+    const label = clean(dto.variantLabel);
     const product = await this.prisma.product.create({
       data: {
-        name: dto.name,
+        name: group && label ? variantName(group, label) : dto.name,
+        variantGroup: group && label ? group : null,
+        variantLabel: group && label ? label : null,
         sku,
         category: dto.category ?? '',
         quantity: dto.quantity,
@@ -60,10 +67,17 @@ export class ProductsService {
   async update(id: string, dto: Partial<CreateProductDto>, userId: string, businessId?: string) {
     const existing = await this.findOneOrFail(id, userId, businessId);
 
+    // A variant's name is always derived from its model + label, never typed freely.
+    const group = dto.variantGroup !== undefined ? clean(dto.variantGroup) : existing.variantGroup;
+    const label = dto.variantLabel !== undefined ? clean(dto.variantLabel) : existing.variantLabel;
+    const name = group && label ? variantName(group, label) : dto.name;
+
     const updated = await this.prisma.product.update({
       where: { id },
       data: {
-        ...(dto.name !== undefined && { name: dto.name }),
+        ...(name !== undefined && { name }),
+        ...(dto.variantGroup !== undefined && { variantGroup: group }),
+        ...(dto.variantLabel !== undefined && { variantLabel: label }),
         ...(dto.sku !== undefined && { sku: dto.sku }),
         ...(dto.category !== undefined && { category: dto.category }),
         ...(dto.quantity !== undefined && { quantity: dto.quantity }),
@@ -96,6 +110,57 @@ export class ProductsService {
     }
 
     return updated;
+  }
+
+  // Creates a model's variants in one go. Labels the model already has are skipped,
+  // so "add sizes to an existing model" is the same call.
+  async createVariants(dto: CreateVariantsDto, userId: string, businessId?: string) {
+    const group = clean(dto.group);
+    if (!group) throw new BadRequestException('Le nom du modèle est requis.');
+    const where = businessId ? { businessId } : { userId };
+    const existing = await this.prisma.product.findMany({
+      where: { ...where, variantGroup: group },
+      select: { variantLabel: true },
+    });
+    const taken = new Set(existing.map(p => p.variantLabel?.toLowerCase()));
+    const labels = [...new Set(dto.labels.map(l => clean(l)).filter((l): l is string => !!l))]
+      .filter(l => !taken.has(l.toLowerCase()));
+    if (labels.length === 0) throw new BadRequestException('Ces variantes existent déjà.');
+
+    // One base SKU for the model, one suffix per variant — readable on a label printer.
+    const base = 'PRD-' + Math.random().toString(36).slice(2, 7).toUpperCase();
+    const created: Awaited<ReturnType<ProductsService['create']>>[] = [];
+    for (const label of labels) {
+      const suffix = label.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-zA-Z0-9]+/g, '').toUpperCase().slice(0, 8) || String(created.length + 1);
+      created.push(await this.create({
+        name: variantName(group, label),
+        variantGroup: group,
+        variantLabel: label,
+        sku: `${base}-${suffix}`,
+        category: dto.category ?? '',
+        quantity: Math.max(0, Number(dto.quantities?.[label] ?? 0)),
+        alertThreshold: dto.alertThreshold,
+        supplier: dto.supplier ?? '',
+        acquisitionCost: dto.acquisitionCost,
+        sellingPrice: Number(dto.prices?.[label] ?? dto.sellingPrice ?? 0),
+        imageUrl: dto.imageUrl,
+        entryDate: dto.entryDate,
+        trackStock: dto.trackStock ?? true,
+      }, userId, businessId));
+    }
+    return created;
+  }
+
+  // Renaming a model renames every one of its variants.
+  async renameVariantGroup(from: string, to: string, userId: string, businessId?: string) {
+    const target = clean(to);
+    if (!target) throw new BadRequestException('Le nom du modèle est requis.');
+    const where = businessId ? { businessId } : { userId };
+    const variants = await this.prisma.product.findMany({ where: { ...where, variantGroup: from } });
+    return Promise.all(variants.map(v => this.prisma.product.update({
+      where: { id: v.id },
+      data: { variantGroup: target, name: variantName(target, v.variantLabel ?? '') },
+    })));
   }
 
   async remove(id: string, userId: string, businessId?: string) {

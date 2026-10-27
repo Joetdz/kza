@@ -89,6 +89,11 @@ model Product {
   imageUrl        String?  @map("image_url")
   entryDate       DateTime @map("entry_date") @db.Date
   trackStock      Boolean  @default(true) @map("track_stock")
+  // Variants (module "variants"): each variant is a full product with its own stock,
+  // price and SKU, grouped under a model name. name = "<variantGroup> — <variantLabel>"
+  // so every screen that lists products shows the right thing without knowing about it.
+  variantGroup    String?  @map("variant_group")
+  variantLabel    String?  @map("variant_label")
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt     @map("updated_at")
   userId          String?  @map("user_id")
@@ -107,6 +112,7 @@ model Product {
   @@unique([userId, sku])
   @@index([userId])
   @@index([businessId])
+  @@index([businessId, variantGroup])
   @@map("products")
 }
 

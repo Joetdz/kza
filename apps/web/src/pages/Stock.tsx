@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
-import { Plus, Edit2, Trash2, TrendingUp, TrendingDown, History, Search, ImagePlus, X, RefreshCw, MapPin } from 'lucide-react';
+import { Plus, Edit2, Trash2, TrendingUp, TrendingDown, History, Search, ImagePlus, X, RefreshCw, MapPin, Layers, ChevronDown, ChevronUp } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { Modal } from '../components/ui/Modal';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
@@ -13,7 +13,6 @@ import { uploadApi, categoriesApi, resolveImageUrl, productsApi } from '../api';
 import { toast } from '../hooks/useToast';
 import type { Product, StockMovement } from '../types';
 import { logisticsApi, type StockLocation, type LocationStock } from '../api/logistics';
-
 import { useModules } from '../hooks/useModules';
 
 const generateSku = () => 'PRD-' + Math.random().toString(36).slice(2, 8).toUpperCase();
@@ -23,7 +22,21 @@ const emptyProduct = (trackStock = true): Omit<Product, 'id' | 'createdAt' | 'up
   name: '', sku: generateSku(), category: '', quantity: 0, alertThreshold: 5,
   supplier: '', acquisitionCost: 0, sellingPrice: 0, imageUrl: undefined,
   entryDate: new Date().toISOString().split('T')[0], trackStock,
+  variantGroup: null, variantLabel: null,
 });
+
+// Every combination of the axis values: [[S, M], [Rouge, Bleu]] → S / Rouge, S / Bleu, M / Rouge, M / Bleu.
+const combineAxes = (axes: { values: string }[]): string[] => {
+  const lists = axes
+    .map(a => [...new Set(a.values.split(',').map(v => v.trim()).filter(Boolean))])
+    .filter(l => l.length > 0);
+  if (lists.length === 0) return [];
+  return lists.reduce<string[]>((acc, list) => acc.flatMap(prefix => list.map(v => prefix ? `${prefix} / ${v}` : v)), ['']);
+};
+
+type ListItem =
+  | { kind: 'product'; product: Product }
+  | { kind: 'group'; name: string; variants: Product[] };
 
 
 export function Stock() {
@@ -31,6 +44,15 @@ export function Stock() {
   const { fmt: MAD, currency } = useCurrency();
   const { has: hasModule } = useModules();
   const tracksStock = hasModule('stock');
+  const variantsEnabled = hasModule('variants');
+
+  // Variant creation: one model name + axes (Taille: S, M, L / Couleur: Rouge, Bleu).
+  const [variantMode, setVariantMode] = useState(false);
+  const [addingToGroup, setAddingToGroup] = useState<string | null>(null);
+  const [axes, setAxes] = useState([{ name: 'Taille', values: '' }, { name: 'Couleur', values: '' }]);
+  const [variantQty, setVariantQty] = useState<Record<string, number>>({});
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
+  const variantLabels = useMemo(() => combineAxes(axes), [axes]);
 
   const [categories, setCategories] = useState<string[]>([]);
 
@@ -74,6 +96,20 @@ export function Stock() {
     [products, search]
   );
 
+  // Variants of the same model share one card, placed where the first one appears.
+  const listItems = useMemo<ListItem[]>(() => {
+    const items: ListItem[] = [];
+    const groups = new Map<string, Product[]>();
+    for (const p of filtered) {
+      if (!p.variantGroup) { items.push({ kind: 'product', product: p }); continue; }
+      let g = groups.get(p.variantGroup);
+      if (!g) { g = []; groups.set(p.variantGroup, g); items.push({ kind: 'group', name: p.variantGroup, variants: g }); }
+      g.push(p);
+    }
+    for (const g of groups.values()) g.sort((x, y) => (x.variantLabel ?? '').localeCompare(y.variantLabel ?? '', 'fr', { numeric: true }));
+    return items;
+  }, [filtered]);
+
   const handleReconcile = async () => {
     setReconciling(true);
     try {
@@ -96,11 +132,40 @@ export function Stock() {
     }
   };
 
-  const openAdd = () => { setEditing(null); setForm(emptyProduct(tracksStock)); setModalOpen(true); };
+  const resetVariantForm = () => {
+    setAxes([{ name: 'Taille', values: '' }, { name: 'Couleur', values: '' }]);
+    setVariantQty({});
+  };
+  const openAdd = () => {
+    setEditing(null); setForm(emptyProduct(tracksStock));
+    setVariantMode(false); setAddingToGroup(null); resetVariantForm();
+    setModalOpen(true);
+  };
+  // New variants for an existing model: same form, model name fixed, settings copied from a sibling.
+  const openAddVariants = (group: string, sibling: Product) => {
+    setEditing(null);
+    setForm({
+      ...emptyProduct(sibling.trackStock ?? true), name: group, category: sibling.category, supplier: sibling.supplier,
+      alertThreshold: sibling.alertThreshold, acquisitionCost: sibling.acquisitionCost, sellingPrice: sibling.sellingPrice, imageUrl: sibling.imageUrl,
+    });
+    setVariantMode(true); setAddingToGroup(group);
+    setAxes([{ name: 'Variante', values: '' }]); setVariantQty({});
+    setModalOpen(true);
+  };
+  const renameGroup = async (group: string) => {
+    const to = prompt('Nouveau nom du modèle', group)?.trim();
+    if (!to || to === group) return;
+    try {
+      const updated = await productsApi.renameVariantGroup(group, to);
+      useStore.setState(st => ({ products: st.products.map(p => updated.find(u => u.id === p.id) ?? p) }));
+      toast.success('Modèle renommé');
+    } catch { toast.error('Erreur lors du renommage'); }
+  };
   const openEdit = (p: Product) => {
     setEditing(p);
     // acquisitionCost stored as unit cost → show as total in form
-    setForm({ name: p.name, sku: p.sku, category: p.category, quantity: p.quantity, alertThreshold: p.alertThreshold, supplier: p.supplier, acquisitionCost: p.acquisitionCost * p.quantity, sellingPrice: p.sellingPrice ?? 0, imageUrl: p.imageUrl, entryDate: p.entryDate, trackStock: p.trackStock ?? true });
+    setForm({ name: p.name, sku: p.sku, category: p.category, quantity: p.quantity, alertThreshold: p.alertThreshold, supplier: p.supplier, acquisitionCost: p.acquisitionCost * p.quantity, sellingPrice: p.sellingPrice ?? 0, imageUrl: p.imageUrl, entryDate: p.entryDate, trackStock: p.trackStock ?? true, variantGroup: p.variantGroup ?? null, variantLabel: p.variantLabel ?? null });
+    setVariantMode(false); setAddingToGroup(null);
     setModalOpen(true);
   };
 
@@ -161,6 +226,7 @@ export function Stock() {
 
   const handleSave = async () => {
     if (!form.name) return;
+    if (variantMode && !editing) return handleSaveVariants();
     setSubmitting(true);
     // Services (trackStock=false): acquisitionCost is already a unit cost, no division needed
     const unitCost = (form.trackStock && form.quantity > 0)
@@ -178,6 +244,29 @@ export function Stock() {
         await addProduct({ ...form, acquisitionCost: unitCost });
       }
       setModalOpen(false);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleSaveVariants = async () => {
+    if (variantLabels.length === 0) { toast.error('Ajoutez au moins une valeur de variante'); return; }
+    if (variantLabels.length > 100) { toast.error('100 variantes maximum à la fois'); return; }
+    setSubmitting(true);
+    try {
+      const created = await productsApi.createVariants({
+        group: form.name, labels: variantLabels,
+        quantities: form.trackStock ? variantQty : undefined,
+        category: form.category, alertThreshold: form.alertThreshold, supplier: form.supplier,
+        acquisitionCost: form.acquisitionCost, sellingPrice: form.sellingPrice,
+        imageUrl: form.imageUrl, entryDate: form.entryDate, trackStock: form.trackStock ?? true,
+      });
+      useStore.setState(st => ({ products: [...created, ...st.products] }));
+      setExpandedGroups(g => ({ ...g, [form.name.trim()]: true }));
+      toast.success(`${created.length} variante${created.length > 1 ? 's' : ''} ajoutée${created.length > 1 ? 's' : ''}`);
+      setModalOpen(false);
+    } catch (e: any) {
+      toast.error(e?.message ?? 'Erreur lors de la création des variantes');
     } finally {
       setSubmitting(false);
     }
@@ -240,48 +329,7 @@ export function Stock() {
     </div>
   );
 
-  return (
-    <div className="space-y-5 overflow-x-hidden">
-      <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 truncate">{tracksStock ? 'Gestion du Stock' : 'Catalogue'}</h1>
-          <p className="text-xs sm:text-sm text-gray-500">{products.length} produits enregistrés</p>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <button
-            onClick={handleReconcile}
-            disabled={reconciling}
-            title="Recalculer le stock depuis l'historique"
-            className="flex items-center gap-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors disabled:opacity-50"
-          >
-            <RefreshCw size={15} className={reconciling ? 'animate-spin' : ''} />
-            <span className="hidden sm:inline">Recalculer</span>
-          </button>
-          <button
-            onClick={openAdd}
-            className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-3 sm:px-4 py-2.5 rounded-xl text-sm font-medium transition-colors"
-          >
-            <Plus size={16} /><span className="hidden sm:inline">Ajouter</span>
-          </button>
-        </div>
-      </div>
-
-      <div className="relative">
-        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-        <input
-          type="text"
-          placeholder="Rechercher par nom, SKU, catégorie..."
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
-        />
-      </div>
-
-      {loading ? (
-        <CardsSkeleton count={6} />
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-          {filtered.map(p => {
+  const renderProductCard = (p: Product) => {
             const isLow = (p.trackStock ?? true) && p.quantity <= p.alertThreshold;
             return (
               <div
@@ -384,7 +432,163 @@ export function Stock() {
                 </div>
               </div>
             );
-          })}
+  };
+
+  // One card per model; its variants are listed inside, each with the same actions as a product.
+  const renderGroupCard = (name: string, variants: Product[]) => {
+    const tracked = variants.filter(v => v.trackStock ?? true);
+    const total = tracked.reduce((n, v) => n + v.quantity, 0);
+    const lowCount = tracked.filter(v => v.quantity <= v.alertThreshold).length;
+    const prices = variants.map(v => v.sellingPrice).filter(price => price > 0);
+    const minPrice = prices.length ? Math.min(...prices) : 0;
+    const maxPrice = prices.length ? Math.max(...prices) : 0;
+    const image = variants.find(v => v.imageUrl)?.imageUrl;
+    const open = expandedGroups[name] ?? false;
+    const iconBtn = 'p-1.5 rounded-lg transition-colors';
+    return (
+      <div key={`group:${name}`}
+        className={`bg-white rounded-2xl p-4 shadow-sm border transition-all ${lowCount ? 'border-red-200' : 'border-gray-100'} ${open ? 'sm:col-span-2 xl:col-span-3' : ''}`}>
+        <div className="flex items-center gap-3 mb-3">
+          {image ? (
+            <img src={resolveImageUrl(image)!} alt={name} className="w-11 h-11 rounded-xl object-cover shrink-0 border border-gray-100" />
+          ) : (
+            <div className="w-11 h-11 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
+              <Layers size={16} className="text-indigo-400" />
+            </div>
+          )}
+          <div className="flex-1 min-w-0">
+            <div className="font-semibold text-gray-900 truncate text-sm">{name}</div>
+            <div className="text-xs text-gray-400 truncate">
+              {variants.length} variante{variants.length > 1 ? 's' : ''}{variants[0]?.category ? ` · ${variants[0].category}` : ''}
+            </div>
+          </div>
+          {lowCount > 0 && <Badge color="red" size="sm">{lowCount} bas</Badge>}
+        </div>
+
+        <div className="grid grid-cols-2 gap-2 mb-3">
+          <div className={`rounded-xl p-2.5 text-center ${lowCount ? 'bg-red-50' : 'bg-gray-50'}`}>
+            <div className="text-xs text-gray-500 mb-0.5">Stock total</div>
+            <div className="text-xl font-black text-gray-900">{tracked.length ? total : '—'}</div>
+          </div>
+          <div className="bg-emerald-50 rounded-xl p-2.5 text-center">
+            <div className="text-xs text-emerald-600 mb-0.5">Prix</div>
+            <div className="text-xs font-bold text-emerald-700 truncate">
+              {prices.length === 0 ? '—' : minPrice === maxPrice ? MAD(minPrice) : `${MAD(minPrice)} – ${MAD(maxPrice)}`}
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-3 gap-1.5">
+          <button onClick={() => setExpandedGroups(g => ({ ...g, [name]: !open }))}
+            className="flex items-center justify-center gap-1 py-2 rounded-xl bg-indigo-50 text-indigo-600 text-xs font-medium hover:bg-indigo-100 transition-colors">
+            {open ? <ChevronUp size={13} /> : <ChevronDown size={13} />} {open ? 'Masquer' : 'Variantes'}
+          </button>
+          <button onClick={() => openAddVariants(name, variants[0])}
+            className="flex items-center justify-center gap-1 py-2 rounded-xl bg-emerald-50 text-emerald-700 text-xs font-medium hover:bg-emerald-100 transition-colors">
+            <Plus size={13} /> Variante
+          </button>
+          <button onClick={() => renameGroup(name)} title="Renommer le modèle"
+            className="flex items-center justify-center py-2 rounded-xl bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors">
+            <Edit2 size={13} />
+          </button>
+        </div>
+
+        {open && (
+          <div className="mt-3 border-t border-gray-100 pt-2 divide-y divide-gray-50">
+            {variants.map(v => {
+              const tracks = v.trackStock ?? true;
+              const isLow = tracks && v.quantity <= v.alertThreshold;
+              return (
+                <div key={v.id} className="flex items-center gap-2 py-2">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-gray-800 truncate">{v.variantLabel}</div>
+                    <div className="text-[11px] text-gray-400 truncate">{v.sku}</div>
+                  </div>
+                  <div className={`text-sm font-bold w-12 text-right ${isLow ? 'text-red-600' : 'text-gray-900'}`}>
+                    {tracks ? v.quantity : '—'}
+                  </div>
+                  <div className="text-xs text-gray-500 w-20 text-right truncate hidden sm:block">
+                    {v.sellingPrice > 0 ? MAD(v.sellingPrice) : '—'}
+                  </div>
+                  <div className="flex items-center shrink-0">
+                    {tracks && (
+                      <>
+                        <button title="Entrée" className={`${iconBtn} text-emerald-600 hover:bg-emerald-50`}
+                          onClick={() => { setMovementProduct(v); setMovForm({ type: 'in', quantity: 1, reason: '', date: new Date().toISOString().split('T')[0], purchaseCost: 0, freightCost: 0 }); }}>
+                          <TrendingUp size={14} />
+                        </button>
+                        <button title="Sortie" className={`${iconBtn} text-amber-600 hover:bg-amber-50`}
+                          onClick={() => { setMovementProduct(v); setMovForm({ type: 'out', quantity: 1, reason: '', date: new Date().toISOString().split('T')[0], purchaseCost: 0, freightCost: 0 }); }}>
+                          <TrendingDown size={14} />
+                        </button>
+                        <button title="Affecter" className={`${iconBtn} text-purple-600 hover:bg-purple-50 hidden sm:inline-flex`} onClick={() => openAlloc(v)}>
+                          <MapPin size={14} />
+                        </button>
+                      </>
+                    )}
+                    <button title="Historique" className={`${iconBtn} text-blue-600 hover:bg-blue-50 hidden sm:inline-flex`} onClick={() => setHistProduct(v)}>
+                      <History size={14} />
+                    </button>
+                    <button title="Modifier" className={`${iconBtn} text-gray-500 hover:bg-gray-100`} onClick={() => openEdit(v)}>
+                      <Edit2 size={14} />
+                    </button>
+                    <button title="Supprimer" className={`${iconBtn} text-red-500 hover:bg-red-50`} onClick={() => setDeleteId(v.id)}>
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div className="space-y-5 overflow-x-hidden">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 truncate">{tracksStock ? 'Gestion du Stock' : 'Catalogue'}</h1>
+          <p className="text-xs sm:text-sm text-gray-500">{products.length} produits enregistrés</p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={handleReconcile}
+            disabled={reconciling}
+            title="Recalculer le stock depuis l'historique"
+            className="flex items-center gap-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors disabled:opacity-50"
+          >
+            <RefreshCw size={15} className={reconciling ? 'animate-spin' : ''} />
+            <span className="hidden sm:inline">Recalculer</span>
+          </button>
+          <button
+            onClick={openAdd}
+            className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-3 sm:px-4 py-2.5 rounded-xl text-sm font-medium transition-colors"
+          >
+            <Plus size={16} /><span className="hidden sm:inline">Ajouter</span>
+          </button>
+        </div>
+      </div>
+
+      <div className="relative">
+        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+        <input
+          type="text"
+          placeholder="Rechercher par nom, SKU, catégorie..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
+        />
+      </div>
+
+      {loading ? (
+        <CardsSkeleton count={6} />
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+          {listItems.map(item => item.kind === 'group'
+            ? renderGroupCard(item.name, item.variants)
+            : renderProductCard(item.product))}
           {filtered.length === 0 && (
             <div className="col-span-full text-center py-16 text-gray-400">
               <p className="text-lg">Aucun produit trouvé</p>
@@ -395,7 +599,7 @@ export function Stock() {
       )}
 
       {/* Add/Edit Modal */}
-      <Modal open={modalOpen} onClose={() => !submitting && setModalOpen(false)} title={editing ? 'Modifier le produit' : 'Nouveau produit'} size="md">
+      <Modal open={modalOpen} onClose={() => !submitting && setModalOpen(false)} title={editing ? (editing.variantGroup ? 'Modifier la variante' : 'Modifier le produit') : variantMode ? (addingToGroup ? `Nouvelles variantes — ${addingToGroup}` : 'Nouveau produit à variantes') : 'Nouveau produit'} size="md">
         <div className="space-y-4">
           <div>
             <label className="text-xs font-medium text-gray-600 mb-2 block">Photo du produit</label>
@@ -435,6 +639,23 @@ export function Stock() {
             <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
           </div>
 
+          {/* Toggle variantes — only when creating a brand-new product */}
+          {variantsEnabled && !editing && !addingToGroup && (
+            <div className="flex items-center justify-between p-4 bg-indigo-50/60 rounded-2xl border border-indigo-100">
+              <div>
+                <p className="text-sm font-semibold text-gray-900">Plusieurs variantes</p>
+                <p className="text-xs text-gray-500">Tailles, couleurs, contenances… chacune avec son propre stock</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setVariantMode(v => !v)}
+                className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${variantMode ? 'bg-indigo-600' : 'bg-gray-300'}`}
+              >
+                <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform ${variantMode ? 'translate-x-5' : 'translate-x-0'}`} />
+              </button>
+            </div>
+          )}
+
           {/* Toggle suivi du stock */}
           <div className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl border border-gray-100">
             <div>
@@ -451,15 +672,39 @@ export function Stock() {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {field('name', 'Nom du produit *', 'text', undefined, 'Nom complet tel qu\'il apparaîtra dans le stock')}
-            {field('sku', 'Référence (SKU)', 'text', undefined, 'Code unique du produit — auto-généré si vide')}
+            {editing?.variantGroup ? (
+              <>
+                <div>
+                  <label className="text-xs font-medium text-gray-600 mb-1 block">Modèle</label>
+                  <div className="w-full border border-gray-100 bg-gray-50 rounded-xl px-3 py-2.5 text-sm text-gray-500 truncate">{editing.variantGroup}</div>
+                  <p className="text-[11px] text-gray-400 mt-1">Renommez le modèle depuis sa carte</p>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-600 mb-1 block">Variante *</label>
+                  <input
+                    type="text"
+                    value={form.variantLabel ?? ''}
+                    onChange={e => setForm(f => ({ ...f, variantLabel: e.target.value }))}
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300"
+                  />
+                  <p className="text-[11px] text-gray-400 mt-1">Ex : M / Rouge</p>
+                </div>
+              </>
+            ) : variantMode ? (
+              !addingToGroup && field('name', 'Nom du modèle *', 'text', undefined, 'Ex : T-shirt col rond — sans la taille ni la couleur')
+            ) : (
+              field('name', 'Nom du produit *', 'text', undefined, 'Nom complet tel qu\'il apparaîtra dans le stock')
+            )}
+            {!variantMode && field('sku', 'Référence (SKU)', 'text', undefined, 'Code unique du produit — auto-généré si vide')}
             {field('category', 'Catégorie', 'text', categories, 'Famille de produit pour filtrer et regrouper')}
             {field('supplier', 'Fournisseur', 'text', undefined, 'Nom du fournisseur ou grossiste')}
-            {form.trackStock && field('quantity', 'Quantité en stock', 'number', undefined, 'Nombre d\'unités actuellement disponibles')}
+            {form.trackStock && !variantMode && field('quantity', 'Quantité en stock', 'number', undefined, 'Nombre d\'unités actuellement disponibles')}
             {form.trackStock && field('alertThreshold', "Seuil d'alerte", 'number', undefined, 'Alerte stock bas déclenchée en dessous de ce seuil')}
             {field('entryDate', "Date d'entrée", 'date', undefined, form.trackStock ? 'Date à laquelle ce stock est entré' : 'Date de création ou de début de la prestation')}
             <div>
-              {form.trackStock
+              {variantMode
+                ? field('acquisitionCost', `Coût d'achat unitaire (${currency})`, 'number', undefined, 'Ce que vous coûte une unité de chaque variante')
+                : form.trackStock
                 ? field('acquisitionCost', `Coût d'achat total (${currency})`, 'number', undefined, 'Montant total payé pour tout le lot (transport inclus)')
                 : field('acquisitionCost', `Coût de revient unitaire (${currency})`, 'number', undefined, 'Coût pour fournir une unité de ce service')}
               {form.trackStock && form.quantity > 0 && form.acquisitionCost > 0 && (
@@ -468,12 +713,68 @@ export function Stock() {
                 </p>
               )}
             </div>
-            {field('sellingPrice', `Prix de vente unitaire (${currency})`, 'number', undefined, 'Prix auquel vous vendez une unité à votre client')}
+            {field('sellingPrice', `Prix de vente unitaire (${currency})`, 'number', undefined, variantMode ? 'Même prix pour toutes les variantes — modifiable ensuite pour chacune' : 'Prix auquel vous vendez une unité à votre client')}
           </div>
+
+          {/* Variant axes: each line is one characteristic, its values comma-separated */}
+          {variantMode && !editing && (
+            <div className="space-y-3 p-4 bg-gray-50 rounded-2xl border border-gray-100">
+              <p className="text-sm font-semibold text-gray-900">Variantes</p>
+              {axes.map((axis, i) => (
+                <div key={i} className="grid grid-cols-[110px_1fr_auto] gap-2 items-center">
+                  <input
+                    value={axis.name}
+                    onChange={e => setAxes(list => list.map((a, j) => j === i ? { ...a, name: e.target.value } : a))}
+                    placeholder="Taille"
+                    className="border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
+                  />
+                  <input
+                    value={axis.values}
+                    onChange={e => setAxes(list => list.map((a, j) => j === i ? { ...a, values: e.target.value } : a))}
+                    placeholder="S, M, L, XL"
+                    className="border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
+                  />
+                  <button type="button" onClick={() => setAxes(list => list.filter((_, j) => j !== i))}
+                    className="p-2 text-gray-400 hover:text-red-500" title="Retirer">
+                    <X size={14} />
+                  </button>
+                </div>
+              ))}
+              {axes.length < 3 && (
+                <button type="button" onClick={() => setAxes(list => [...list, { name: '', values: '' }])}
+                  className="text-xs font-medium text-indigo-600 hover:text-indigo-700">
+                  + Ajouter une caractéristique
+                </button>
+              )}
+              <p className="text-[11px] text-gray-400">Séparez les valeurs par des virgules. Toutes les combinaisons sont créées.</p>
+
+              {variantLabels.length > 0 && (
+                <div className="space-y-1.5">
+                  <p className="text-xs font-medium text-gray-600">
+                    {variantLabels.length} variante{variantLabels.length > 1 ? 's' : ''}{form.trackStock ? ' — stock initial' : ''}
+                  </p>
+                  <div className="max-h-48 overflow-y-auto space-y-1 pr-1">
+                    {variantLabels.map(label => (
+                      <div key={label} className="flex items-center gap-2 bg-white rounded-lg px-3 py-1.5 border border-gray-100">
+                        <span className="flex-1 text-sm text-gray-700 truncate">{label}</span>
+                        {form.trackStock && (
+                          <NumberInput
+                            value={variantQty[label] ?? 0}
+                            onChange={val => setVariantQty(q => ({ ...q, [label]: val }))}
+                            className="w-20 border border-gray-200 rounded-lg px-2 py-1 text-sm text-right outline-none focus:ring-2 focus:ring-indigo-300"
+                          />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
           <div className="flex gap-3 pt-2">
             <Button variant="secondary" onClick={() => setModalOpen(false)} className="flex-1" disabled={submitting}>Annuler</Button>
             <Button onClick={handleSave} loading={submitting} className="flex-1">
-              {editing ? 'Enregistrer' : 'Ajouter'}
+              {editing ? 'Enregistrer' : variantMode ? `Créer ${variantLabels.length || ''} variante${variantLabels.length > 1 ? 's' : ''}` : 'Ajouter'}
             </Button>
           </div>
         </div>

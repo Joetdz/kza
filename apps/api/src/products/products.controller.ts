@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Patch, Delete, Body, Param } from '@nestjs/common';
 import { ProductsService } from './products.service';
-import { CreateProductDto } from './dto/create-product.dto';
+import { CreateProductDto, CreateVariantsDto, RenameVariantGroupDto } from './dto/create-product.dto';
 import { CurrentUser, AuthUser } from '../auth/current-user.decorator';
 
 @Controller('products')
@@ -15,6 +15,16 @@ export class ProductsController {
   @Post()
   create(@Body() dto: CreateProductDto, @CurrentUser() user: AuthUser) {
     return this.service.create(dto, user.ownerId, user.businessId || undefined);
+  }
+
+  @Post('variants')
+  createVariants(@Body() dto: CreateVariantsDto, @CurrentUser() user: AuthUser) {
+    return this.service.createVariants(dto, user.ownerId, user.businessId || undefined);
+  }
+
+  @Patch('variant-groups/rename')
+  renameVariantGroup(@Body() dto: RenameVariantGroupDto, @CurrentUser() user: AuthUser) {
+    return this.service.renameVariantGroup(dto.from, dto.to, user.ownerId, user.businessId || undefined);
   }
 
   @Post('reconcile')

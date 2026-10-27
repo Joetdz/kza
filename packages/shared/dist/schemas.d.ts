@@ -19,6 +19,10 @@ export declare const CreateProductSchema: z.ZodObject<{
     imageUrl: z.ZodOptional<z.ZodString>;
     entryDate: z.ZodString;
     trackStock: z.ZodDefault<z.ZodBoolean>;
+    /** Model this product is a variant of ("T-shirt"); null for a plain product. */
+    variantGroup: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    /** What distinguishes this variant ("M / Rouge"). */
+    variantLabel: z.ZodOptional<z.ZodNullable<z.ZodString>>;
 }, "strip", z.ZodTypeAny, {
     name: string;
     sku: string;
@@ -31,6 +35,8 @@ export declare const CreateProductSchema: z.ZodObject<{
     entryDate: string;
     trackStock: boolean;
     imageUrl?: string | undefined;
+    variantGroup?: string | null | undefined;
+    variantLabel?: string | null | undefined;
 }, {
     name: string;
     quantity: number;
@@ -43,6 +49,8 @@ export declare const CreateProductSchema: z.ZodObject<{
     sellingPrice?: number | undefined;
     imageUrl?: string | undefined;
     trackStock?: boolean | undefined;
+    variantGroup?: string | null | undefined;
+    variantLabel?: string | null | undefined;
 }>;
 export declare const UpdateProductSchema: z.ZodObject<{
     name: z.ZodOptional<z.ZodString>;
@@ -56,6 +64,8 @@ export declare const UpdateProductSchema: z.ZodObject<{
     imageUrl: z.ZodOptional<z.ZodOptional<z.ZodString>>;
     entryDate: z.ZodOptional<z.ZodString>;
     trackStock: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+    variantGroup: z.ZodOptional<z.ZodOptional<z.ZodNullable<z.ZodString>>>;
+    variantLabel: z.ZodOptional<z.ZodOptional<z.ZodNullable<z.ZodString>>>;
 }, "strip", z.ZodTypeAny, {
     name?: string | undefined;
     sku?: string | undefined;
@@ -68,6 +78,8 @@ export declare const UpdateProductSchema: z.ZodObject<{
     imageUrl?: string | undefined;
     entryDate?: string | undefined;
     trackStock?: boolean | undefined;
+    variantGroup?: string | null | undefined;
+    variantLabel?: string | null | undefined;
 }, {
     name?: string | undefined;
     sku?: string | undefined;
@@ -80,6 +92,8 @@ export declare const UpdateProductSchema: z.ZodObject<{
     imageUrl?: string | undefined;
     entryDate?: string | undefined;
     trackStock?: boolean | undefined;
+    variantGroup?: string | null | undefined;
+    variantLabel?: string | null | undefined;
 }>;
 export declare const ProductSchema: z.ZodObject<{
     name: z.ZodString;
@@ -93,6 +107,10 @@ export declare const ProductSchema: z.ZodObject<{
     imageUrl: z.ZodOptional<z.ZodString>;
     entryDate: z.ZodString;
     trackStock: z.ZodDefault<z.ZodBoolean>;
+    /** Model this product is a variant of ("T-shirt"); null for a plain product. */
+    variantGroup: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    /** What distinguishes this variant ("M / Rouge"). */
+    variantLabel: z.ZodOptional<z.ZodNullable<z.ZodString>>;
 } & {
     id: z.ZodString;
     createdAt: z.ZodString;
@@ -112,6 +130,8 @@ export declare const ProductSchema: z.ZodObject<{
     createdAt: string;
     updatedAt: string;
     imageUrl?: string | undefined;
+    variantGroup?: string | null | undefined;
+    variantLabel?: string | null | undefined;
 }, {
     name: string;
     quantity: number;
@@ -127,6 +147,8 @@ export declare const ProductSchema: z.ZodObject<{
     sellingPrice?: number | undefined;
     imageUrl?: string | undefined;
     trackStock?: boolean | undefined;
+    variantGroup?: string | null | undefined;
+    variantLabel?: string | null | undefined;
 }>;
 export declare const CreateMovementSchema: z.ZodObject<{
     productId: z.ZodString;

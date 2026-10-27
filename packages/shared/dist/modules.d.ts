@@ -32,7 +32,7 @@ export declare const BUSINESS_MODULES: readonly [{
     readonly key: "variants";
     readonly label: "Variantes";
     readonly description: "Taille, couleur, contenance… chacune avec son stock et son prix.";
-    readonly available: false;
+    readonly available: true;
 }, {
     readonly key: "agenda";
     readonly label: "Agenda & réservations";

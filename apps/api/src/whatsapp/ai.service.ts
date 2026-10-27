@@ -14,6 +14,10 @@ export interface LeadQualification {
   leadStatus: 'cold' | 'warm' | 'hot' | 'converted' | 'lost';
 }
 
+// A service (no stock tracked) is always available — its quantity stays at 0 and must
+// not read as "out of stock" to the AI.
+const isAvailable = (p: { quantity: number; trackStock: boolean }) => !p.trackStock || p.quantity > 0;
+
 @Injectable()
 export class AiService {
   private readonly logger = new Logger(AiService.name);
@@ -55,8 +59,36 @@ export class AiService {
       lines.push('## DISPONIBILITÉ DES PRODUITS');
       lines.push('(Utilise uniquement cette section pour savoir si un produit est disponible ou non. Ne mentionne jamais les quantités en stock.)');
       lines.push('');
+
+      // Variants of one model go on a single line — "T-shirt: M / Rouge, L / Rouge" reads
+      // better for the AI and costs far fewer tokens than one line per size × colour.
+      const groups = new Map<string, typeof products>();
       for (const p of products) {
-        if (p.quantity <= 0) {
+        if (!p.variantGroup) continue;
+        if (!groups.has(p.variantGroup)) groups.set(p.variantGroup, []);
+        groups.get(p.variantGroup)!.push(p);
+      }
+      for (const [group, variants] of groups) {
+        const available = variants.filter(isAvailable);
+        const out = variants.filter(v => !isAvailable(v));
+        if (available.length === 0) {
+          lines.push(`- ${group} → RUPTURE DE STOCK sur toutes les variantes (ne pas proposer, ne pas mentionner le prix)`);
+          continue;
+        }
+        const prices = new Set(available.map(v => v.sellingPrice).filter(price => price > 0));
+        const samePrice = prices.size <= 1;
+        const list = available
+          .map(v => `${v.variantLabel}${!samePrice && v.sellingPrice > 0 ? ` (${v.sellingPrice})` : ''}`)
+          .join(', ');
+        const prix = samePrice && prices.size === 1 ? ` | Prix catalogue (fallback) : ${[...prices][0]}` : '';
+        const cat = variants[0].category ? ` | Catégorie : ${variants[0].category}` : '';
+        const rupture = out.length > 0 ? ` | En rupture (ne pas proposer) : ${out.map(v => v.variantLabel).join(', ')}` : '';
+        lines.push(`- ${group} → Variantes disponibles : ${list}${prix}${cat}${rupture}`);
+      }
+
+      for (const p of products) {
+        if (p.variantGroup) continue;
+        if (!isAvailable(p)) {
           lines.push(`- ${p.name} → RUPTURE DE STOCK (ne pas proposer, ne pas mentionner le prix)`);
         } else {
           const cat = p.category ? ` | Catégorie : ${p.category}` : '';
@@ -82,7 +114,7 @@ export class AiService {
         const imageUrl = kbImage || linkedProduct?.imageUrl || null;
 
         if (linkedProduct) {
-          const dispo = linkedProduct.quantity > 0 ? 'Disponible' : 'RUPTURE DE STOCK';
+          const dispo = isAvailable(linkedProduct) ? 'Disponible' : 'RUPTURE DE STOCK';
           block += `\n→ Disponibilité : ${dispo}`;
           const scriptHasPrice = !!(e as any).closingScript && /\d/.test((e as any).closingScript);
           const contentHasPrice = /\d/.test(e.content);
@@ -104,7 +136,7 @@ export class AiService {
 
       // Aussi lister les images des produits non liés à une KB
       const kbProductIds = new Set(entries.filter(e => e.productId).map(e => e.productId));
-      const productsWithImage = products.filter(p => p.imageUrl && !kbProductIds.has(p.id) && p.quantity > 0);
+      const productsWithImage = products.filter(p => p.imageUrl && !kbProductIds.has(p.id) && isAvailable(p));
       if (productsWithImage.length > 0) {
         if (!grouped['PRODUITS']) grouped['PRODUITS'] = [];
         for (const p of productsWithImage) {

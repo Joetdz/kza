@@ -46,6 +46,10 @@ export const CreateProductSchema = z.object({
   imageUrl: z.string().optional(),
   entryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   trackStock: z.boolean().default(true),
+  /** Model this product is a variant of ("T-shirt"); null for a plain product. */
+  variantGroup: z.string().nullable().optional(),
+  /** What distinguishes this variant ("M / Rouge"). */
+  variantLabel: z.string().nullable().optional(),
 });
 
 export const UpdateProductSchema = CreateProductSchema.partial();
