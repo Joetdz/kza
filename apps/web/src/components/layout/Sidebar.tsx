@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, Package, ShoppingCart, CreditCard,
-  BarChart2, Target, Download, X, LogOut, MessageCircle, Shield, Store, Truck, Users, UserCog, PiggyBank,
+  BarChart2, Target, Download, X, LogOut, MessageCircle, Shield, Store, Truck, Users, UserCog, PiggyBank, CalendarDays,
 } from 'lucide-react';
 import { useStore } from '../../store/useStore';
 import { useAuth } from '../../contexts/AuthContext';
@@ -18,6 +18,7 @@ const ADMIN_EMAILS = (import.meta.env.VITE_ADMIN_EMAILS ?? '')
 // `module` hides the link when that module is switched off for the business.
 const nav: Array<{ to: string; icon: typeof Package; label: string; finance?: boolean; module?: BusinessModuleKey }> = [
   { to: '/',           icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/agenda',     icon: CalendarDays,    label: 'Agenda',      module: 'agenda' },
   { to: '/stock',      icon: Package,         label: 'Stock' },
   { to: '/ventes',     icon: ShoppingCart,    label: 'Ventes',      finance: true },
   { to: '/depenses',   icon: CreditCard,      label: 'Dépenses',    finance: true },

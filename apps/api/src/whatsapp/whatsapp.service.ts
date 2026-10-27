@@ -1,4 +1,5 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit, HttpException, HttpStatus, Optional } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit, HttpException, HttpStatus, Optional, Inject, forwardRef } from '@nestjs/common';
+import { AgendaService } from '../agenda/agenda.service';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { AiService } from './ai.service';
@@ -229,6 +230,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
     private automationService: AutomationService,
     private customerHistory: CustomerHistoryService,
     @Optional() private pushService: PushService,
+    @Inject(forwardRef(() => AgendaService)) private agenda: AgendaService,
   ) {}
 
   // ── Auto-reconnect on server startup ─────────────────────────────────────────
@@ -1618,13 +1620,41 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
       adBrief = parts.join('\n');
     }
 
+    // Free slots and bookable services, when the business takes appointments.
+    const bookingBrief = await this.agenda.bookingBrief(userId, businessId).catch(err => {
+      this.logger.warn(`[engage] ${contactKey}: booking brief failed: ${err?.message}`);
+      return null;
+    });
+
     const aiResult = await this.aiService.reply(
       userId, businessId, phone, history, combinedText,
       batch.mediaBase64, batch.mediaMimetype,
       batch.leadStatus ?? undefined,
       returningBrief,
       adBrief,
+      bookingBrief ?? undefined,
     );
+
+    // The AI agreed a slot with the customer — book it before confirming anything. If
+    // someone took it in the meantime, the reply offers the next free times instead.
+    if (aiResult?.booking) {
+      const result = await this.agenda.bookFromAi(userId, businessId, {
+        ...aiResult.booking,
+        phone: isLidPhone(phone) ? null : phone.replace(/@.*$/, ''),
+        contactId: batch.contactId,
+      }).catch(err => {
+        this.logger.warn(`[engage] ${contactKey}: booking failed: ${err?.message}`);
+        return null;
+      });
+      if (result?.ok) {
+        this.logger.log(`[engage] ${contactKey}: appointment booked for ${result.when}`);
+      } else {
+        const alts = result && !result.ok && result.alternatives.length
+          ? ` Je peux vous proposer : ${result.alternatives.join(', ')}. Lequel vous convient ?`
+          : ' Je reviens vers vous très vite avec un autre créneau.';
+        aiResult.text = `Désolé, ce créneau vient d'être pris 🙏${alts}`;
+      }
+    }
 
     if (!aiResult?.text) {
       this.logger.log(`[engage] ${contactKey}: aiService.reply returned no text — nothing to send`);

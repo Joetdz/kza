@@ -22,6 +22,7 @@ import { LogisticsModule } from './logistics/logistics.module';
 import { PushModule } from './push/push.module';
 import { InvestorsModule } from './investors/investors.module';
 import { FundraisingModule } from './fundraising/fundraising.module';
+import { AgendaModule } from './agenda/agenda.module';
 
 @Module({
   imports: [
@@ -50,6 +51,7 @@ import { FundraisingModule } from './fundraising/fundraising.module';
     PushModule,
     InvestorsModule,
     FundraisingModule,
+    AgendaModule,
   ],
   providers: [
     {

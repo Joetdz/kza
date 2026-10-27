@@ -23,6 +23,7 @@ import { AdminDashboard } from './pages/AdminDashboard';
 import { Logistics } from './pages/Logistics';
 import { Clients } from './pages/Clients';
 import { Team } from './pages/Team';
+import { Agenda } from './pages/Agenda';
 import { AcceptInvite } from './pages/AcceptInvite';
 import { PartnerPortal } from './pages/PartnerPortal';
 import { Pricing } from './pages/Pricing';
@@ -202,6 +203,7 @@ function AppInner() {
           <Route path="/admin" element={<AdminDashboard />} />
           <Route path="/logistique" element={<RequireModule module="logistics"><Logistics /></RequireModule>} />
           <Route path="/clients" element={<Clients />} />
+          <Route path="/agenda" element={<RequireModule module="agenda"><Agenda /></RequireModule>} />
           <Route path="/equipe" element={<Team />} />
           <Route path="/whatsapp" element={<RequireModule module="whatsapp"><WhatsAppLayout /></RequireModule>}>
             <Route index element={<Inbox />} />

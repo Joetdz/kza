@@ -1,6 +1,6 @@
 import {
   IsString, IsNumber, IsOptional, IsBoolean, IsDateString, Min,
-  IsArray, ArrayMinSize, ArrayMaxSize, IsObject,
+  IsArray, ArrayMinSize, ArrayMaxSize, IsObject, IsInt,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -59,6 +59,12 @@ export class CreateProductDto {
   @IsString()
   @IsOptional()
   variantLabel?: string | null;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(5)
+  @IsOptional()
+  durationMinutes?: number | null;
 }
 
 // One model and all its variants in one go — e.g. labels ["S / Rouge", "M / Rouge"].

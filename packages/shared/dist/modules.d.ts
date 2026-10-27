@@ -37,7 +37,7 @@ export declare const BUSINESS_MODULES: readonly [{
     readonly key: "agenda";
     readonly label: "Agenda & réservations";
     readonly description: "Créneaux, rendez-vous et rappels — l'IA WhatsApp réserve pour vous.";
-    readonly available: false;
+    readonly available: true;
 }, {
     readonly key: "credit";
     readonly label: "Créances & échéances";

@@ -42,6 +42,7 @@ export class ProductsService {
         imageUrl: dto.imageUrl ?? null,
         entryDate: new Date(dto.entryDate),
         trackStock: dto.trackStock ?? true,
+        durationMinutes: dto.durationMinutes ?? null,
         userId,
         ...(businessId ? { businessId } : {}),
       },
@@ -88,6 +89,7 @@ export class ProductsService {
         ...(dto.imageUrl !== undefined && { imageUrl: dto.imageUrl }),
         ...(dto.entryDate !== undefined && { entryDate: new Date(dto.entryDate) }),
         ...(dto.trackStock !== undefined && { trackStock: dto.trackStock }),
+        ...(dto.durationMinutes !== undefined && { durationMinutes: dto.durationMinutes }),
       },
     });
 

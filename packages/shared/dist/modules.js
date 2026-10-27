@@ -18,7 +18,7 @@ exports.BUSINESS_MODULES = [
     { key: 'goals', label: 'Objectifs & budget', description: 'Objectifs de vente, budget prévisionnel et comparaison avec le réalisé.', available: true },
     { key: 'fundraising', label: 'Levée de fonds', description: 'Campagnes de financement et portail investisseurs.', available: true },
     { key: 'variants', label: 'Variantes', description: 'Taille, couleur, contenance… chacune avec son stock et son prix.', available: true },
-    { key: 'agenda', label: 'Agenda & réservations', description: 'Créneaux, rendez-vous et rappels — l\'IA WhatsApp réserve pour vous.', available: false },
+    { key: 'agenda', label: 'Agenda & réservations', description: 'Créneaux, rendez-vous et rappels — l\'IA WhatsApp réserve pour vous.', available: true },
     { key: 'credit', label: 'Créances & échéances', description: 'Crédit client, paiements en plusieurs tranches et relances.', available: false },
     { key: 'invoices', label: 'Devis & factures', description: 'Devis et factures PDF, prix dégressifs par quantité.', available: false },
     { key: 'lots', label: 'Lots & péremption', description: 'Numéros de lot, dates d\'expiration et alertes avant péremption.', available: false },

@@ -50,6 +50,8 @@ export const CreateProductSchema = z.object({
   variantGroup: z.string().nullable().optional(),
   /** What distinguishes this variant ("M / Rouge"). */
   variantLabel: z.string().nullable().optional(),
+  /** Length of one booking of this service, in minutes (agenda module). */
+  durationMinutes: z.number().int().positive().nullable().optional(),
 });
 
 export const UpdateProductSchema = CreateProductSchema.partial();

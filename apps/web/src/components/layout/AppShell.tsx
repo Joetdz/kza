@@ -2,7 +2,7 @@ import { Outlet, NavLink, useLocation } from 'react-router-dom';
 import { Menu, Calendar, LogOut, User } from 'lucide-react';
 import {
   LayoutDashboard, Package, ShoppingCart, CreditCard,
-  BarChart2, Target, MessageCircle, Store, Download,
+  BarChart2, Target, MessageCircle, Store, Download, CalendarDays,
 } from 'lucide-react';
 import { useStore } from '../../store/useStore';
 import { useAuth } from '../../contexts/AuthContext';
@@ -15,6 +15,7 @@ import { Toaster } from '../ui/Toaster';
 // `module`: hidden when that module is switched off for the business.
 const mobileNav: Array<{ to: string; icon: typeof Package; end: boolean; module?: BusinessModuleKey }> = [
   { to: '/',           icon: LayoutDashboard, end: true  },
+  { to: '/agenda',     icon: CalendarDays,    end: false, module: 'agenda' as const },
   { to: '/stock',      icon: Package,         end: false },
   { to: '/ventes',     icon: ShoppingCart,    end: false },
   { to: '/depenses',   icon: CreditCard,      end: false },

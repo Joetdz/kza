@@ -23,6 +23,8 @@ export declare const CreateProductSchema: z.ZodObject<{
     variantGroup: z.ZodOptional<z.ZodNullable<z.ZodString>>;
     /** What distinguishes this variant ("M / Rouge"). */
     variantLabel: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    /** Length of one booking of this service, in minutes (agenda module). */
+    durationMinutes: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
 }, "strip", z.ZodTypeAny, {
     name: string;
     sku: string;
@@ -37,6 +39,7 @@ export declare const CreateProductSchema: z.ZodObject<{
     imageUrl?: string | undefined;
     variantGroup?: string | null | undefined;
     variantLabel?: string | null | undefined;
+    durationMinutes?: number | null | undefined;
 }, {
     name: string;
     quantity: number;
@@ -51,6 +54,7 @@ export declare const CreateProductSchema: z.ZodObject<{
     trackStock?: boolean | undefined;
     variantGroup?: string | null | undefined;
     variantLabel?: string | null | undefined;
+    durationMinutes?: number | null | undefined;
 }>;
 export declare const UpdateProductSchema: z.ZodObject<{
     name: z.ZodOptional<z.ZodString>;
@@ -66,6 +70,7 @@ export declare const UpdateProductSchema: z.ZodObject<{
     trackStock: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
     variantGroup: z.ZodOptional<z.ZodOptional<z.ZodNullable<z.ZodString>>>;
     variantLabel: z.ZodOptional<z.ZodOptional<z.ZodNullable<z.ZodString>>>;
+    durationMinutes: z.ZodOptional<z.ZodOptional<z.ZodNullable<z.ZodNumber>>>;
 }, "strip", z.ZodTypeAny, {
     name?: string | undefined;
     sku?: string | undefined;
@@ -80,6 +85,7 @@ export declare const UpdateProductSchema: z.ZodObject<{
     trackStock?: boolean | undefined;
     variantGroup?: string | null | undefined;
     variantLabel?: string | null | undefined;
+    durationMinutes?: number | null | undefined;
 }, {
     name?: string | undefined;
     sku?: string | undefined;
@@ -94,6 +100,7 @@ export declare const UpdateProductSchema: z.ZodObject<{
     trackStock?: boolean | undefined;
     variantGroup?: string | null | undefined;
     variantLabel?: string | null | undefined;
+    durationMinutes?: number | null | undefined;
 }>;
 export declare const ProductSchema: z.ZodObject<{
     name: z.ZodString;
@@ -111,6 +118,8 @@ export declare const ProductSchema: z.ZodObject<{
     variantGroup: z.ZodOptional<z.ZodNullable<z.ZodString>>;
     /** What distinguishes this variant ("M / Rouge"). */
     variantLabel: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    /** Length of one booking of this service, in minutes (agenda module). */
+    durationMinutes: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
 } & {
     id: z.ZodString;
     createdAt: z.ZodString;
@@ -132,6 +141,7 @@ export declare const ProductSchema: z.ZodObject<{
     imageUrl?: string | undefined;
     variantGroup?: string | null | undefined;
     variantLabel?: string | null | undefined;
+    durationMinutes?: number | null | undefined;
 }, {
     name: string;
     quantity: number;
@@ -149,6 +159,7 @@ export declare const ProductSchema: z.ZodObject<{
     trackStock?: boolean | undefined;
     variantGroup?: string | null | undefined;
     variantLabel?: string | null | undefined;
+    durationMinutes?: number | null | undefined;
 }>;
 export declare const CreateMovementSchema: z.ZodObject<{
     productId: z.ZodString;

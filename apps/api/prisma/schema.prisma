@@ -94,6 +94,8 @@ model Product {
   // so every screen that lists products shows the right thing without knowing about it.
   variantGroup    String?  @map("variant_group")
   variantLabel    String?  @map("variant_label")
+  // How long one booking of this service lasts (module "agenda"); null = the agenda's default.
+  durationMinutes Int?     @map("duration_minutes")
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt     @map("updated_at")
   userId          String?  @map("user_id")
@@ -987,4 +989,54 @@ model FundraisingInvestment {
   @@index([campaignId])
   @@index([investorId])
   @@map("fundraising_investments")
+}
+
+// ─── Agenda (module "agenda") ────────────────────────────────────────────────
+// Opening hours and booking rules of one business. Times are local to the business
+// (its country's zone); appointments themselves are stored in UTC.
+model AgendaSettings {
+  id                     String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId                 String   @map("user_id")
+  businessId             String?  @map("business_id") @db.Uuid
+  // [{ day: 0-6 (0 = dimanche), from: "09:00", to: "18:00" }] — several ranges per day allowed
+  openingHours           Json     @default("[]") @map("opening_hours")
+  slotMinutes            Int      @default(30) @map("slot_minutes")
+  defaultDurationMinutes Int      @default(60) @map("default_duration_minutes")
+  // Staff, chairs, rooms, tables… each takes one appointment at a time. Empty = `capacity` at once.
+  resources              String[] @default([])
+  capacity               Int      @default(1)
+  // Hours before the appointment the WhatsApp reminder goes out. 0 = no reminder.
+  reminderHours          Int      @default(24) @map("reminder_hours")
+  createdAt              DateTime @default(now()) @map("created_at")
+  updatedAt              DateTime @updatedAt @map("updated_at")
+
+  @@unique([userId, businessId])
+  @@map("agenda_settings")
+}
+
+model Appointment {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId         String    @map("user_id")
+  businessId     String?   @map("business_id") @db.Uuid
+  customerName   String    @map("customer_name")
+  customerPhone  String?   @map("customer_phone")
+  // WhatsApp conversation it was booked from, when there is one
+  contactId      String?   @map("contact_id") @db.Uuid
+  productId      String?   @map("product_id") @db.Uuid
+  serviceName    String?   @map("service_name")
+  resource       String?
+  startAt        DateTime  @map("start_at")
+  endAt          DateTime  @map("end_at")
+  // confirmed | done | no_show | cancelled
+  status         String    @default("confirmed")
+  // manual | whatsapp_ai
+  source         String    @default("manual")
+  notes          String?
+  reminderSentAt DateTime? @map("reminder_sent_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  @@index([businessId, startAt])
+  @@index([userId, startAt])
+  @@map("appointments")
 }

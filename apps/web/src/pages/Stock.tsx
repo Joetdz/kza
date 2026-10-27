@@ -45,6 +45,7 @@ export function Stock() {
   const { has: hasModule } = useModules();
   const tracksStock = hasModule('stock');
   const variantsEnabled = hasModule('variants');
+  const agendaEnabled = hasModule('agenda');
 
   // Variant creation: one model name + axes (Taille: S, M, L / Couleur: Rouge, Bleu).
   const [variantMode, setVariantMode] = useState(false);
@@ -164,7 +165,7 @@ export function Stock() {
   const openEdit = (p: Product) => {
     setEditing(p);
     // acquisitionCost stored as unit cost → show as total in form
-    setForm({ name: p.name, sku: p.sku, category: p.category, quantity: p.quantity, alertThreshold: p.alertThreshold, supplier: p.supplier, acquisitionCost: p.acquisitionCost * p.quantity, sellingPrice: p.sellingPrice ?? 0, imageUrl: p.imageUrl, entryDate: p.entryDate, trackStock: p.trackStock ?? true, variantGroup: p.variantGroup ?? null, variantLabel: p.variantLabel ?? null });
+    setForm({ name: p.name, sku: p.sku, category: p.category, quantity: p.quantity, alertThreshold: p.alertThreshold, supplier: p.supplier, acquisitionCost: p.acquisitionCost * p.quantity, sellingPrice: p.sellingPrice ?? 0, imageUrl: p.imageUrl, entryDate: p.entryDate, trackStock: p.trackStock ?? true, variantGroup: p.variantGroup ?? null, variantLabel: p.variantLabel ?? null, durationMinutes: p.durationMinutes ?? null });
     setVariantMode(false); setAddingToGroup(null);
     setModalOpen(true);
   };
@@ -713,6 +714,20 @@ export function Stock() {
                 </p>
               )}
             </div>
+            {agendaEnabled && !form.trackStock && (
+              <div>
+                <label className="text-xs font-medium text-gray-600 mb-1 block">Durée d'une séance</label>
+                <select
+                  value={form.durationMinutes ?? ''}
+                  onChange={e => setForm(f => ({ ...f, durationMinutes: e.target.value ? Number(e.target.value) : null }))}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
+                >
+                  <option value="">Durée par défaut de l'agenda</option>
+                  {[10, 15, 20, 30, 45, 60, 75, 90, 120, 150, 180, 240].map(m => <option key={m} value={m}>{m} min</option>)}
+                </select>
+                <p className="text-[11px] text-gray-400 mt-1">Bloque ce temps dans l'agenda à chaque réservation</p>
+              </div>
+            )}
             {field('sellingPrice', `Prix de vente unitaire (${currency})`, 'number', undefined, variantMode ? 'Même prix pour toutes les variantes — modifiable ensuite pour chacune' : 'Prix auquel vous vendez une unité à votre client')}
           </div>
 

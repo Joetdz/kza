@@ -43,6 +43,8 @@ exports.CreateProductSchema = zod_1.z.object({
     variantGroup: zod_1.z.string().nullable().optional(),
     /** What distinguishes this variant ("M / Rouge"). */
     variantLabel: zod_1.z.string().nullable().optional(),
+    /** Length of one booking of this service, in minutes (agenda module). */
+    durationMinutes: zod_1.z.number().int().positive().nullable().optional(),
 });
 exports.UpdateProductSchema = exports.CreateProductSchema.partial();
 exports.ProductSchema = exports.CreateProductSchema.extend({

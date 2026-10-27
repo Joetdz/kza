@@ -195,7 +195,7 @@ export class AiService {
   }
 
   // ── Build the system prompt ───────────────────────────────────────────────────
-  private buildSystemPrompt(aiConfig: any, kb: string, leadStatus?: string, returning?: string, ad?: string): string {
+  private buildSystemPrompt(aiConfig: any, kb: string, leadStatus?: string, returning?: string, ad?: string, booking?: string): string {
     const agentIdentity = aiConfig.systemPrompt?.trim()
       ? aiConfig.systemPrompt.trim()
       : 'Tu es un agent commercial.';
@@ -221,6 +221,21 @@ Réponds toujours dans la langue utilisée par le client. Langue par défaut : $
     if (kb.trim()) {
       parts.push(`# CATALOGUE & BASE DE CONNAISSANCE
 ${kb.trim()}`);
+    }
+
+    if (booking?.trim()) {
+      parts.push(`# PRISE DE RENDEZ-VOUS
+Cette entreprise fonctionne sur rendez-vous. Ton objectif est d'aider le client à réserver un créneau qui lui convient.
+
+${booking.trim()}
+
+- Propose 2 ou 3 créneaux UNIQUEMENT parmi les créneaux libres ci-dessus. N'invente JAMAIS un horaire ni une date absente de cette liste.
+- Si le client demande un horaire absent de la liste, dis-lui qu'il n'est pas disponible et propose les plus proches.
+- Avant de réserver, il te faut : le créneau choisi, le service (s'il y en a plusieurs) et le prénom du client.
+- Quand le client a CLAIREMENT confirmé un créneau précis, confirme-lui le rendez-vous en une phrase (jour, heure, service) et ajoute exactement à la toute fin de ton message :
+[RDV: AAAA-MM-JJ HH:MM | nom exact du service ou - | prénom du client]
+Ce marqueur est retiré avant l'envoi, le client ne le voit jamais.
+- N'ajoute JAMAIS ce marqueur tant que le client n'a pas confirmé, ni deux fois pour le même rendez-vous.`);
     }
 
     if (ad?.trim()) {
@@ -278,7 +293,15 @@ ${leadStatus === 'converted' ? `\n⚠️ STATUT CLIENT : VENTE ACQUISE. La comma
     returningCustomer?: string,
     /** The Click-to-WhatsApp ad this conversation started from, when there is one. */
     adContext?: string,
-  ): Promise<{ text: string; shouldEscalate: boolean; imageUrl?: string; unansweredQuestion?: string } | null> {
+    /** Services and free slots, when the business takes appointments (agenda module). */
+    bookingBrief?: string,
+  ): Promise<{
+    text: string;
+    shouldEscalate: boolean;
+    imageUrl?: string;
+    unansweredQuestion?: string;
+    booking?: { date: string; time: string; service: string | null; name: string };
+  } | null> {
     const aiConfig = await this.getConfig(userId, businessId);
     if (!aiConfig.enabled) return null;
 
@@ -294,7 +317,7 @@ ${leadStatus === 'converted' ? `\n⚠️ STATUT CLIENT : VENTE ACQUISE. La comma
     }
 
     const kb = await this.buildKnowledgeBlock(userId, businessId);
-    const systemPrompt = this.buildSystemPrompt(aiConfig, kb, leadStatus, returningCustomer, adContext);
+    const systemPrompt = this.buildSystemPrompt(aiConfig, kb, leadStatus, returningCustomer, adContext, bookingBrief);
 
     // Full conversation history — Barbara must always have complete context
     const history = messages.slice(-30).map(m => ({
@@ -390,12 +413,32 @@ ${leadStatus === 'converted' ? `\n⚠️ STATUT CLIENT : VENTE ACQUISE. La comma
       // [INCONNU] = the AI had no answer in the KB (rule 7) — the question gets logged
       // for the owner to answer.
       const unknown = /\[INCONNU\]/i.test(raw);
+      // [RDV: 2026-10-28 14:30 | Coupe homme | Awa] = the customer confirmed a slot (booking section).
+      const rdv = bookingBrief
+        ? raw.match(/\[RDV:\s*(\d{4}-\d{2}-\d{2})\s+(\d{1,2}:\d{2})\s*\|\s*([^|\]]*)\|\s*([^\]]*)\]/i)
+        : null;
+      const booking = rdv
+        ? {
+            date: rdv[1],
+            time: rdv[2].padStart(5, '0'),
+            service: rdv[3].trim() && rdv[3].trim() !== '-' ? rdv[3].trim() : null,
+            name: rdv[4].trim() || 'Client WhatsApp',
+          }
+        : undefined;
       // Remove the markers from the text sent to client
-      const text = raw.replace(/\[IMAGE:\s*[^\]]+\]/gi, '').replace(/\[INCONNU\]/gi, '').trim();
+      const text = raw
+        .replace(/\[IMAGE:\s*[^\]]+\]/gi, '')
+        .replace(/\[INCONNU\]/gi, '')
+        .replace(/\[RDV:[^\]]*\]/gi, '')
+        .trim();
 
       // A bare "[image]"/"[audio]" placeholder isn't a question the owner can answer.
       const question = questionText.replace(/^\[(image|audio|video|document|message)\]$/gim, '').trim();
-      return { text, shouldEscalate: false, imageUrl, ...(unknown && question ? { unansweredQuestion: question } : {}) };
+      return {
+        text, shouldEscalate: false, imageUrl,
+        ...(unknown && question ? { unansweredQuestion: question } : {}),
+        ...(booking ? { booking } : {}),
+      };
     } catch (err) {
       this.logger.error('OpenAI error:', err);
       return null;
