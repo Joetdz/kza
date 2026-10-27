@@ -122,4 +122,40 @@ export declare function solutionStatus(key: SolutionKey, modules: readonly strin
 export declare function segmentForSector(sector: string | null | undefined): Segment | undefined;
 /** Human label for whatever is stored in `sector` (segment key, legacy label or 'other'). */
 export declare function sectorLabel(sector: string | null | undefined): string;
+export interface SegmentTerms {
+    /** Menu label and page title of the catalogue (/stock). */
+    catalogue: string;
+    item: string;
+    items: string;
+    /** For agreement: "votre première prestation". */
+    feminine?: boolean;
+}
+export type FirstStepCheck = 'products' | 'sales' | 'expenses';
+export interface FirstStep {
+    label: string;
+    to: string;
+    /** Hidden when this module is off. */
+    module?: BusinessModuleKey;
+    /** Ticked automatically once the business has data of this kind; otherwise once visited. */
+    doneWhen?: FirstStepCheck;
+}
+export interface SegmentExperience {
+    terms: SegmentTerms;
+    /** Routes listed right after the dashboard in the menu, in this order. */
+    navFirst: string[];
+    firstSteps: FirstStep[];
+}
+export declare const SEGMENT_EXPERIENCE: Record<string, SegmentExperience>;
+/** Words for the catalogue. Without stock tracking, "Stock" becomes "Catalogue". */
+export declare function termsFor(sector: string | null | undefined, tracksStock: boolean): SegmentTerms;
+/** "premier produit" / "première prestation". */
+export declare function firstItem(terms: SegmentTerms): string;
+/** "Tous les produits" / "Toutes les prestations". */
+export declare function allItems(terms: SegmentTerms): string;
+/** Menu items with the segment's key pages first (after the dashboard), the rest in their usual order. */
+export declare function orderNav<T extends {
+    to: string;
+}>(items: T[], sector: string | null | undefined): T[];
+/** Getting-started checklist for this business, without the steps whose module is off. */
+export declare function firstStepsFor(sector: string | null | undefined, modules: ReadonlySet<string>): FirstStep[];
 export {};

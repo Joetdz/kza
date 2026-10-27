@@ -14,6 +14,8 @@ import { toast } from '../hooks/useToast';
 import type { Product, StockMovement } from '../types';
 import { logisticsApi, type StockLocation, type LocationStock } from '../api/logistics';
 import { useModules } from '../hooks/useModules';
+import { useSegment } from '../hooks/useSegment';
+import { firstItem } from '@kza/shared';
 
 const generateSku = () => 'PRD-' + Math.random().toString(36).slice(2, 8).toUpperCase();
 
@@ -44,6 +46,7 @@ export function Stock() {
   const { fmt: MAD, currency } = useCurrency();
   const { has: hasModule } = useModules();
   const tracksStock = hasModule('stock');
+  const { terms } = useSegment();
   const variantsEnabled = hasModule('variants');
   const agendaEnabled = hasModule('agenda');
 
@@ -550,8 +553,8 @@ export function Stock() {
     <div className="space-y-5 overflow-x-hidden">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 truncate">{tracksStock ? 'Gestion du Stock' : 'Catalogue'}</h1>
-          <p className="text-xs sm:text-sm text-gray-500">{products.length} produits enregistrés</p>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 truncate">{terms.catalogue}</h1>
+          <p className="text-xs sm:text-sm text-gray-500">{products.length} {terms.items}</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <button
@@ -592,8 +595,8 @@ export function Stock() {
             : renderProductCard(item.product))}
           {filtered.length === 0 && (
             <div className="col-span-full text-center py-16 text-gray-400">
-              <p className="text-lg">Aucun produit trouvé</p>
-              <p className="text-sm mt-1">Ajoutez votre premier produit avec le bouton ci-dessus</p>
+              <p className="text-lg">Rien à afficher</p>
+              <p className="text-sm mt-1">Ajoutez votre {firstItem(terms)} avec le bouton ci-dessus</p>
             </div>
           )}
         </div>

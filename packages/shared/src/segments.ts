@@ -349,3 +349,163 @@ export function sectorLabel(sector: string | null | undefined): string {
   if (sector === OTHER_SEGMENT_KEY) return 'Autre activité';
   return segmentByKey(sector)?.label ?? sector;
 }
+
+// ─── How the app speaks and what it shows first, per segment ────────────────
+
+export interface SegmentTerms {
+  /** Menu label and page title of the catalogue (/stock). */
+  catalogue: string;
+  item: string;
+  items: string;
+  /** For agreement: "votre première prestation". */
+  feminine?: boolean;
+}
+
+export type FirstStepCheck = 'products' | 'sales' | 'expenses';
+
+export interface FirstStep {
+  label: string;
+  to: string;
+  /** Hidden when this module is off. */
+  module?: BusinessModuleKey;
+  /** Ticked automatically once the business has data of this kind; otherwise once visited. */
+  doneWhen?: FirstStepCheck;
+}
+
+export interface SegmentExperience {
+  terms: SegmentTerms;
+  /** Routes listed right after the dashboard in the menu, in this order. */
+  navFirst: string[];
+  firstSteps: FirstStep[];
+}
+
+const PRODUCT_TERMS: SegmentTerms = { catalogue: 'Stock',       item: 'produit',    items: 'produits' };
+const SERVICE_TERMS: SegmentTerms = { catalogue: 'Prestations', item: 'prestation', items: 'prestations', feminine: true };
+const OFFER_TERMS:   SegmentTerms = { catalogue: 'Services',    item: 'service',    items: 'services' };
+
+const step = {
+  products:  (label = 'Ajouter vos produits'):            FirstStep => ({ label, to: '/stock',         doneWhen: 'products' }),
+  sale:      (label = 'Enregistrer une première vente'):  FirstStep => ({ label, to: '/ventes',        doneWhen: 'sales' }),
+  expense:   (label = 'Noter une dépense'):               FirstStep => ({ label, to: '/depenses',      doneWhen: 'expenses' }),
+  whatsapp:  (label = 'Connecter votre WhatsApp'):        FirstStep => ({ label, to: '/whatsapp',      module: 'whatsapp' }),
+  kb:        (label = 'Apprendre vos réponses à l\'IA'):  FirstStep => ({ label, to: '/whatsapp/base', module: 'whatsapp' }),
+  store:     (label = 'Ouvrir votre boutique en ligne'):  FirstStep => ({ label, to: '/boutique',      module: 'online_store' }),
+  agenda:    (label = 'Définir vos horaires'):            FirstStep => ({ label, to: '/agenda',        module: 'agenda' }),
+  logistics: (label = 'Ajouter vos dépôts et livreurs'):  FirstStep => ({ label, to: '/logistique',    module: 'logistics' }),
+  team:      (label = 'Inviter votre équipe'):            FirstStep => ({ label, to: '/equipe' }),
+};
+
+const DEFAULT_EXPERIENCE: SegmentExperience = {
+  terms: PRODUCT_TERMS,
+  navFirst: [],
+  firstSteps: [step.products(), step.sale(), step.expense(), step.whatsapp()],
+};
+
+export const SEGMENT_EXPERIENCE: Record<string, SegmentExperience> = {
+  retail: {
+    terms: PRODUCT_TERMS,
+    navFirst: ['/stock', '/ventes'],
+    firstSteps: [step.products(), step.sale(), step.expense(), step.whatsapp(), step.store()],
+  },
+  wholesale: {
+    terms: { catalogue: 'Stock', item: 'référence', items: 'références', feminine: true },
+    navFirst: ['/stock', '/ventes', '/clients', '/logistique'],
+    firstSteps: [step.products('Ajouter vos références'), step.logistics('Déclarer vos dépôts'), step.sale('Enregistrer une commande revendeur'), step.team()],
+  },
+  market: {
+    terms: PRODUCT_TERMS,
+    navFirst: ['/ventes', '/stock', '/depenses'],
+    firstSteps: [step.products('Ajouter ce que vous vendez'), step.sale('Enregistrer vos ventes du jour'), step.expense('Noter vos dépenses du jour')],
+  },
+  social_seller: {
+    terms: PRODUCT_TERMS,
+    navFirst: ['/whatsapp', '/ventes', '/boutique', '/stock'],
+    firstSteps: [step.products('Ajouter vos produits avec photos'), step.whatsapp(), step.kb(), step.store(), step.logistics('Ajouter vos livreurs')],
+  },
+  beauty: {
+    terms: SERVICE_TERMS,
+    navFirst: ['/agenda', '/ventes', '/clients', '/whatsapp'],
+    firstSteps: [step.products('Ajouter vos prestations et leur durée'), step.agenda('Définir vos horaires d\'ouverture'), step.whatsapp(), step.kb('Apprendre vos tarifs à l\'IA'), step.sale('Enregistrer une prestation')],
+  },
+  repair: {
+    terms: { catalogue: 'Pièces & services', item: 'article', items: 'articles' },
+    navFirst: ['/agenda', '/ventes', '/stock', '/clients'],
+    firstSteps: [step.products('Ajouter vos pièces et services'), step.agenda(), step.sale('Enregistrer une réparation'), step.whatsapp()],
+  },
+  pro_services: {
+    terms: OFFER_TERMS,
+    navFirst: ['/ventes', '/clients', '/whatsapp'],
+    firstSteps: [step.products('Ajouter vos services'), step.sale('Enregistrer une prestation'), step.expense('Noter vos charges'), step.whatsapp()],
+  },
+  home_services: {
+    terms: OFFER_TERMS,
+    navFirst: ['/agenda', '/ventes', '/clients'],
+    firstSteps: [step.products('Ajouter vos services'), step.agenda('Définir vos créneaux'), step.sale('Enregistrer une prestation'), step.team()],
+  },
+  producer: {
+    terms: PRODUCT_TERMS,
+    navFirst: ['/stock', '/ventes', '/depenses'],
+    firstSteps: [step.products('Ajouter vos produits et matières premières'), step.expense('Noter vos achats de matières'), step.sale(), step.store()],
+  },
+  restaurant: {
+    terms: { catalogue: 'Carte & stock', item: 'article', items: 'articles' },
+    navFirst: ['/ventes', '/stock', '/depenses'],
+    firstSteps: [step.products('Ajouter vos plats et ingrédients'), step.sale('Enregistrer vos ventes'), step.expense('Noter vos achats'), step.logistics('Ajouter vos livreurs'), step.whatsapp()],
+  },
+  agriculture: {
+    terms: PRODUCT_TERMS,
+    navFirst: ['/stock', '/ventes', '/logistique'],
+    firstSteps: [step.products(), step.logistics('Déclarer vos lieux de stockage'), step.expense('Noter vos achats'), step.sale()],
+  },
+  multi_site: {
+    terms: PRODUCT_TERMS,
+    navFirst: ['/logistique', '/stock', '/ventes', '/analytique'],
+    firstSteps: [step.logistics('Déclarer vos points de vente et dépôts'), step.products(), step.team('Inviter vos responsables de site'), step.sale()],
+  },
+  delivery: {
+    terms: OFFER_TERMS,
+    navFirst: ['/logistique', '/whatsapp', '/ventes'],
+    firstSteps: [step.logistics('Ajouter vos livreurs et zones'), step.products('Ajouter vos tarifs de livraison'), step.whatsapp(), step.team()],
+  },
+  b2b: {
+    terms: PRODUCT_TERMS,
+    navFirst: ['/clients', '/ventes', '/whatsapp', '/stock'],
+    firstSteps: [step.products('Ajouter votre catalogue'), step.sale('Enregistrer une commande client'), step.whatsapp(), step.team('Inviter vos commerciaux')],
+  },
+};
+
+function experienceFor(sector: string | null | undefined): SegmentExperience {
+  const segment = segmentForSector(sector);
+  return (segment && SEGMENT_EXPERIENCE[segment.key]) || DEFAULT_EXPERIENCE;
+}
+
+/** Words for the catalogue. Without stock tracking, "Stock" becomes "Catalogue". */
+export function termsFor(sector: string | null | undefined, tracksStock: boolean): SegmentTerms {
+  const terms = experienceFor(sector).terms;
+  return terms.catalogue === 'Stock' && !tracksStock ? { ...terms, catalogue: 'Catalogue' } : terms;
+}
+
+/** "premier produit" / "première prestation". */
+export function firstItem(terms: SegmentTerms): string {
+  return `${terms.feminine ? 'première' : 'premier'} ${terms.item}`;
+}
+
+/** "Tous les produits" / "Toutes les prestations". */
+export function allItems(terms: SegmentTerms): string {
+  return `${terms.feminine ? 'Toutes' : 'Tous'} les ${terms.items}`;
+}
+
+/** Menu items with the segment's key pages first (after the dashboard), the rest in their usual order. */
+export function orderNav<T extends { to: string }>(items: T[], sector: string | null | undefined): T[] {
+  const first = experienceFor(sector).navFirst;
+  const rank = (to: string) => (to === '/' ? -1 : first.includes(to) ? first.indexOf(to) : first.length);
+  return items
+    .map((item, i) => ({ item, i }))
+    .sort((a, b) => rank(a.item.to) - rank(b.item.to) || a.i - b.i)
+    .map(x => x.item);
+}
+
+/** Getting-started checklist for this business, without the steps whose module is off. */
+export function firstStepsFor(sector: string | null | undefined, modules: ReadonlySet<string>): FirstStep[] {
+  return experienceFor(sector).firstSteps.filter(s => !s.module || modules.has(s.module));
+}

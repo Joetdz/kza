@@ -3,6 +3,9 @@ import {
   Package, ShoppingCart, CreditCard, BarChart3,
   MessageSquare, BrainCircuit, X, ArrowRight, Sparkles,
 } from 'lucide-react';
+import type { BusinessModuleKey } from '@kza/shared';
+import { useModules } from '../hooks/useModules';
+import { useSegment } from '../hooks/useSegment';
 
 interface Step {
   icon: React.ReactNode;
@@ -10,20 +13,25 @@ interface Step {
   title: string;
   desc: string;
   tip?: string;
+  /** Only shown when this module is on. */
+  module?: BusinessModuleKey;
+  /** The catalogue step, reworded for businesses that do not track stock. */
+  catalogue?: boolean;
 }
 
-const STEPS: Step[] = [
+const ALL_STEPS: Step[] = [
   {
     icon: <Sparkles size={32} style={{ color: '#6366f1' }} />,
     iconBg: 'linear-gradient(135deg, #eef2ff, #ede9fe)',
     title: 'Bienvenue sur KZA Manager',
-    desc: 'Votre centre de commande e-commerce. En 2 minutes, découvrez tout ce que la plateforme peut faire pour votre business.',
+    desc: 'Votre centre de pilotage. En 2 minutes, découvrez tout ce que la plateforme peut faire pour votre business.',
     tip: 'Ce tour peut être revu à tout moment depuis vos paramètres.',
   },
   {
     icon: <Package size={32} style={{ color: '#6366f1' }} />,
     iconBg: '#eef2ff',
     title: 'Gestion de Stock',
+    catalogue: true,
     desc: 'Ajoutez vos produits, suivez les quantités en temps réel et recevez des alertes quand le stock est bas. Le SKU est auto-généré si vous le laissez vide.',
     tip: 'Le coût d\'achat saisi est le coût total du lot — le coût unitaire est calculé automatiquement.',
   },
@@ -52,6 +60,7 @@ const STEPS: Step[] = [
     icon: <MessageSquare size={32} style={{ color: '#25d366' }} />,
     iconBg: '#f0fdf4',
     title: 'CRM WhatsApp',
+    module: 'whatsapp',
     desc: 'Connectez votre numéro WhatsApp, gérez vos leads (froid / tiède / chaud / converti), automatisez vos réponses avec l\'IA et suivez vos conversions.',
     tip: 'L\'IA répond automatiquement à vos prospects selon votre base de connaissances configurée.',
   },
@@ -76,6 +85,13 @@ interface Props {
 
 export function OnboardingTour({ userId, onClose }: Props) {
   const [step, setStep] = useState(0);
+  const { has } = useModules();
+  const { terms } = useSegment();
+  const STEPS = ALL_STEPS
+    .filter(s => !s.module || has(s.module))
+    .map(s => s.catalogue && !has('stock')
+      ? { ...s, title: `Vos ${terms.items}`, desc: `Ajoutez vos ${terms.items} avec leur prix et leur description : KZA s'en sert pour vos ventes, vos factures et l'IA WhatsApp.`, tip: undefined }
+      : s);
   const isLast = step === STEPS.length - 1;
 
   const finish = () => {

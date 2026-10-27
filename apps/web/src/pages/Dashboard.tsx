@@ -16,10 +16,18 @@ import {
 import { pct, formatDateShort, CHANNEL_COLORS, EXPENSE_LABELS, EXPENSE_COLORS, CHART_COLORS } from '../utils/formatters';
 import { KpiCard } from '../components/ui/KpiCard';
 import { Badge } from '../components/ui/Badge';
+import { FirstSteps } from '../components/FirstSteps';
+import { useModules } from '../hooks/useModules';
+import { useSegment } from '../hooks/useSegment';
+import { allItems } from '@kza/shared';
 
 export function Dashboard() {
   const { products, sales, expenses, dateRange, cpaThreshold } = useStore();
   const { fmt: MAD } = useCurrency();
+  const { has } = useModules();
+  const { terms } = useSegment();
+  // Services-only businesses have no stock to watch.
+  const tracksStock = has('stock');
   const { from, to } = dateRange;
 
   const [selectedProductId, setSelectedProductId] = useState<string>('all');
@@ -85,7 +93,7 @@ export function Dashboard() {
     [filteredExpenses, from, to]
   );
 
-  const lowStockProducts = selectedProductId === 'all'
+  const lowStockProducts = !tracksStock ? [] : selectedProductId === 'all'
     ? products.filter(p => p.quantity <= p.alertThreshold)
     : products.filter(p => p.id === selectedProductId && p.quantity <= p.alertThreshold);
 
@@ -111,7 +119,7 @@ export function Dashboard() {
         <div className="min-w-0">
           <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Dashboard</h1>
           <p className="text-sm text-gray-500 mt-1">
-            {selectedProduct ? `Vue produit — ${selectedProduct.name}` : 'Vue CEO — Toute la boutique'}
+            {selectedProduct ? `Vue détaillée — ${selectedProduct.name}` : "Vue d'ensemble de votre activité"}
           </p>
         </div>
         {/* Product filter */}
@@ -122,13 +130,15 @@ export function Dashboard() {
             onChange={e => setSelectedProductId(e.target.value)}
             className="border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
           >
-            <option value="all">Toute la boutique</option>
+            <option value="all">{allItems(terms)}</option>
             {products.map(p => (
               <option key={p.id} value={p.id}>{p.name}</option>
             ))}
           </select>
         </div>
       </div>
+
+      {selectedProductId === 'all' && <FirstSteps />}
 
       {/* KPI Row 1 */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -173,7 +183,7 @@ export function Dashboard() {
           icon={ShoppingBag}
           iconColor="text-purple-500"
         />
-        <KpiCard
+        {tracksStock && <KpiCard
           label="Stock critique"
           value={`${lowStockProducts.length}`}
           sub={lowStockProducts.length > 0 ? 'Produits en alerte' : 'Tout est OK'}
@@ -181,8 +191,8 @@ export function Dashboard() {
           iconColor={lowStockProducts.length > 0 ? 'text-red-500' : 'text-emerald-500'}
           trend={lowStockProducts.length > 0 ? 'down' : 'up'}
           trendLabel={lowStockProducts.length > 0 ? 'Action requise' : 'Stock OK'}
-        />
-        <KpiCard
+        />}
+        {tracksStock && <KpiCard
           label="Valeur du stock"
           value={MAD(kpis.totalStockValue)}
           sub={selectedProduct
@@ -190,7 +200,7 @@ export function Dashboard() {
             : `${products.length} produits`}
           icon={Package}
           iconColor="text-cyan-500"
-        />
+        />}
         <KpiCard
           label="Budget pub"
           value={MAD(kpis.totalAdSpend)}
@@ -289,7 +299,7 @@ export function Dashboard() {
         {/* Top Products — hidden when filtering a single product */}
         {selectedProductId === 'all' && (
           <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-            <h2 className="font-semibold text-gray-900 mb-4">Top produits (CA)</h2>
+            <h2 className="font-semibold text-gray-900 mb-4">Top {terms.items} (CA)</h2>
             <div className="space-y-3">
               {topProducts.map(({ product, rev }, i) => (
                 <div key={product!.id} className="flex items-center gap-3">
@@ -334,7 +344,7 @@ export function Dashboard() {
         )}
 
         {/* Low Stock Alerts */}
-        <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+        {tracksStock && <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
           <h2 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
             <AlertTriangle size={18} className="text-amber-500" />
             Alertes stock
@@ -363,7 +373,7 @@ export function Dashboard() {
               </p>
             </div>
           )}
-        </div>
+        </div>}
       </div>
     </div>
   );

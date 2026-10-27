@@ -8,7 +8,8 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useRole } from '../../hooks/useRole';
 import { BusinessSelector } from '../BusinessSelector';
 import { useModules } from '../../hooks/useModules';
-import type { BusinessModuleKey } from '@kza/shared';
+import { useSegment } from '../../hooks/useSegment';
+import { orderNav, type BusinessModuleKey } from '@kza/shared';
 
 const ADMIN_EMAILS = (import.meta.env.VITE_ADMIN_EMAILS ?? '')
   .split(',').map((e: string) => e.trim().toLowerCase()).filter(Boolean);
@@ -39,10 +40,12 @@ export function Sidebar() {
   const { has } = useModules();
 
   const isAdmin = !!user?.email && ADMIN_EMAILS.includes(user.email.toLowerCase());
-  const visibleNav = nav
+  const { sector, segment, terms } = useSegment();
+  // The segment's key pages come first, and the catalogue is named in its words
+  // ("Prestations" for a salon, "Catalogue" when stock isn't tracked).
+  const visibleNav = orderNav(nav, sector)
     .filter(item => (!item.finance || canSeeFinances) && (!item.module || has(item.module)))
-    // Without stock tracking, the same page is a catalogue of services.
-    .map(item => item.to === '/stock' && !has('stock') ? { ...item, label: 'Catalogue' } : item);
+    .map(item => item.to === '/stock' ? { ...item, label: terms.catalogue } : item);
 
   return (
     <>
@@ -59,7 +62,7 @@ export function Sidebar() {
         <div className="flex items-center justify-between px-5 py-5 border-b border-gray-700">
           <div>
             <div className="text-2xl font-black text-white tracking-tight">KZA</div>
-            <div className="text-xs text-gray-400 mt-0.5">Gestion E-Commerce</div>
+            <div className="text-xs text-gray-400 mt-0.5">{segment?.label ?? 'Gestion commerciale'}</div>
           </div>
           <button className="lg:hidden text-gray-400 hover:text-white" onClick={toggleSidebar}>
             <X size={20} />
