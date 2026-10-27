@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Building2, Phone, Globe, DollarSign, Loader2, MapPin, Image, Upload, ArrowRight, ArrowLeft, Check, Clock } from 'lucide-react';
 import { ScrollLock } from './ui/ScrollLock';
 import { useStore, type BusinessRecord } from '../store/useStore';
@@ -54,7 +55,13 @@ interface Props {
   isFirstBusiness?: boolean;
 }
 
-export function BusinessModal({ business, onClose, isFirstBusiness = false }: Props) {
+// Rendered on <body>: opened from the sidebar, whose slide transform would otherwise
+// pin this fixed overlay to the sidebar instead of the whole screen.
+export function BusinessModal(props: Props) {
+  return createPortal(<BusinessModalContent {...props} />, document.body);
+}
+
+function BusinessModalContent({ business, onClose, isFirstBusiness = false }: Props) {
   const { addBusiness, updateBusiness, setCurrentBusiness } = useStore();
   const logoRef = useRef<HTMLInputElement>(null);
 
