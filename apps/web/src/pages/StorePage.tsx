@@ -4,7 +4,7 @@ import {
   Store, Copy, ExternalLink, Check, Package,
   ToggleLeft, ToggleRight, Loader2, ShoppingBag, Clock, CheckCircle,
   XCircle, Truck, Plus, X, Film, Mic, MicOff, Play, Square, Trash2,
-  Sparkles, RefreshCw, Music, Scissors, Image as ImageIcon, ArrowDown, ArrowUp,
+  Sparkles, RefreshCw, Music, Scissors, Image as ImageIcon, ArrowDown, ArrowUp, Eye, Heart,
 } from 'lucide-react';
 import { mediaApi, uploadApi, type ProductMedia } from '../api';
 import { useSegment } from '../hooks/useSegment';
@@ -1097,6 +1097,7 @@ export function StorePage() {
   // Creations state
   const [media, setMedia] = useState<ProductMedia[]>([]);
   const [uploadingId, setUploadingId] = useState<string | null>(null);
+  const [uploadPct, setUploadPct] = useState(0);
   const [captionMap, setCaptionMap] = useState<Record<string, string>>({});
   const [recorderOpenId, setRecorderOpenId] = useState<string | null>(null);
   const [jingleOpenId, setJingleOpenId] = useState<string | null>(null);
@@ -1280,19 +1281,21 @@ export function StorePage() {
   const handleUploadMedia = async (productId: string, file: File | undefined) => {
     if (!file) return;
     setUploadingId(productId);
+    setUploadPct(0);
     try {
-      const url = await uploadApi.uploadMedia(file);
+      const url = await uploadApi.uploadMedia(file, setUploadPct);
       const type = file.type.startsWith('video/') ? 'video' : 'image';
       const caption = captionMap[productId] ?? '';
       const created = await mediaApi.create({ productId, url, type, caption: caption || undefined });
       setMedia(prev => [created, ...prev]);
       setCaptionMap(c => ({ ...c, [productId]: '' }));
-      const input = fileInputRefs.current[productId];
-      if (input) input.value = '';
-    } catch {
-      // silently ignore
+    } catch (e) {
+      toast.error((e as Error).message || "L'envoi a échoué.");
     } finally {
       setUploadingId(null);
+      // Lets the same file be picked again after a failure.
+      const input = fileInputRefs.current[productId];
+      if (input) input.value = '';
     }
   };
 
@@ -1762,6 +1765,10 @@ export function StorePage() {
                             ) : (
                               <img src={m.url} alt={m.caption ?? ''} className="w-full h-full object-cover" />
                             )}
+                            <div className="absolute top-1 left-1 flex items-center gap-1.5 px-1.5 py-0.5 rounded-full bg-black/50 text-white text-[10px] pointer-events-none">
+                              <span className="flex items-center gap-0.5"><Eye size={10} />{m.viewCount ?? 0}</span>
+                              <span className="flex items-center gap-0.5"><Heart size={10} />{m.likeCount ?? 0}</span>
+                            </div>
                             {m.caption && (
                               <div className="absolute bottom-0 left-0 right-0 px-1.5 py-1 bg-black/50 pointer-events-none">
                                 <p className="text-white text-[10px] truncate">{m.caption}</p>
@@ -1851,8 +1858,18 @@ export function StorePage() {
                           ? <Loader2 size={20} className="animate-spin text-indigo-500" />
                           : <Plus size={20} className="text-gray-400" />}
                         <span className="text-[10px] text-gray-400 mt-1">
-                          {isUploading ? 'Upload...' : 'Ajouter'}
+                          {!isUploading ? 'Ajouter' : uploadPct >= 100 ? 'Finalisation...' : `${uploadPct} %`}
                         </span>
+                        {isUploading && (
+                          <div
+                            role="progressbar"
+                            aria-valuenow={uploadPct}
+                            aria-valuemin={0}
+                            aria-valuemax={100}
+                            className="w-3/4 h-1.5 bg-gray-100 rounded-full mt-1 overflow-hidden">
+                            <div className="h-full bg-indigo-500 rounded-full transition-all" style={{ width: `${uploadPct}%` }} />
+                          </div>
+                        )}
                         <input
                           type="file"
                           accept="image/*,video/*"

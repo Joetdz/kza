@@ -196,7 +196,7 @@ export class ProductsService {
     return { id };
   }
 
-  /** Units promised to orders and pending sales, per product (see reservedByProduct). */
+  /** Units promised to pending sales, per product (see reservedByProduct). */
   async reservations(userId: string, businessId?: string) {
     const where = businessId ? { businessId } : { userId };
     return Object.fromEntries(await reservedByProduct(this.prisma, where));

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { ShoppingCart, Plus, Minus, Trash2, Loader2, ArrowLeft, Package, CheckCircle, Play, Pause, Film, LayoutGrid, ShoppingBag, Volume2, VolumeX, Share2, Flame, Clock } from 'lucide-react';
+import { ShoppingCart, Plus, Minus, Trash2, Loader2, ArrowLeft, Package, CheckCircle, Play, Pause, Film, LayoutGrid, ShoppingBag, Volume2, VolumeX, Share2, Flame, Clock, Heart, Eye } from 'lucide-react';
 
 // Meta Pixel helper — no-op if pixel not loaded
 const fbq = (...args: any[]) => { (window as any).fbq?.(...args); };
@@ -269,8 +269,50 @@ interface FeedItem {
   type: string;
   caption: string | null;
   audioUrl: string | null;
+  viewCount: number;
+  likeCount: number;
+  liked: boolean;
   product: Product;
 }
+
+// The store has no accounts: a random id kept in this browser stands for the visitor,
+// so a like counts once. Without storage it only lasts for this visit.
+let visitIdFallback: string | null = null;
+function visitorId(): string {
+  const fresh = () => typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    // randomUUID only exists on https: same format from random bytes.
+    : '10000000-1000-4000-8000-100000000000'.replace(/[018]/g, c =>
+      (Number(c) ^ (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (Number(c) / 4)))).toString(16));
+  try {
+    let id = localStorage.getItem('kza_visitor_id');
+    if (!id) { id = fresh(); localStorage.setItem('kza_visitor_id', id); }
+    return id;
+  } catch {
+    return visitIdFallback ??= fresh();
+  }
+}
+
+// A new random order on every visit, like TikTok, without two reels of the same
+// product back to back when another one can come between them.
+function shuffleFeed(items: FeedItem[]): FeedItem[] {
+  const out = [...items];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  for (let i = 1; i < out.length; i++) {
+    if (out[i].product.id !== out[i - 1].product.id) continue;
+    const k = out.findIndex((it, idx) => idx > i && it.product.id !== out[i - 1].product.id);
+    if (k > 0) [out[i], out[k]] = [out[k], out[i]];
+  }
+  return out;
+}
+
+const compactCount = (n: number) => new Intl.NumberFormat('fr-FR', { notation: 'compact', maximumFractionDigits: 1 }).format(n);
+
+/** Seconds a reel stays on screen before it counts as seen. */
+const VIEW_AFTER_MS = 2000;
 
 interface StoreData {
   id: string;
@@ -295,6 +337,7 @@ function FeedCard({
   slug,
   isActive,
   onOrder,
+  onLike,
 }: {
   item: FeedItem;
   color: string;
@@ -302,6 +345,7 @@ function FeedCard({
   slug: string;
   isActive: boolean;
   onOrder: () => void;
+  onLike: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -443,6 +487,26 @@ function FeedCard({
         </div>
       )}
 
+      {/* Likes and views (right side, as on TikTok) */}
+      <div className="absolute right-3 bottom-56 z-20 flex flex-col items-center gap-4">
+        <button
+          onClick={e => { e.stopPropagation(); onLike(); }}
+          aria-pressed={item.liked}
+          aria-label={item.liked ? 'Retirer le like' : 'Liker'}
+          className="flex flex-col items-center gap-1 active:scale-90 transition-transform">
+          <span className="w-11 h-11 rounded-full bg-black/30 backdrop-blur-sm flex items-center justify-center">
+            <Heart size={24} className={item.liked ? 'text-red-500 fill-red-500' : 'text-white'} />
+          </span>
+          <span className="text-white text-xs font-semibold drop-shadow">{compactCount(item.likeCount)}</span>
+        </button>
+        <div className="flex flex-col items-center gap-1" aria-label={`${item.viewCount} vues`}>
+          <span className="w-11 h-11 rounded-full bg-black/30 backdrop-blur-sm flex items-center justify-center">
+            <Eye size={22} className="text-white" />
+          </span>
+          <span className="text-white text-xs font-semibold drop-shadow">{compactCount(item.viewCount)}</span>
+        </div>
+      </div>
+
       {/* Bottom bar — gradient + product info + CTA */}
       <div className="absolute bottom-0 left-0 right-0 px-4 pb-8 pt-14 bg-gradient-to-t from-black/80 via-black/40 to-transparent z-10">
         <p className="text-white font-black text-lg leading-tight mb-0.5 drop-shadow-lg line-clamp-1">
@@ -560,9 +624,9 @@ export function PublicStore({ slug, initialReelId }: Props) {
   useEffect(() => {
     if (view === 'feed' && feed.length === 0 && !feedLoading) {
       setFeedLoading(true);
-      fetch(`${BASE}/store/${slug}/feed`)
+      fetch(`${BASE}/store/${slug}/feed?visitor=${visitorId()}`)
         .then(r => r.json())
-        .then(data => Array.isArray(data) ? data : [])
+        .then(data => Array.isArray(data) ? shuffleFeed(data) : [])
         .catch(() => [] as FeedItem[])
         .then(items => {
           setFeed(items);
@@ -585,6 +649,36 @@ export function PublicStore({ slug, initialReelId }: Props) {
     return () => container.removeEventListener('scroll', onScroll);
     // The container only exists once the loading and confirmation screens are gone.
   }, [view, loading, confirmed]);
+
+  // A reel counts as seen once per visit, after staying on screen for a moment.
+  const seenReels = useRef(new Set<string>());
+  const activeReelId = view === 'feed' ? feed[activeIndex]?.id : undefined;
+  useEffect(() => {
+    if (!activeReelId || seenReels.current.has(activeReelId)) return;
+    const timer = setTimeout(() => {
+      seenReels.current.add(activeReelId);
+      setFeed(f => f.map(it => it.id === activeReelId ? { ...it, viewCount: it.viewCount + 1 } : it));
+      fetch(`${BASE}/store/${slug}/feed/${activeReelId}/view`, { method: 'POST' }).catch(() => {});
+    }, VIEW_AFTER_MS);
+    return () => clearTimeout(timer);
+  }, [activeReelId, slug]);
+
+  const toggleLike = (id: string) => {
+    const item = feed.find(it => it.id === id);
+    if (!item) return;
+    const liked = !item.liked;
+    const apply = (likedNow: boolean, likeCount: number) =>
+      setFeed(f => f.map(it => it.id === id ? { ...it, liked: likedNow, likeCount } : it));
+    apply(liked, Math.max(0, item.likeCount + (liked ? 1 : -1)));
+    fetch(`${BASE}/store/${slug}/feed/${id}/like`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ visitorId: visitorId(), liked }),
+    })
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then((res: { liked: boolean; likeCount: number }) => apply(res.liked, res.likeCount))
+      .catch(() => apply(item.liked, item.likeCount));
+  };
 
   // Deep-link: when initialReelId is set, open feed and scroll to the reel
   useEffect(() => {
@@ -784,6 +878,7 @@ export function PublicStore({ slug, initialReelId }: Props) {
               slug={slug}
               isActive={i === activeIndex}
               onOrder={() => { addToCart(item.product); setShowCart(true); }}
+              onLike={() => toggleLike(item.id)}
             />
           ))}
         </div>

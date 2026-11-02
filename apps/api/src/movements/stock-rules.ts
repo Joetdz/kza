@@ -4,33 +4,16 @@ import { averageUnitCost } from '@kza/shared';
 
 type Db = Prisma.TransactionClient;
 
-// Orders in these states will not take any stock any more (delivered ones already did).
-const FINISHED_ORDER_STATUSES = ['delivered', 'returned', 'fake', 'cancelled'];
-
 /**
- * Units promised but still on the shelf: confirmed orders not delivered yet and pending
- * sales. Computed on read, so a reservation disappears with its order or sale. Drafts
- * (storefront, WhatsApp) reserve nothing until someone confirms them.
+ * Units promised but still on the shelf: pending sales. Computed on read, so a
+ * reservation disappears with its sale. Logistics orders never hold stock: they are
+ * checked against the stock when delivered, and only then take it.
  */
 export async function reservedByProduct(
   db: Db,
   product: Prisma.ProductWhereInput,
   excludeSaleId?: string,
-  excludeOrderId?: string,
-  includeStoreDrafts = false,
 ): Promise<Map<string, number>> {
-  const orders = await db.manualOrderItem.groupBy({
-    by: ['productId'],
-    where: {
-      product,
-      order: {
-        OR: [{ isDraft: false }, ...(includeStoreDrafts ? [{ isDraft: true, storeOrder: { isNot: null } }] : [])],
-        status: { notIn: FINISHED_ORDER_STATUSES },
-        ...(excludeOrderId ? { id: { not: excludeOrderId } } : {}),
-      },
-    },
-    _sum: { quantity: true },
-  });
   const sales = await db.saleItem.groupBy({
     by: ['productId'],
     where: {
@@ -40,7 +23,7 @@ export async function reservedByProduct(
     _sum: { quantity: true },
   });
   const reserved = new Map<string, number>();
-  for (const row of [...orders, ...sales]) {
+  for (const row of sales) {
     if (!row.productId) continue;
     reserved.set(row.productId, (reserved.get(row.productId) ?? 0) + Number(row._sum.quantity ?? 0));
   }
@@ -65,9 +48,8 @@ export async function assertStockAvailable(
   lines: { productId: string | null; quantity: number }[],
   options: {
     excludeSaleId?: string;
-    excludeOrderId?: string;
     countReservations?: boolean;
-    /** A customer ordering online: earlier online orders hold their units too, and the message is for them. */
+    /** A customer ordering online: the message is for them. */
     storefront?: boolean;
   } = {},
 ) {
@@ -82,7 +64,7 @@ export async function assertStockAvailable(
   });
   const reserved = options.countReservations === false
     ? new Map<string, number>()
-    : await reservedByProduct(db, { id: { in: ids } }, options.excludeSaleId, options.excludeOrderId, options.storefront);
+    : await reservedByProduct(db, { id: { in: ids } }, options.excludeSaleId);
 
   for (const p of products) {
     const held = reserved.get(p.id) ?? 0;

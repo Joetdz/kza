@@ -267,7 +267,7 @@ export class LogisticsService {
 
   /**
    * The one place an order changes status, whoever asks: delivering and taking back move
-   * stock and the sale; reviving a cancelled order needs its units to be available again.
+   * stock and the sale. Any other status leaves the stock alone.
    */
   async setStatus(order: OrderForStatus, status: string, data: Prisma.ManualOrderUncheckedUpdateInput = {}) {
     this.assertCanLeaveDelivered(order, status);
@@ -279,33 +279,18 @@ export class LogisticsService {
       return this.prisma.manualOrder.update({ where: { id: order.id }, data });
     }
 
-    const revived = !order.isDraft
-      && INACTIVE_ORDER_STATUSES.includes(order.status)
-      && !INACTIVE_ORDER_STATUSES.includes(status);
-    const updated = !revived
-      ? await this.prisma.manualOrder.update({ where: { id: order.id }, data: { ...data, status } })
-      : await this.prisma.$transaction(async tx => {
-          await lockProducts(tx, order.items.map(i => i.productId));
-          await assertStockAvailable(tx, order.items);
-          return tx.manualOrder.update({ where: { id: order.id }, data: { ...data, status } });
-        }, { timeout: 20_000 });
+    const updated = await this.prisma.manualOrder.update({ where: { id: order.id }, data: { ...data, status } });
     await this.syncStoreStatus(order.id, status);
     return updated;
   }
 
-  /** Confirms a draft: from here on it reserves its stock. */
+  /** Confirms a draft. Its stock is checked and taken only when it is delivered. */
   async confirmDraft(order: { id: string; items: { productId: string; quantity: number }[] }) {
-    // Stock is decremented only when the order is marked "delivered" — not at confirmation.
-    const confirmed = await this.prisma.$transaction(async tx => {
-      await lockProducts(tx, order.items.map(i => i.productId));
-      await assertStockAvailable(tx, order.items);
-
-      return tx.manualOrder.update({
-        where: { id: order.id },
-        data: { isDraft: false, status: 'pending' },
-        include: { items: { include: { product: true } }, partner: true, location: true },
-      });
-    }, { timeout: 20_000 });
+    const confirmed = await this.prisma.manualOrder.update({
+      where: { id: order.id },
+      data: { isDraft: false, status: 'pending' },
+      include: { items: { include: { product: true } }, partner: true, location: true },
+    });
     await this.syncStoreStatus(order.id, 'pending');
     return confirmed;
   }

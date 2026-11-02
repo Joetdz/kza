@@ -5,7 +5,6 @@ import { WhatsAppService } from '../whatsapp/whatsapp.service';
 import { FollowUpService } from './followup.service';
 import { CustomerHistoryService } from '../common/customer-history.service';
 import { detachStoreOrders, LogisticsService } from './logistics.service';
-import { assertStockAvailable, lockProducts } from '../movements/stock-rules';
 import { phoneKey } from '../common/phone';
 import { join } from 'path';
 
@@ -347,12 +346,9 @@ export class LogisticsController {
     const maxResult = await this.prisma.manualOrder.aggregate({ where: { userId: user.ownerId }, _max: { orderNumber: true } });
     const orderNumber = (maxResult._max.orderNumber ?? 0) + 1;
 
-    const order = await this.prisma.$transaction(async tx => {
-      // Locked until the order exists, so two orders cannot reserve the same units.
-      await lockProducts(tx, body.items.map(i => i.productId));
-      await assertStockAvailable(tx, body.items);
-
-      return tx.manualOrder.create({
+    // No stock check here: an order takes no stock until it is delivered, and the
+    // delivery is refused if the stock is short at that point.
+    return this.prisma.manualOrder.create({
         data: {
           userId: user.ownerId,
           businessId: user.businessId ?? user.ownerId,
@@ -373,10 +369,6 @@ export class LogisticsController {
         },
         include: { items: { include: { product: true } }, partner: true, location: true },
       });
-    }, { timeout: 20_000 });
-
-    // Stock is decremented only when the order is marked "delivered" — not at creation.
-    return order;
   }
 
   @Patch('my/logistics/orders/:id/reschedule')
@@ -680,12 +672,6 @@ export class LogisticsController {
       : Number(order.totalAmount);
 
     return this.prisma.$transaction(async tx => {
-      // A draft reserves nothing yet: it is checked when confirmed.
-      if (body.items && !order.isDraft) {
-        await lockProducts(tx, body.items.map(i => i.productId));
-        await assertStockAvailable(tx, body.items, { excludeOrderId: id });
-      }
-
       return tx.manualOrder.update({
         where: { id },
         data: {

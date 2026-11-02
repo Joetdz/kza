@@ -425,7 +425,9 @@ export function Logistics() {
       setOrders(prev => [o, ...prev]);
       setShowOrderModal(false);
       resetOrderForm();
-    } catch { /* ignore */ }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "La commande n'a pas pu être créée");
+    }
     finally { setSubmitting(false); }
   }
 

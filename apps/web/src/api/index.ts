@@ -112,6 +112,78 @@ export const recurringExpensesApi = {
 };
 
 // ─── Upload ──────────────────────────────────────────────────
+const MAX_IMAGE_SIDE = 1600;
+const SHRINK_ABOVE_BYTES = 300 * 1024;
+const UPLOAD_STALL_MS = 120_000;
+
+// Phone photos weigh several MB for no visible gain in the store. Animated or vector
+// formats are left alone, and so is any image the conversion would not make lighter.
+async function shrinkImage(file: File): Promise<File> {
+  if (file.size <= SHRINK_ABOVE_BYTES || file.type === 'image/gif' || file.type === 'image/svg+xml') return file;
+  try {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, MAX_IMAGE_SIDE / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(bitmap.width * scale);
+    canvas.height = Math.round(bitmap.height * scale);
+    const ctx = canvas.getContext('2d')!;
+    ctx.fillStyle = '#fff'; // JPEG has no transparency
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    bitmap.close();
+    const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.85));
+    if (!blob || blob.size >= file.size) return file;
+    return new File([blob], 'photo.jpg', { type: 'image/jpeg' });
+  } catch {
+    return file;
+  }
+}
+
+// XMLHttpRequest rather than supabase.storage: fetch can't report upload progress.
+// A transfer that stops moving fails instead of spinning forever.
+async function putToStorage(bucket: string, path: string, file: File, onProgress?: (pct: number) => void): Promise<void> {
+  const { data: { session } } = await supabase.auth.getSession();
+  const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+
+  await new Promise<void>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    let stalled = false;
+    let watchdog: ReturnType<typeof setTimeout>;
+    const armWatchdog = () => {
+      clearTimeout(watchdog);
+      watchdog = setTimeout(() => { stalled = true; xhr.abort(); }, UPLOAD_STALL_MS);
+    };
+
+    xhr.open('POST', `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/${bucket}/${path}`);
+    xhr.setRequestHeader('Authorization', `Bearer ${session?.access_token ?? anonKey}`);
+    xhr.setRequestHeader('apikey', anonKey);
+    xhr.setRequestHeader('x-upsert', 'false');
+    xhr.setRequestHeader('cache-control', 'max-age=3600');
+    if (file.type) xhr.setRequestHeader('Content-Type', file.type);
+
+    xhr.upload.onprogress = e => {
+      armWatchdog();
+      if (e.lengthComputable) onProgress?.(Math.round((e.loaded / e.total) * 100));
+    };
+    xhr.onload = () => {
+      clearTimeout(watchdog);
+      if (xhr.status >= 200 && xhr.status < 300) return resolve();
+      if (xhr.status === 413) return reject(new Error('Fichier trop volumineux pour le stockage.'));
+      let message = `Erreur ${xhr.status} pendant l'envoi.`;
+      try { message = JSON.parse(xhr.responseText).message ?? message; } catch { /* not JSON: keep the fallback */ }
+      reject(new Error(message));
+    };
+    xhr.onerror = () => { clearTimeout(watchdog); reject(new Error('Connexion perdue pendant l\'envoi.')); };
+    xhr.onabort = () => {
+      clearTimeout(watchdog);
+      reject(new Error(stalled ? 'L\'envoi est bloqué : vérifie ta connexion puis réessaie.' : 'Envoi annulé.'));
+    };
+
+    armWatchdog();
+    xhr.send(file);
+  });
+}
+
 export const uploadApi = {
   uploadImage: async (file: File): Promise<string> => {
     const ext = file.name.split('.').pop() ?? 'jpg';
@@ -125,16 +197,13 @@ export const uploadApi = {
     return data.publicUrl;
   },
 
-  uploadMedia: async (file: File): Promise<string> => {
-    const isVideo = file.type.startsWith('video/');
+  uploadMedia: async (original: File, onProgress?: (pct: number) => void): Promise<string> => {
+    const isVideo = original.type.startsWith('video/');
+    const file = isVideo ? original : await shrinkImage(original);
     const prefix = isVideo ? 'videos' : 'images';
     const ext = file.name.split('.').pop() ?? (isVideo ? 'mp4' : 'jpg');
     const filename = `${prefix}/${crypto.randomUUID()}.${ext}`;
-    const { error } = await supabase.storage.from('products').upload(filename, file, {
-      cacheControl: '3600',
-      upsert: false,
-    });
-    if (error) throw new Error(error.message);
+    await putToStorage('products', filename, file, onProgress);
     const { data } = supabase.storage.from('products').getPublicUrl(filename);
     return data.publicUrl;
   },
@@ -163,6 +232,8 @@ export interface ProductMedia {
   caption: string | null;
   audioUrl: string | null;
   sortOrder: number;
+  viewCount: number;
+  likeCount: number;
   createdAt: string;
   product?: { id: string; name: string; imageUrl: string | null };
 }

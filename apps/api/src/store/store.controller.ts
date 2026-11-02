@@ -1,4 +1,4 @@
-import { Controller, Get, Put, Post, Patch, Delete, Body, Param, NotFoundException, BadRequestException, Res } from '@nestjs/common';
+import { Controller, Get, Put, Post, Patch, Delete, Body, Param, Query, NotFoundException, BadRequestException, Res } from '@nestjs/common';
 import { Response } from 'express';
 import { PrismaService } from '../prisma/prisma.service';
 import { WhatsAppService } from '../whatsapp/whatsapp.service';
@@ -41,6 +41,9 @@ function lineTotal(price: number, qty: number, bundleQty: number | null, bundleP
   if (!bundleQty || !bundlePrice) return qty * price;
   return Math.floor(qty / bundleQty) * bundlePrice + (qty % bundleQty) * price;
 }
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const NIL_UUID = '00000000-0000-0000-0000-000000000000';
 
 function buildSlug(name: string): string {
   return name
@@ -522,7 +525,8 @@ Règles:
 
   @Public()
   @Get(':slug/feed')
-  async getPublicFeed(@Param('slug') slug: string) {
+  async getPublicFeed(@Param('slug') slug: string, @Query('visitor') visitor?: string) {
+    const visitorId = visitor && UUID.test(visitor) ? visitor : null;
     const store = await this.prisma.onlineStore.findUnique({
       where: { slug },
       include: {
@@ -537,7 +541,11 @@ Règles:
                 category: true,
                 quantity: true,
                 trackStock: true,
-                media: { orderBy: { sortOrder: 'asc' } },
+                media: {
+                  orderBy: { sortOrder: 'asc' },
+                  // No visitor id: the nil UUID matches no like.
+                  include: { likes: { where: { visitorId: visitorId ?? NIL_UUID }, select: { visitorId: true } } },
+                },
               },
             },
           },
@@ -546,6 +554,7 @@ Règles:
     });
     if (!store || !store.active) throw new NotFoundException('Boutique introuvable');
 
+    // In the database order; the visitor's page shuffles it.
     return store.products.flatMap(sp => {
       const p = sp.product;
       if (p.trackStock && p.quantity <= 0) return [];
@@ -557,6 +566,9 @@ Règles:
         caption: m.caption,
         audioUrl: m.audioUrl,
         sortOrder: m.sortOrder,
+        viewCount: m.viewCount,
+        likeCount: m.likeCount,
+        liked: m.likes.length > 0,
         product: {
           id: p.id,
           name: p.name,
@@ -569,6 +581,57 @@ Règles:
         },
       }));
     });
+  }
+
+  // ── Reel views and likes (no auth) ─────────────────────────────────────────
+  // The page sends a view once per reel per visit, after a moment on screen.
+
+  @Public()
+  @Post(':slug/feed/:mediaId/view')
+  async viewReel(@Param('slug') slug: string, @Param('mediaId') mediaId: string) {
+    await this.findStoreMedia(slug, mediaId);
+    const media = await this.prisma.productMedia.update({
+      where: { id: mediaId },
+      data: { viewCount: { increment: 1 } },
+      select: { viewCount: true },
+    });
+    return { viewCount: media.viewCount };
+  }
+
+  @Public()
+  @Post(':slug/feed/:mediaId/like')
+  async likeReel(
+    @Param('slug') slug: string,
+    @Param('mediaId') mediaId: string,
+    @Body() body: { visitorId?: string; liked?: boolean },
+  ) {
+    if (!body.visitorId || !UUID.test(body.visitorId)) throw new BadRequestException('Visiteur invalide');
+    await this.findStoreMedia(slug, mediaId);
+    const key = { mediaId, visitorId: body.visitorId };
+
+    // The like row decides: tapping twice, or on two tabs, never counts twice.
+    const media = await this.prisma.$transaction(async tx => {
+      if (body.liked !== false) {
+        const added = await tx.productMediaLike.createMany({ data: [key], skipDuplicates: true });
+        if (added.count) await tx.productMedia.update({ where: { id: mediaId }, data: { likeCount: { increment: 1 } } });
+      } else {
+        const removed = await tx.productMediaLike.deleteMany({ where: key });
+        if (removed.count) await tx.productMedia.update({ where: { id: mediaId }, data: { likeCount: { decrement: removed.count } } });
+      }
+      return tx.productMedia.findUniqueOrThrow({ where: { id: mediaId }, select: { likeCount: true } });
+    });
+    return { liked: body.liked !== false, likeCount: media.likeCount };
+  }
+
+  /** The reel, only if it belongs to an active store's product. */
+  private async findStoreMedia(slug: string, mediaId: string) {
+    if (!UUID.test(mediaId)) throw new NotFoundException('Reel introuvable');
+    const media = await this.prisma.productMedia.findFirst({
+      where: { id: mediaId, product: { storeItems: { some: { store: { slug, active: true } } } } },
+      select: { id: true },
+    });
+    if (!media) throw new NotFoundException('Reel introuvable');
+    return media;
   }
 
   // ── POST public order (no auth) ────────────────────────────────────────────

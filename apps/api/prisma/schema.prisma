@@ -698,12 +698,28 @@ model ProductMedia {
   caption   String?
   audioUrl  String?  @map("audio_url")
   sortOrder Int      @default(0) @map("sort_order")
+  viewCount Int      @default(0) @map("view_count")
+  likeCount Int      @default(0) @map("like_count")
   createdAt DateTime @default(now()) @map("created_at")
 
-  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  product Product             @relation(fields: [productId], references: [id], onDelete: Cascade)
+  likes   ProductMediaLike[]
 
   @@index([productId])
   @@map("product_media")
+}
+
+// One row per visitor who liked a reel, so a like counts once and can be taken back.
+// visitorId is a random id kept in the visitor's browser: the store has no accounts.
+model ProductMediaLike {
+  mediaId   String   @map("media_id") @db.Uuid
+  visitorId String   @map("visitor_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  media ProductMedia @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+
+  @@id([mediaId, visitorId])
+  @@map("product_media_likes")
 }
 
 // ─── Business AI ──────────────────────────────────────────────────────────────
