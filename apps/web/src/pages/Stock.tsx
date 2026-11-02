@@ -15,7 +15,7 @@ import type { Product, StockMovement } from '../types';
 import { logisticsApi, type StockLocation, type LocationStock } from '../api/logistics';
 import { useModules } from '../hooks/useModules';
 import { useSegment } from '../hooks/useSegment';
-import { firstItem } from '@kza/shared';
+import { averageUnitCost, firstItem } from '@kza/shared';
 
 const generateSku = () => 'PRD-' + Math.random().toString(36).slice(2, 8).toUpperCase();
 
@@ -46,7 +46,7 @@ export function Stock() {
   const { fmt: MAD, currency } = useCurrency();
   const { has: hasModule } = useModules();
   const tracksStock = hasModule('stock');
-  const { terms } = useSegment();
+  const { terms, words } = useSegment();
   const variantsEnabled = hasModule('variants');
   const agendaEnabled = hasModule('agenda');
   const invoicesEnabled = hasModule('invoices');
@@ -127,7 +127,7 @@ export function Stock() {
       }));
       toast.success(
         result.fixedCount > 0
-          ? `Stock recalculé — ${result.fixedCount} produit(s) corrigé(s)`
+          ? `Stock recalculé — ${result.fixedCount} élément(s) corrigé(s)`
           : 'Stock déjà à jour — aucune correction nécessaire',
       );
     } catch {
@@ -229,6 +229,10 @@ export function Stock() {
     }
   };
 
+  // Once a product tracks stock, its quantity, cost and entry date are read-only here.
+  const stockLocked = !!editing && (editing.trackStock ?? true) && !!form.trackStock;
+  const viaMovements = 'Modifiable uniquement par une entrée ou une sortie de stock';
+
   const handleSave = async () => {
     if (!form.name) return;
     if (variantMode && !editing) return handleSaveVariants();
@@ -241,9 +245,9 @@ export function Stock() {
       if (editing) {
         // When editing, only send quantity if the user explicitly changed it — avoids
         // overwriting DB quantity that was modified by movements/sales since modal opened
-        const { quantity, ...rest } = form;
-        const patch: Partial<typeof form> = { ...rest, acquisitionCost: unitCost };
-        if (quantity !== editing.quantity) patch.quantity = quantity;
+        const { quantity, acquisitionCost, entryDate, ...rest } = form;
+        const patch: Partial<typeof form> = stockLocked ? rest : { ...rest, entryDate, acquisitionCost: unitCost };
+        if (!stockLocked && quantity !== editing.quantity) patch.quantity = quantity;
         await updateProduct(editing.id, patch);
       } else {
         await addProduct({ ...form, acquisitionCost: unitCost });
@@ -286,15 +290,10 @@ export function Stock() {
     setSubmittingMov(true);
     try {
       const { purchaseCost, freightCost, ...movData } = movForm;
-      await addMovement({ productId: movementProduct.id, ...movData });
-      // Update acquisition cost silently (no toast) after stock-in with purchase cost
-      if (movForm.type === 'in' && unitAcquisitionCost > 0) {
-        productsApi.update(movementProduct.id, { acquisitionCost: unitAcquisitionCost })
-          .then(updated => useStore.setState(s => ({
-            products: s.products.map(p => p.id === updated.id ? updated : p),
-          })))
-          .catch(() => {});
-      }
+      await addMovement({
+        productId: movementProduct.id, ...movData,
+        ...(movForm.type === 'in' && unitAcquisitionCost > 0 ? { unitCost: unitAcquisitionCost } : {}),
+      });
       setMovementProduct(null);
     } finally {
       setSubmittingMov(false);
@@ -304,10 +303,17 @@ export function Stock() {
   const productMovements = (productId: string): StockMovement[] =>
     movements.filter(m => m.productId === productId).sort((a, b) => b.date.localeCompare(a.date));
 
-  const field = (key: keyof typeof form, label: string, type = 'text', opts?: string[], hint?: string) => (
+  const field = (key: keyof typeof form, label: string, type = 'text', opts?: string[], hint?: string, locked = false) => (
     <div>
       <label className="text-xs font-medium text-gray-600 mb-1 block">{label}</label>
-      {opts ? (
+      {locked ? (
+        <input
+          type={type}
+          disabled
+          value={type === 'date' ? String(form[key] ?? '').slice(0, 10) : String(form[key] ?? '')}
+          className="w-full border border-gray-100 bg-gray-100 text-gray-500 rounded-xl px-3 py-2.5 text-sm cursor-not-allowed"
+        />
+      ) : opts ? (
         <select
           value={form[key] as string}
           onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
@@ -604,10 +610,10 @@ export function Stock() {
       )}
 
       {/* Add/Edit Modal */}
-      <Modal open={modalOpen} onClose={() => !submitting && setModalOpen(false)} title={editing ? (editing.variantGroup ? 'Modifier la variante' : 'Modifier le produit') : variantMode ? (addingToGroup ? `Nouvelles variantes — ${addingToGroup}` : 'Nouveau produit à variantes') : 'Nouveau produit'} size="md">
+      <Modal open={modalOpen} onClose={() => !submitting && setModalOpen(false)} title={editing ? (editing.variantGroup ? 'Modifier la variante' : `Modifier ${words.theItem}`) : variantMode ? (addingToGroup ? `Nouvelles variantes — ${addingToGroup}` : `${words.newItem} à variantes`) : words.newItem} size="md">
         <div className="space-y-4">
           <div>
-            <label className="text-xs font-medium text-gray-600 mb-2 block">Photo du produit</label>
+            <label className="text-xs font-medium text-gray-600 mb-2 block">Photo {words.ofItem}</label>
             <div className="flex items-center gap-4">
               {form.imageUrl ? (
                 <div className="relative">
@@ -698,19 +704,19 @@ export function Stock() {
             ) : variantMode ? (
               !addingToGroup && field('name', 'Nom du modèle *', 'text', undefined, 'Ex : T-shirt col rond — sans la taille ni la couleur')
             ) : (
-              field('name', 'Nom du produit *', 'text', undefined, 'Nom complet tel qu\'il apparaîtra dans le stock')
+              field('name', `Nom ${words.ofItem} *`, 'text', undefined, `Nom complet tel qu'il apparaîtra dans : ${terms.catalogue}`)
             )}
-            {!variantMode && field('sku', 'Référence (SKU)', 'text', undefined, 'Code unique du produit — auto-généré si vide')}
-            {field('category', 'Catégorie', 'text', categories, 'Famille de produit pour filtrer et regrouper')}
+            {!variantMode && field('sku', 'Référence (SKU)', 'text', undefined, `Code unique ${words.ofItem} — auto-généré si vide`)}
+            {field('category', 'Catégorie', 'text', categories, `Famille de ${terms.items} pour filtrer et regrouper`)}
             {field('supplier', 'Fournisseur', 'text', undefined, 'Nom du fournisseur ou grossiste')}
-            {form.trackStock && !variantMode && field('quantity', 'Quantité en stock', 'number', undefined, 'Nombre d\'unités actuellement disponibles')}
+            {form.trackStock && !variantMode && field('quantity', 'Quantité en stock', 'number', undefined, stockLocked ? viaMovements : 'Nombre d\'unités actuellement disponibles', stockLocked)}
             {form.trackStock && field('alertThreshold', "Seuil d'alerte", 'number', undefined, 'Alerte stock bas déclenchée en dessous de ce seuil')}
-            {field('entryDate', "Date d'entrée", 'date', undefined, form.trackStock ? 'Date à laquelle ce stock est entré' : 'Date de création ou de début de la prestation')}
+            {field('entryDate', "Date d'entrée", 'date', undefined, stockLocked ? 'Date de la dernière entrée de stock' : form.trackStock ? 'Date à laquelle ce stock est entré' : 'Date de création ou de début de la prestation', stockLocked)}
             <div>
               {variantMode
                 ? field('acquisitionCost', `Coût d'achat unitaire (${currency})`, 'number', undefined, 'Ce que vous coûte une unité de chaque variante')
                 : form.trackStock
-                ? field('acquisitionCost', `Coût d'achat total (${currency})`, 'number', undefined, 'Montant total payé pour tout le lot (transport inclus)')
+                ? field('acquisitionCost', `Coût d'achat total (${currency})`, 'number', undefined, stockLocked ? viaMovements : 'Montant total payé pour tout le lot (transport inclus)', stockLocked)
                 : field('acquisitionCost', `Coût de revient unitaire (${currency})`, 'number', undefined, 'Coût pour fournir une unité de ce service')}
               {form.trackStock && form.quantity > 0 && form.acquisitionCost > 0 && (
                 <p className="text-[11px] text-indigo-500 mt-1 font-medium">
@@ -873,8 +879,15 @@ export function Stock() {
               </div>
               {unitAcquisitionCost > 0 && (
                 <div className="bg-indigo-50 border border-indigo-100 rounded-xl px-4 py-3 flex items-center justify-between">
-                  <span className="text-sm text-indigo-700 font-medium">Coût acquisition unitaire</span>
-                  <span className="text-lg font-bold text-indigo-700">{MAD(unitAcquisitionCost)}</span>
+                  <span className="text-sm text-indigo-700 font-medium">
+                    Nouveau coût moyen
+                    <span className="block text-[11px] font-normal text-indigo-500">
+                      {movementProduct?.quantity ?? 0} en stock à {MAD(movementProduct?.acquisitionCost ?? 0)} + {movForm.quantity} à {MAD(unitAcquisitionCost)}
+                    </span>
+                  </span>
+                  <span className="text-lg font-bold text-indigo-700">
+                    {MAD(averageUnitCost(movementProduct?.quantity ?? 0, movementProduct?.acquisitionCost ?? 0, movForm.quantity, unitAcquisitionCost))}
+                  </span>
                 </div>
               )}
             </>
@@ -923,7 +936,7 @@ export function Stock() {
 
       <ConfirmDialog
         open={!!deleteId}
-        title="Supprimer le produit"
+        title={`Supprimer ${words.theItem}`}
         message="Cette action est irréversible. Toutes les ventes et dépenses liées seront également supprimées."
         onConfirm={() => { if (deleteId) deleteProduct(deleteId); setDeleteId(null); }}
         onCancel={() => setDeleteId(null)}

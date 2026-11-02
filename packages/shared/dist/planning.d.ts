@@ -8,6 +8,7 @@ export interface PlanSaleItem {
     productId?: string | null;
     quantity: number;
     unitPrice: number;
+    unitCost?: number | null;
 }
 export interface PlanSale {
     date: string;
@@ -120,6 +121,26 @@ export interface MonthRealized {
     lateEntries: number;
 }
 export declare function computeMonthRealized(month: string, products: PlanProduct[], sales: PlanSale[], expenses: PlanExpense[], ctx: CountingContext): MonthRealized;
+/** Realized between two dates (included), by each entry's own date. */
+export declare function computeRangeRealized(from: string, to: string, products: PlanProduct[], sales: PlanSale[], expenses: PlanExpense[]): MonthRealized;
+export type GoalPeriod = 'day' | 'week' | 'month';
+/** First and last day (included) of the day or the Monday-to-Sunday week around `today`. */
+export declare function periodRange(period: 'day' | 'week', today: string): {
+    from: string;
+    to: string;
+};
+/** Every day of a month ("YYYY-MM-DD"). */
+export declare function monthDays(monthKey: string): string[];
+/** The Monday-to-Sunday weeks touching a month; the first and last can overlap its neighbours. */
+export declare function monthWeeks(monthKey: string): {
+    from: string;
+    to: string;
+}[];
+/**
+ * The plan for a few days: each day gets an equal share of its own month's plan, so a
+ * week across two months takes from both. null = no plan covers any of these days.
+ */
+export declare function computeRangePlan(months: ForecastMonth[], from: string, to: string): ForecastMonth | null;
 /** Everything a closed month needs to be shown forever, whatever changes afterwards. */
 export interface ClosingData {
     month: string;

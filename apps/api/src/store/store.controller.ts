@@ -6,6 +6,7 @@ import { PushService } from '../push/push.service';
 import { CurrentUser, AuthUser } from '../auth/current-user.decorator';
 import { Public } from '../auth/public.decorator';
 import { LogisticsService } from '../logistics/logistics.service';
+import { assertStockAvailable, lockProducts } from '../movements/stock-rules';
 import OpenAI from 'openai';
 
 interface StoreConfigDto {
@@ -33,6 +34,12 @@ interface OrderDto {
   utmMedium?: string;
   utmCampaign?: string;
   utmContent?: string;
+}
+
+/** Same calculation as the cart on the public store (calcLineTotal in PublicStore.tsx). */
+function lineTotal(price: number, qty: number, bundleQty: number | null, bundlePrice: number | null): number {
+  if (!bundleQty || !bundlePrice) return qty * price;
+  return Math.floor(qty / bundleQty) * bundlePrice + (qty % bundleQty) * price;
 }
 
 function buildSlug(name: string): string {
@@ -307,11 +314,14 @@ Règles :
     const order = await this.prisma.storeOrder.findFirst({ where: { id: orderId, storeId: store.id } });
     if (!order) throw new NotFoundException('Commande introuvable');
 
-    // "Livrée" here now actually moves stock — previously this only updated the
-    // storefront's own cosmetic status, with zero effect on Product.quantity/Sale,
-    // because StoreOrder and ManualOrder were two parallel, unlinked records.
-    if (body.status === 'delivered' && order.manualOrderId) {
-      await this.logisticsService.markDelivered(order.manualOrderId);
+    // The logistics order is the source of truth for stock and sales: every status set here
+    // goes through it, under the same rules as in Logistics.
+    if (order.manualOrderId) {
+      await this.logisticsService.applyStoreStatus(order.manualOrderId, body.status);
+    } else if (body.status === 'delivered' || (order.status === 'cancelled' && body.status !== 'cancelled')) {
+      // No logistics order (deleted, or too old to have one): delivering it here would move
+      // no stock and record no sale.
+      throw new BadRequestException("Cette commande n'est reliée à aucune commande Logistique : créez-la dans la Logistique pour la livrer.");
     }
 
     await this.prisma.storeOrder.update({
@@ -551,6 +561,8 @@ Règles:
           id: p.id,
           name: p.name,
           sellingPrice: displayPrice,
+          bundleQty: sp.bundleQty ?? null,
+          bundlePrice: sp.bundlePrice ? Number(sp.bundlePrice) : null,
           imageUrl: p.imageUrl,
           category: p.category,
           quantity: p.quantity,
@@ -572,55 +584,67 @@ Règles:
     if (!dto.deliveryZone?.trim()) throw new BadRequestException('Zone de livraison requise');
     if (!dto.items?.length) throw new BadRequestException('Panier vide');
 
-    const total = dto.items.reduce((sum, i) => sum + i.qty * i.unitPrice, 0);
-    const deliveryFee = dto.deliveryFee ?? 0;
-    const grandTotal = total + deliveryFee;
-
-    const order = await this.prisma.storeOrder.create({
-      data: {
-        storeId: store.id,
-        customerName: dto.customerName.trim(),
-        customerPhone: dto.customerPhone.trim(),
-        deliveryZone: dto.deliveryZone,
-        items: dto.items as any,
-        totalAmount: total,
-        deliveryFee,
-        notes: dto.notes ?? null,
-        utmSource: dto.utmSource ?? null,
-        utmMedium: dto.utmMedium ?? null,
-        utmCampaign: dto.utmCampaign ?? null,
-        utmContent: dto.utmContent ?? null,
-        status: 'pending',
-      },
+    // Prices and delivery fee come from the store, never from the browser. Lines for the
+    // same product are merged so the bundle price applies as it does in the cart.
+    const qtyByProduct = new Map<string, number>();
+    for (const i of dto.items) {
+      if (!Number.isInteger(i.qty) || i.qty <= 0) throw new BadRequestException('Quantité invalide');
+      qtyByProduct.set(i.productId, (qtyByProduct.get(i.productId) ?? 0) + i.qty);
+    }
+    const storeProducts = await this.prisma.storeProduct.findMany({
+      where: { storeId: store.id, productId: { in: [...qtyByProduct.keys()] } },
+      include: { product: { select: { name: true, sellingPrice: true } } },
     });
+    if (storeProducts.length !== qtyByProduct.size) {
+      throw new BadRequestException("Un article de votre panier n'est plus disponible.");
+    }
+    const items = storeProducts.map(sp => {
+      const qty = qtyByProduct.get(sp.productId)!;
+      return {
+        productId: sp.productId,
+        name: sp.product.name,
+        qty,
+        unitPrice: lineTotal(Number(sp.storePrice ?? sp.product.sellingPrice), qty, sp.bundleQty, sp.bundlePrice ? Number(sp.bundlePrice) : null) / qty,
+      };
+    });
+    const total = items.reduce((sum, i) => sum + i.qty * i.unitPrice, 0);
 
-    // Create draft order in logistics — attributed to THIS store's own business, not
-    // whichever business happens to be the account's default. A multi-business account
-    // otherwise gets orders from store B's public page silently filed under business A's
-    // Logistics queue (and disagreeing with the businessId used for the socket event below).
-    let businessWaPhone: string | null = null;
-    try {
-      // store.businessId is the source of truth when set (the normal, post-migration case).
-      // Only fall back to "the account's default business" for a legacy store never
-      // backfilled with a businessId — same fallback chain used elsewhere in this codebase
-      // (e.g. the WhatsApp label-triggered draft handler) when no business row resolves at all.
-      const business = store.businessId
-        ? await this.prisma.business.findUnique({ where: { id: store.businessId }, select: { id: true, whatsappPhone: true } })
-        : await this.prisma.business.findFirst({
-            where: { userId: store.userId },
-            orderBy: { createdAt: 'asc' },
-            select: { id: true, whatsappPhone: true },
-          });
-      const orderBusinessId = store.businessId ?? business?.id ?? store.userId;
-      if (business?.whatsappPhone) businessWaPhone = business.whatsappPhone;
+    const zones = (store.deliveryZones ?? []) as unknown as { city: string; fee: number }[];
+    const zone = zones.find(z => z.city === dto.deliveryZone);
+    if (zones.length > 0 && !zone) throw new BadRequestException('Zone de livraison invalide');
+    const deliveryFee = zone?.fee ?? 0;
 
-      const addressParts = [dto.commune, dto.avenue, dto.reference].filter(Boolean);
-      const address = addressParts.join(', ') || dto.deliveryZone;
-      const maxResult = await this.prisma.manualOrder.aggregate({
+    // Attributed to THIS store's own business, not whichever business happens to be the
+    // account's default. A multi-business account otherwise gets orders from store B's
+    // public page silently filed under business A's Logistics queue (and disagreeing with
+    // the businessId used for the socket event below).
+    // store.businessId is the source of truth when set (the normal, post-migration case).
+    // Only fall back to "the account's default business" for a legacy store never
+    // backfilled with a businessId — same fallback chain used elsewhere in this codebase
+    // (e.g. the WhatsApp label-triggered draft handler) when no business row resolves at all.
+    const business = store.businessId
+      ? await this.prisma.business.findUnique({ where: { id: store.businessId }, select: { id: true, whatsappPhone: true } })
+      : await this.prisma.business.findFirst({
+          where: { userId: store.userId },
+          orderBy: { createdAt: 'asc' },
+          select: { id: true, whatsappPhone: true },
+        });
+    const orderBusinessId = store.businessId ?? business?.id ?? store.userId;
+    const businessWaPhone = business?.whatsappPhone ?? null;
+    const addressParts = [dto.commune, dto.avenue, dto.reference].filter(Boolean);
+    const address = addressParts.join(', ') || dto.deliveryZone;
+
+    // All or nothing: the order always exists on both sides (storefront and Logistics),
+    // linked, so a later status change on either side goes through the single shared path.
+    const createOrder = () => this.prisma.$transaction(async tx => {
+      await lockProducts(tx, items.map(i => i.productId));
+      await assertStockAvailable(tx, items.map(i => ({ productId: i.productId, quantity: i.qty })), { storefront: true });
+
+      const maxResult = await tx.manualOrder.aggregate({
         where: { userId: store.userId, businessId: orderBusinessId },
         _max: { orderNumber: true },
       });
-      const draft = await this.prisma.manualOrder.create({
+      const draft = await tx.manualOrder.create({
         data: {
           userId: store.userId,
           businessId: orderBusinessId,
@@ -634,27 +658,52 @@ Règles:
           isDraft: true,
           notes: dto.notes ?? null,
           items: {
-            create: dto.items
-              .filter(i => i.productId)
-              .map(i => ({ productId: i.productId, quantity: i.qty, unitPrice: i.unitPrice })),
+            create: items.map(i => ({ productId: i.productId, quantity: i.qty, unitPrice: i.unitPrice })),
           },
         },
         select: { id: true, orderNumber: true },
       });
-      // Link the two so a later status change on either side (storefront dashboard or
-      // Logistics) can move stock through the single shared path instead of two
-      // disconnected records that happened to be created in the same request.
-      await this.prisma.storeOrder.update({ where: { id: order.id }, data: { manualOrderId: draft.id } }).catch(() => {});
-      // Notify logistics dashboard via socket + push — same businessId as the row above,
-      // so the real-time event and the persisted order can no longer disagree.
-      this.whatsapp.emitDraftOrderCreated(store.userId, store.businessId ?? null, draft.id, draft.orderNumber);
-      this.push.sendToUser(store.userId, {
-        title: '🛒 Nouvelle commande !',
-        body: `${dto.customerName} vient de commander sur ${store.name}`,
-        url: '/#/logistics',
-        tag: 'draft-order',
-      }).catch(() => {});
-    } catch { /* non-blocking */ }
+      const order = await tx.storeOrder.create({
+        data: {
+          storeId: store.id,
+          manualOrderId: draft.id,
+          customerName: dto.customerName.trim(),
+          customerPhone: dto.customerPhone.trim(),
+          deliveryZone: dto.deliveryZone,
+          items: items as any,
+          totalAmount: total,
+          deliveryFee,
+          notes: dto.notes ?? null,
+          utmSource: dto.utmSource ?? null,
+          utmMedium: dto.utmMedium ?? null,
+          utmCampaign: dto.utmCampaign ?? null,
+          utmContent: dto.utmContent ?? null,
+          status: 'pending',
+        },
+      });
+      return { order, draft };
+    }, { timeout: 20_000 });
+
+    // Two orders at once can pick the same number: the unique index refuses one, which retries.
+    let created: Awaited<ReturnType<typeof createOrder>> | undefined;
+    for (let attempt = 1; !created; attempt++) {
+      try {
+        created = await createOrder();
+      } catch (err: any) {
+        if (err?.code !== 'P2002' || attempt === 3) throw err;
+      }
+    }
+    const { order, draft } = created;
+
+    // Notify logistics dashboard via socket + push — same businessId as the row above,
+    // so the real-time event and the persisted order can no longer disagree.
+    this.whatsapp.emitDraftOrderCreated(store.userId, store.businessId ?? null, draft.id, draft.orderNumber);
+    this.push.sendToUser(store.userId, {
+      title: '🛒 Nouvelle commande !',
+      body: `${dto.customerName} vient de commander sur ${store.name}`,
+      url: '/#/logistics',
+      tag: 'draft-order',
+    }).catch(() => {});
 
     // Build order message text
     const ref = order.id.slice(0, 8).toUpperCase();
@@ -663,7 +712,7 @@ Règles:
       `*Nouvelle commande — ${store.name}*`,
       '',
       '*Produits :*',
-      ...dto.items.map(i => `  • ${i.name}  x${i.qty}  —  ${i.unitPrice.toLocaleString('fr-FR')} ${cur}`),
+      ...items.map(i => `  • ${i.name}  x${i.qty}  —  ${i.unitPrice.toLocaleString('fr-FR')} ${cur}`),
       '',
       `Sous-total : ${total.toLocaleString('fr-FR')} ${cur}`,
       `Frais de livraison : ${deliveryFee.toLocaleString('fr-FR')} FC`,

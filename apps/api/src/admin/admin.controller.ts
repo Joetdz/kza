@@ -1,6 +1,16 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AdminGuard } from './admin.guard';
+
+/** Date bounds of a "YYYY-MM" month [from, next[; without a month, the whole history. */
+function periodOf(month?: string) {
+  if (!month) return { from: new Date('2000-01-01T00:00:00Z'), next: new Date('2100-01-01T00:00:00Z') };
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw new BadRequestException('Mois invalide');
+  const from = new Date(`${month}-01T00:00:00Z`);
+  const next = new Date(from);
+  next.setUTCMonth(next.getUTCMonth() + 1);
+  return { from, next };
+}
 
 @Controller('admin')
 @UseGuards(AdminGuard)
@@ -10,7 +20,11 @@ export class AdminController {
   // ── Business overview (CA, ventes, dépenses, utilisateurs, produits) ─────────
 
   @Get('overview')
-  async getOverview() {
+  async getOverview(@Query('month') month?: string) {
+    const { from, next } = periodOf(month);
+    const inPeriod = { date: { gte: from, lt: next } };
+    // The chart follows the month; over the whole history it stays on the last 30 days.
+    const chartFrom = month ? from : new Date(Date.now() - 30 * 86_400_000);
     const [
       totalBusinesses,
       totalUsersRaw,
@@ -27,15 +41,15 @@ export class AdminController {
       this.prisma.business.count(),
       this.prisma.$queryRaw<[{ count: bigint }]>`SELECT COUNT(*)::text AS count FROM auth.users`,
       this.prisma.whatsAppSession.count({ where: { connected: true } }),
-      this.prisma.sale.groupBy({ by: ['status'], _count: { id: true } }),
-      this.prisma.sale.count(),
+      this.prisma.sale.groupBy({ by: ['status'], where: inPeriod, _count: { id: true } }),
+      this.prisma.sale.count({ where: inPeriod }),
       this.prisma.$queryRaw<[{ total: string }]>`
         SELECT COALESCE(SUM(si.quantity * si.unit_price), 0)::text AS total
         FROM sale_items si
         JOIN sales s ON s.id = si.sale_id
-        WHERE s.status = 'paid'
+        WHERE s.status = 'paid' AND s.date >= ${from} AND s.date < ${next}
       `,
-      this.prisma.expense.aggregate({ _sum: { amount: true } }),
+      this.prisma.expense.aggregate({ where: inPeriod, _sum: { amount: true } }),
       this.prisma.product.count(),
       this.prisma.$queryRaw<{ day: string; revenue: string; sales_count: string }[]>`
         SELECT
@@ -45,7 +59,7 @@ export class AdminController {
         FROM sales s
         JOIN sale_items si ON si.sale_id = s.id
         WHERE s.status = 'paid'
-          AND s.date >= CURRENT_DATE - INTERVAL '30 days'
+          AND s.date >= ${chartFrom} AND s.date < ${next}
         GROUP BY s.date
         ORDER BY s.date ASC
       `,
@@ -63,12 +77,13 @@ export class AdminController {
             COUNT(DISTINCT s.id) AS sale_count
           FROM sales s
           JOIN sale_items si ON si.sale_id = s.id
-          WHERE s.status = 'paid'
+          WHERE s.status = 'paid' AND s.date >= ${from} AND s.date < ${next}
           GROUP BY s.business_id
         ) rev ON rev.business_id = b.id
         LEFT JOIN (
           SELECT business_id, SUM(amount) AS expense_total
           FROM expenses
+          WHERE date >= ${from} AND date < ${next}
           GROUP BY business_id
         ) exp ON exp.business_id = b.id
         LEFT JOIN (
@@ -265,7 +280,8 @@ export class AdminController {
   // ── Detail: Revenue (CA) ─────────────────────────────────────────────────────
 
   @Get('detail/revenue')
-  async getRevenueDetail() {
+  async getRevenueDetail(@Query('month') month?: string) {
+    const { from, next } = periodOf(month);
     const [byChannel, topSales, byBusiness] = await Promise.all([
       this.prisma.$queryRaw<{ channel: string; revenue: string; count: string }[]>`
         SELECT s.channel,
@@ -273,9 +289,9 @@ export class AdminController {
           COUNT(DISTINCT s.id)::text AS count
         FROM sales s
         JOIN sale_items si ON si.sale_id = s.id
-        WHERE s.status = 'paid'
+        WHERE s.status = 'paid' AND s.date >= ${from} AND s.date < ${next}
         GROUP BY s.channel
-        ORDER BY revenue::numeric DESC
+        ORDER BY SUM(si.quantity * si.unit_price) DESC
       `,
       this.prisma.$queryRaw<{ id: string; date: string; channel: string; customer: string | null; total: string; business_name: string | null }[]>`
         SELECT s.id::text, s.date::text, s.channel,
@@ -285,9 +301,9 @@ export class AdminController {
         FROM sales s
         JOIN sale_items si ON si.sale_id = s.id
         LEFT JOIN businesses b ON b.id = s.business_id
-        WHERE s.status = 'paid'
+        WHERE s.status = 'paid' AND s.date >= ${from} AND s.date < ${next}
         GROUP BY s.id, s.date, s.channel, s.customer_name, b.name
-        ORDER BY total::numeric DESC
+        ORDER BY SUM(si.quantity * si.unit_price) DESC
         LIMIT 20
       `,
       this.prisma.$queryRaw<{ name: string; currency: string; revenue: string; sale_count: string }[]>`
@@ -295,10 +311,10 @@ export class AdminController {
           COALESCE(SUM(si.quantity * si.unit_price), 0)::text AS revenue,
           COUNT(DISTINCT s.id)::text AS sale_count
         FROM businesses b
-        LEFT JOIN sales s ON s.business_id = b.id AND s.status = 'paid'
+        LEFT JOIN sales s ON s.business_id = b.id AND s.status = 'paid' AND s.date >= ${from} AND s.date < ${next}
         LEFT JOIN sale_items si ON si.sale_id = s.id
         GROUP BY b.id, b.name, b.currency
-        ORDER BY revenue::numeric DESC
+        ORDER BY COALESCE(SUM(si.quantity * si.unit_price), 0) DESC
       `,
     ]);
 
@@ -312,13 +328,15 @@ export class AdminController {
   // ── Detail: Sales ─────────────────────────────────────────────────────────────
 
   @Get('detail/sales')
-  async getSalesDetail() {
+  async getSalesDetail(@Query('month') month?: string) {
+    const { from, next } = periodOf(month);
     const [byChannel, recentSales] = await Promise.all([
       this.prisma.$queryRaw<{ channel: string; status: string; count: string }[]>`
         SELECT channel, status, COUNT(*)::text AS count
         FROM sales
+        WHERE date >= ${from} AND date < ${next}
         GROUP BY channel, status
-        ORDER BY count::integer DESC
+        ORDER BY COUNT(*) DESC
       `,
       this.prisma.$queryRaw<{ id: string; date: string; channel: string; status: string; customer: string | null; total: string; business_name: string | null }[]>`
         SELECT s.id::text, s.date::text, s.channel, s.status,
@@ -328,6 +346,7 @@ export class AdminController {
         FROM sales s
         LEFT JOIN sale_items si ON si.sale_id = s.id
         LEFT JOIN businesses b ON b.id = s.business_id
+        WHERE s.date >= ${from} AND s.date < ${next}
         GROUP BY s.id, s.date, s.channel, s.status, s.customer_name, s.created_at, b.name
         ORDER BY s.created_at DESC
         LIMIT 30
@@ -343,10 +362,12 @@ export class AdminController {
   // ── Detail: Expenses ──────────────────────────────────────────────────────────
 
   @Get('detail/expenses')
-  async getExpensesDetail() {
+  async getExpensesDetail(@Query('month') month?: string) {
+    const { from, next } = periodOf(month);
     const [byCategory, byBusiness, recent] = await Promise.all([
       this.prisma.expense.groupBy({
         by: ['category'],
+        where: { date: { gte: from, lt: next } },
         _sum: { amount: true },
         _count: { id: true },
         orderBy: { _sum: { amount: 'desc' } },
@@ -356,16 +377,17 @@ export class AdminController {
           COALESCE(SUM(e.amount), 0)::text AS total,
           COUNT(e.id)::text AS count
         FROM businesses b
-        LEFT JOIN expenses e ON e.business_id = b.id
+        LEFT JOIN expenses e ON e.business_id = b.id AND e.date >= ${from} AND e.date < ${next}
         GROUP BY b.id, b.name
         HAVING COALESCE(SUM(e.amount), 0) > 0
-        ORDER BY total::numeric DESC
+        ORDER BY COALESCE(SUM(e.amount), 0) DESC
       `,
       this.prisma.$queryRaw<{ id: string; category: string; amount: string; description: string; date: string; business_name: string | null }[]>`
         SELECT e.id::text, e.category, e.amount::text, e.description, e.date::text,
           b.name AS business_name
         FROM expenses e
         LEFT JOIN businesses b ON b.id = e.business_id
+        WHERE e.date >= ${from} AND e.date < ${next}
         ORDER BY e.created_at DESC
         LIMIT 25
       `,

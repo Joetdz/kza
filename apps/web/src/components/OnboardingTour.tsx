@@ -40,7 +40,7 @@ const ALL_STEPS: Step[] = [
     iconBg: '#ecfdf5',
     title: 'Suivi des Ventes',
     desc: 'Enregistrez chaque vente avec le canal (WhatsApp, TikTok, Instagram, Boutique...), le statut (payé / en attente) et la zone de livraison.',
-    tip: 'Les ventes multi-produits sont supportées — ajoutez plusieurs articles en une seule commande.',
+    tip: 'Ajoutez plusieurs articles en une seule commande.',
   },
   {
     icon: <CreditCard size={32} style={{ color: '#f59e0b' }} />,
@@ -91,7 +91,7 @@ export function OnboardingTour({ userId, onClose }: Props) {
     .filter(s => !s.module || has(s.module))
     .map(s => s.catalogue && !has('stock')
       ? { ...s, title: `Vos ${terms.items}`, desc: `Ajoutez vos ${terms.items} avec leur prix et leur description : KZA s'en sert pour vos ventes, vos factures et l'IA WhatsApp.`, tip: undefined }
-      : s);
+      : s.catalogue ? { ...s, desc: s.desc.replace('vos produits', `vos ${terms.items}`) } : s);
   const isLast = step === STEPS.length - 1;
 
   const finish = () => {

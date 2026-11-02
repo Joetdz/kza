@@ -10,6 +10,7 @@ import { ListSkeleton } from '../components/ui/Skeleton';
 import { useCurrency } from '../hooks/useCurrency';
 import { formatDate, EXPENSE_LABELS, EXPENSE_COLORS, SALE_CHANNELS } from '../utils/formatters';
 import { recurringExpensesApi } from '../api';
+import { useSegment } from '../hooks/useSegment';
 import type { Expense, ExpenseCategory, SaleChannel, RecurringExpense } from '../types';
 
 // The 4 built-in categories, always shown first. Not exhaustive anymore — a business
@@ -47,6 +48,7 @@ function emptyForm(): FormState {
 }
 
 export function Expenses() {
+  const { terms, words } = useSegment();
   const { products, expenses, loading, addExpense, updateExpense, deleteExpense } = useStore();
   const { fmt: MAD, currency } = useCurrency();
   const [submitting, setSubmitting] = useState(false);
@@ -505,10 +507,10 @@ export function Expenses() {
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="text-xs font-medium text-gray-600">
-                Produits associés
+                {words.Items} associé{words.e}s
                 {selectedProductIds.length > 1 && (
                   <span className="ml-2 text-indigo-600 font-semibold">
-                    → {MAD(perProductAmount)}/produit
+                    → {MAD(perProductAmount)}/{terms.item}
                   </span>
                 )}
               </label>
@@ -523,7 +525,7 @@ export function Expenses() {
             </div>
             <div className="max-h-40 overflow-y-auto space-y-1 border border-gray-200 rounded-xl p-2">
               {products.length === 0 && (
-                <p className="text-xs text-gray-400 text-center py-2">Aucun produit</p>
+                <p className="text-xs text-gray-400 text-center py-2">{words.noItem}</p>
               )}
               {products.map(p => {
                 const selected = selectedProductIds.includes(p.id);
@@ -549,7 +551,7 @@ export function Expenses() {
             </div>
             {selectedProductIds.length > 1 && (
               <p className="text-xs text-indigo-600 mt-1">
-                {selectedProductIds.length} produits sélectionnés — {MAD(form.amount)} réparti en parts égales
+                {selectedProductIds.length} {terms.items} sélectionné{words.e}s — {MAD(form.amount)} réparti en parts égales
               </p>
             )}
           </div>

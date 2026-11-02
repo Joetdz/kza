@@ -52,6 +52,7 @@ export function computeProductAnalytics(
     // Revenue & units sold
     let totalUnitsSold = 0;
     let totalRevenue = 0;
+    let totalCOGS = 0;
     let conversions = 0;
 
     filteredSales.forEach(sale => {
@@ -61,12 +62,12 @@ export function computeProductAnalytics(
         items.forEach(item => {
           totalUnitsSold += item.quantity;
           totalRevenue += item.quantity * item.unitPrice;
+          totalCOGS += item.quantity * (item.unitCost ?? product.acquisitionCost);
         });
       }
     });
 
     const avgSalePrice = safeDiv(totalRevenue, totalUnitsSold);
-    const totalCOGS = totalUnitsSold * product.acquisitionCost;
     const grossProfit = totalRevenue - totalCOGS;
     const grossMarginPct = safeDiv(grossProfit, totalRevenue) * 100;
 
@@ -131,7 +132,7 @@ export function computeGlobalKpis(
     sale.items.forEach(item => {
       totalRevenue += item.quantity * item.unitPrice;
       const product = products.find(p => p.id === item.productId);
-      if (product) totalCOGS += item.quantity * product.acquisitionCost;
+      totalCOGS += item.quantity * (item.unitCost ?? product?.acquisitionCost ?? 0);
     });
   });
 
@@ -171,7 +172,7 @@ export function getSalesTimeSeries(
       sale.items.forEach(item => {
         map[day].revenue += item.quantity * item.unitPrice;
         const product = products.find(p => p.id === item.productId);
-        if (product) map[day].cogs += item.quantity * product.acquisitionCost;
+        map[day].cogs += item.quantity * (item.unitCost ?? product?.acquisitionCost ?? 0);
       });
     });
 

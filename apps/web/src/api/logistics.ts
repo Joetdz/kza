@@ -297,6 +297,8 @@ export const logisticsApi = {
     req<{ sent: boolean; reason?: string }>(`/my/logistics/orders/${orderId}/notify-partner`, { method: 'POST' }),
   deleteOrder: (id: string) =>
     req<unknown>(`/my/logistics/orders/${id}`, { method: 'DELETE' }),
+  deleteDrafts: (ids: string[]) =>
+    req<{ count: number }>('/my/logistics/orders/delete-drafts', { method: 'POST', body: JSON.stringify({ ids }) }),
   editDraft: (id: string, body: {
     customerName?: string; customerPhone?: string; city?: string; address?: string;
     deliveryFee?: number; notes?: string; partnerId?: string;
@@ -327,7 +329,11 @@ export const logisticsApi = {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
-      }).then(r => r.json()),
+      }).then(async r => {
+        const data = await r.json().catch(() => null);
+        if (!r.ok) throw new Error(data?.message ?? `API ${r.status}`);
+        return data;
+      }),
     reschedule: (token: string, orderId: string, scheduledAt: string | null): Promise<ManualOrder> =>
       fetch(`${BASE}/partner-portal/${token}/orders/${orderId}/reschedule`, {
         method: 'PATCH',
@@ -393,10 +399,10 @@ export const logisticsApi = {
     req<FollowUpConfig>('/my/logistics/followup/config', { method: 'PATCH', body: JSON.stringify(body) }),
   getFollowUpHistory: (limit?: number) =>
     req<FollowUpEntry[]>(`/my/logistics/followup/history${limit ? `?limit=${limit}` : ''}`),
-  previewRelance: () => req<ManualOrder[]>('/my/logistics/followup/preview-relance'),
+  previewRelance: () => req<RelanceOrder[]>('/my/logistics/followup/preview-relance'),
   previewLoyalty: () => req<ManualOrder[]>('/my/logistics/followup/preview-loyalty'),
-  triggerRelance: () =>
-    req<{ sent: number }>('/my/logistics/followup/trigger-relance', { method: 'POST' }),
+  triggerRelance: (orderIds: string[]) =>
+    req<{ sent: number; deleted: number }>('/my/logistics/followup/trigger-relance', { method: 'POST', body: JSON.stringify({ orderIds }) }),
   triggerLoyalty: () =>
     req<{ sent: number }>('/my/logistics/followup/trigger-loyalty', { method: 'POST' }),
 };
@@ -414,11 +420,18 @@ export interface FollowUpConfig {
   updatedAt: string;
 }
 
+export interface RelanceOrder extends ManualOrder {
+  /** Relances this customer has already had about their open orders. */
+  relanceCount: number;
+  /** send = a relance goes out; delete = limit reached, the order goes; hold = limit reached, parcel with the partner. */
+  relanceAction: 'send' | 'delete' | 'hold';
+}
+
 export interface FollowUpEntry {
   id: string;
   userId: string;
   orderId: string;
-  type: 'relance' | 'loyalty';
+  type: 'relance' | 'loyalty' | 'relance_deleted';
   phone: string;
   message: string;
   sentAt: string;

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, Query, Inject, forwardRef } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Post, Patch, Delete, Body, Param, Query, Inject, forwardRef } from '@nestjs/common';
 import { join } from 'path';
 import { PrismaService } from '../prisma/prisma.service';
 import { Public } from '../auth/public.decorator';
@@ -107,27 +107,16 @@ export class PartnerPortalController {
     });
     if (!order) return null;
 
-    // willDeliver: LogisticsService.markDelivered() is the one place that flips the
-    // status to 'delivered' and moves stock, atomically — omit status here in that case
-    // so the two don't race/double-write (same pattern as the owner-side controller).
-    const willDeliver = body.status === 'delivered' && order.status !== 'delivered';
-
-    const updated = await this.prisma.manualOrder.update({
-      where: { id: orderId },
-      data: {
-        ...(willDeliver ? {} : { status: body.status }),
-        ...(body.deliveryPersonName ? { deliveryPersonName: body.deliveryPersonName } : {}),
-        ...(body.status === 'delivered' && body.collectedUsd != null ? { collectedUsd: body.collectedUsd } : {}),
-        ...(body.status === 'delivered' && body.collectedCdf != null ? { collectedCdf: body.collectedCdf } : {}),
-      },
-    });
-
-    if (willDeliver) {
-      await this.logisticsService.markDelivered(orderId);
-      return { ...updated, status: 'delivered' };
+    // Taking back a delivered order cancels a sale: that is for the business, not its partners.
+    if (order.status === 'delivered' && body.status !== 'delivered') {
+      throw new BadRequestException('Cette commande est déjà livrée.');
     }
 
-    return updated;
+    return this.logisticsService.setStatus(order, body.status, {
+      ...(body.deliveryPersonName ? { deliveryPersonName: body.deliveryPersonName } : {}),
+      ...(body.status === 'delivered' && body.collectedUsd != null ? { collectedUsd: body.collectedUsd } : {}),
+      ...(body.status === 'delivered' && body.collectedCdf != null ? { collectedCdf: body.collectedCdf } : {}),
+    });
   }
 
   // ── Orders — assign agent ─────────────────────────────────────────

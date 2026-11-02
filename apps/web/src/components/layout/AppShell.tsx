@@ -46,7 +46,7 @@ export function AppShell() {
       {/* Main area — offset for desktop sidebar */}
       <div className="lg:ml-64 flex flex-col min-h-screen">
         {/* Top bar */}
-        <header className="sticky top-0 z-20 bg-white/80 backdrop-blur-md border-b border-gray-200 px-4 sm:px-6 py-3 flex items-center gap-3">
+        <header className="sticky top-0 z-20 bg-white/80 backdrop-blur-md border-b border-gray-200 px-4 sm:px-6 py-3 flex flex-wrap items-center gap-3">
           <button
             className="lg:hidden p-2 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors"
             onClick={toggleSidebar}
@@ -78,21 +78,21 @@ export function AppShell() {
             </div>
           )}
 
-          {/* Date range picker — hidden on mobile to avoid overflow */}
-          <div className="hidden lg:flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-xl px-3 py-1.5">
-            <Calendar size={14} className="text-gray-400" />
+          {/* Date range picker — on its own full-width row below lg to avoid overflow */}
+          <div className="order-last w-full lg:order-none lg:w-auto flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-xl px-3 py-1.5">
+            <Calendar size={14} className="text-gray-400 shrink-0" />
             <input
               type="date"
               value={dateRange.from}
               onChange={e => setDateRange(e.target.value, dateRange.to)}
-              className="text-xs bg-transparent outline-none text-gray-600 w-28"
+              className="text-xs bg-transparent outline-none text-gray-600 flex-1 min-w-0 lg:flex-none lg:w-28"
             />
             <span className="text-gray-300">→</span>
             <input
               type="date"
               value={dateRange.to}
               onChange={e => setDateRange(dateRange.from, e.target.value)}
-              className="text-xs bg-transparent outline-none text-gray-600 w-28"
+              className="text-xs bg-transparent outline-none text-gray-600 flex-1 min-w-0 lg:flex-none lg:w-28"
             />
           </div>
 

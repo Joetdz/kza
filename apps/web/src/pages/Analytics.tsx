@@ -9,6 +9,7 @@ import { useCurrency } from '../hooks/useCurrency';
 import { pct, CLASS_CONFIG, CHART_COLORS, EXPENSE_LABELS } from '../utils/formatters';
 import { Badge } from '../components/ui/Badge';
 import { TrendingUp, TrendingDown, AlertTriangle, Clock, Zap, MapPin, ChevronDown, ChevronRight } from 'lucide-react';
+import { useSegment } from '../hooks/useSegment';
 import type { ProductClassification, ProductAnalytics } from '../types';
 
 type SortKey = 'totalRevenue' | 'netProfit' | 'grossMarginPct' | 'roi' | 'cpa' | 'stockRotationDays';
@@ -73,6 +74,7 @@ function ProductCard({ a, cpaThreshold, MAD }: { a: ProductAnalytics; cpaThresho
 }
 
 export function Analytics() {
+  const { terms, words } = useSegment();
   const { products, sales, expenses, dateRange, cpaThreshold, setCpaThreshold } = useStore();
   const { fmt: MAD, currency } = useCurrency();
   const { from, to } = dateRange;
@@ -257,7 +259,7 @@ export function Analytics() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Analyse Financière</h1>
-          <p className="text-sm text-gray-500">KPIs par produit — Période sélectionnée</p>
+          <p className="text-sm text-gray-500">KPIs par {terms.item} — Période sélectionnée</p>
         </div>
         {/* CPA threshold control */}
         <div className="flex items-center gap-3 bg-white border border-gray-200 rounded-xl px-4 py-2.5 shadow-sm">
@@ -283,7 +285,7 @@ export function Analytics() {
       {/* Charts */}
       <div className="grid sm:grid-cols-2 gap-6">
         <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-          <h2 className="font-semibold text-gray-900 mb-4">Marges par produit (%)</h2>
+          <h2 className="font-semibold text-gray-900 mb-4">Marges par {terms.item} (%)</h2>
           {marginData.length > 0 ? (
             <ResponsiveContainer width="100%" height={220}>
               <BarChart data={marginData} margin={{ top: 5, right: 5, bottom: 5, left: 0 }}>
@@ -302,7 +304,7 @@ export function Analytics() {
         </div>
 
         <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-          <h2 className="font-semibold text-gray-900 mb-4">Profit net par produit ({currency})</h2>
+          <h2 className="font-semibold text-gray-900 mb-4">Profit net par {terms.item} ({currency})</h2>
           {profitData.length > 0 ? (
             <ResponsiveContainer width="100%" height={220}>
               <BarChart data={profitData} margin={{ top: 5, right: 5, bottom: 5, left: 0 }}>
@@ -352,7 +354,7 @@ export function Analytics() {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide">
                 <tr>
-                  <th className="text-left px-5 py-3">Produit</th>
+                  <th className="text-left px-5 py-3">{words.Item}</th>
                   <th className="text-right px-4 py-3">Unités</th>
                   <th className="text-right px-4 py-3">CA</th>
                   <th className="text-right px-4 py-3">Coût</th>
@@ -515,7 +517,7 @@ export function Analytics() {
                           <div className="flex items-center gap-2 mb-1">
                             <MapPin size={12} style={{ color }} />
                             <span className="text-sm font-medium text-gray-900 truncate">{z.zone}</span>
-                            <span className="text-xs text-gray-400 ml-1">({z.products.length} produit{z.products.length > 1 ? 's' : ''})</span>
+                            <span className="text-xs text-gray-400 ml-1">({z.products.length} {z.products.length > 1 ? terms.items : terms.item})</span>
                           </div>
                           <div className="w-full bg-gray-100 rounded-full h-1.5">
                             <div className="h-1.5 rounded-full" style={{ width: `${pctRevenue}%`, backgroundColor: color }} />
@@ -538,7 +540,7 @@ export function Analytics() {
                       {isExpanded && (
                         <div className="bg-gray-50 border-t border-gray-100 px-5 py-3">
                           <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2 ml-10">
-                            Produits vendus dans cette zone
+                            {words.Items} vendu{words.e}s dans cette zone
                           </div>
                           <div className="space-y-1 ml-10">
                             {z.products.map((p, pIdx) => {
@@ -591,7 +593,7 @@ export function Analytics() {
                     <span className={`text-sm font-semibold ${cfg.color}`}>{cfg.label}</span>
                   </div>
                   <div className="text-3xl font-black text-gray-900">{list.length}</div>
-                  <div className="text-xs text-gray-500">produit{list.length > 1 ? 's' : ''}</div>
+                  <div className="text-xs text-gray-500">{list.length > 1 ? terms.items : terms.item}</div>
                 </div>
               );
             })}
@@ -602,19 +604,19 @@ export function Analytics() {
             <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4">
               <div className="text-sm font-semibold text-emerald-800 mb-1">🚀 Potentiel de scaling</div>
               <div className="text-2xl font-black text-emerald-700">{MAD(scaleRevPotential)}</div>
-              <div className="text-xs text-emerald-600 mt-1">CA des produits à scaler</div>
+              <div className="text-xs text-emerald-600 mt-1">CA des {terms.items} à scaler</div>
             </div>
             <div className="bg-indigo-50 border border-indigo-200 rounded-2xl p-4">
               <div className="text-sm font-semibold text-indigo-800 mb-1">💰 Profit net total</div>
               <div className={`text-2xl font-black ${totalProfit >= 0 ? 'text-indigo-700' : 'text-red-600'}`}>{MAD(totalProfit)}</div>
-              <div className="text-xs text-indigo-600 mt-1">Sur tous les produits</div>
+              <div className="text-xs text-indigo-600 mt-1">Sur {words.everyItem}</div>
             </div>
             <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
               <div className="text-sm font-semibold text-amber-800 mb-1">⚠️ Alertes CPA</div>
               <div className="text-2xl font-black text-amber-700">
                 {analytics.filter(a => a.cpa > cpaThreshold && a.cpa > 0).length}
               </div>
-              <div className="text-xs text-amber-600 mt-1">Produits au-dessus du seuil</div>
+              <div className="text-xs text-amber-600 mt-1">{words.Items} au-dessus du seuil</div>
             </div>
           </div>
 

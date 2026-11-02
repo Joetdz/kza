@@ -21,3 +21,4 @@ __exportStar(require("./time"), exports);
 __exportStar(require("./segments"), exports);
 __exportStar(require("./documents"), exports);
 __exportStar(require("./planning"), exports);
+__exportStar(require("./stock"), exports);

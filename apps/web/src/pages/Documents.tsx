@@ -11,6 +11,7 @@ import { Button } from '../components/ui/Button';
 import { NumberInput } from '../components/ui/NumberInput';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { toast } from '../hooks/useToast';
+import { useSegment } from '../hooks/useSegment';
 import { downloadDocument, getDocumentBase64 } from '../utils/documentPdf';
 
 const STATUS: Record<string, { label: string; cls: string }> = {
@@ -32,6 +33,7 @@ const plusDays = (n: number) => new Date(Date.now() + n * 86400000).toISOString(
 const frDate = (iso: string) => new Date(`${iso.slice(0, 10)}T12:00:00Z`).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
 
 export function Documents() {
+  const { words } = useSegment();
   const { businesses, currentBusinessId } = useStore();
   const business = businesses.find(b => b.id === currentBusinessId);
   const { fmt } = useCurrency();
@@ -189,7 +191,7 @@ export function Documents() {
         <Modal open onClose={() => setSaleFor(null)} title={`Enregistrer la vente — ${saleFor.number}`} size="sm">
           <div className="space-y-3">
             <p className="text-sm text-gray-600">
-              Crée une vente de <b>{fmt(saleFor.total)}</b> pour {saleFor.customerName}. Les lignes liées à un produit font sortir le stock.
+              Crée une vente de <b>{fmt(saleFor.total)}</b> pour {saleFor.customerName}. Les lignes liées à {words.oneItem} font sortir le stock.
             </p>
             {([
               ['paid', 'Payée', 'Le client a payé'],
@@ -235,6 +237,7 @@ function DocumentEditor({ type, doc, onClose, onSaved }: {
   onClose: () => void;
   onSaved: (d: CommercialDocument) => void;
 }) {
+  const { words } = useSegment();
   const products = useStore(s => s.products);
   const { bizCurrency, fmt } = useCurrency();
   const [form, setForm] = useState({
@@ -332,7 +335,7 @@ function DocumentEditor({ type, doc, onClose, onSaved }: {
           </div>
           <button type="button" onClick={() => setLines(list => [...list, { productId: null, description: '', quantity: 1, unitPrice: 0 }])}
             className="text-xs font-medium text-indigo-600 mt-2">+ Ajouter une ligne</button>
-          <p className="text-[11px] text-gray-400 mt-1">Prix en {bizCurrency}. Une ligne liée à un produit applique automatiquement ses prix dégressifs.</p>
+          <p className="text-[11px] text-gray-400 mt-1">Prix en {bizCurrency}. Une ligne liée à {words.oneItem} applique automatiquement ses prix dégressifs.</p>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 items-end">

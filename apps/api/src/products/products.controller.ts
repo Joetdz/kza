@@ -27,6 +27,11 @@ export class ProductsController {
     return this.service.renameVariantGroup(dto.from, dto.to, user.ownerId, user.businessId || undefined);
   }
 
+  @Get('reservations')
+  reservations(@CurrentUser() user: AuthUser) {
+    return this.service.reservations(user.ownerId, user.businessId || undefined);
+  }
+
   @Post('reconcile')
   reconcile(@CurrentUser() user: AuthUser) {
     return this.service.reconcile(user.ownerId, user.businessId || undefined);

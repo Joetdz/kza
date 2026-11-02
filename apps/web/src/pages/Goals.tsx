@@ -3,8 +3,8 @@ import { Plus, Trash2, Edit2, Calculator, Target, TrendingUp, ChevronDown, Chevr
 import { useStore } from '../store/useStore';
 import { computeBudgetForecast, computeAdSpendPerUnit } from '../utils/calculations';
 import {
-  CLOSING_START_MONTH, computeMonthRealized, countingContext, localMonth, monthLabel, planAchievementPct,
-  timeZoneForCountry, type MonthlyClosing,
+  CLOSING_START_MONTH, computeMonthRealized, computeRangePlan, computeRangeRealized, countingContext, localMonth,
+  monthDays, monthLabel, monthWeeks, periodRange, planAchievementPct, timeZoneForCountry, utcToLocal, type ForecastMonth, type GoalPeriod, type MonthlyClosing,
 } from '@kza/shared';
 import { useCurrency } from '../hooks/useCurrency';
 import { Modal } from '../components/ui/Modal';
@@ -12,9 +12,30 @@ import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { NumberInput } from '../components/ui/NumberInput';
 import { budgetForecastApi, recurringExpensesApi } from '../api';
 import { EXPENSE_LABELS } from '../utils/formatters';
+import { useSegment } from '../hooks/useSegment';
 import type { BudgetForecast, RecurringExpense } from '../types';
 
 type MainTab = 'objectifs' | 'budget';
+
+const PERIODS: { key: GoalPeriod; label: string; total: string }[] = [
+  { key: 'day', label: 'Par jour', total: 'du jour' },
+  { key: 'week', label: 'Par semaine', total: 'de la semaine' },
+  { key: 'month', label: 'Par mois', total: 'du mois' },
+];
+
+const WEEK_DAYS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+
+const shortDate = (date: string) =>
+  new Date(`${date}T00:00:00Z`).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+
+const longDate = (date: string) =>
+  new Date(`${date}T00:00:00Z`).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
+
+// A day's target is often a fraction of a unit: rounding would show 0.
+const oneDecimal = (qty: number) => String(Math.round(qty * 10) / 10).replace('.', ',');
+
+const achievementColor = (pct: number) => pct >= 100 ? 'bg-emerald-500' : pct >= 60 ? 'bg-indigo-500' : pct >= 30 ? 'bg-amber-500' : 'bg-red-400';
+const achievementTint = (pct: number) => pct >= 100 ? 'bg-emerald-50 text-emerald-700' : pct >= 60 ? 'bg-indigo-50 text-indigo-700' : pct >= 30 ? 'bg-amber-50 text-amber-700' : 'bg-red-50 text-red-600';
 
 // Petites préférences d'affichage de l'onglet Objectifs (mois consulté, sections
 // dépliées) — pas des données métier, juste du confort ; persistées en local pour
@@ -32,6 +53,7 @@ function savePref(key: string, value: unknown) {
 }
 
 export function Goals() {
+  const { terms, words } = useSegment();
   const { products, sales, expenses, businesses, currentBusinessId } = useStore();
   const country = businesses.find(b => b.id === currentBusinessId)?.country;
   const timeZone = timeZoneForCountry(country);
@@ -59,6 +81,10 @@ export function Goals() {
   const currentMonth = serverMonth ?? localMonth(new Date(), timeZone);
   const [selectedMonth, setSelectedMonth] = useState(() => loadPref('kza_goals_selected_month', new Date().toISOString().slice(0, 7)));
 
+  const [period, setPeriod] = useState<GoalPeriod>(() => loadPref('kza_goals_period', 'month'));
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
+
+  useEffect(() => savePref('kza_goals_period', period), [period]);
   useEffect(() => savePref('kza_goals_show_other_expenses', showOtherExpenses), [showOtherExpenses]);
   useEffect(() => savePref('kza_goals_pub_expanded', pubExpanded), [pubExpanded]);
   useEffect(() => savePref('kza_goals_selected_month', selectedMonth), [selectedMonth]);
@@ -104,21 +130,67 @@ export function Goals() {
 
   // ─── Objectif vs Budget prévisionnel vs Réalisé (mois sélectionné) ──────────
   // A past month is closed: shown from its snapshot only, whatever happened since.
-  const isClosed = selectedMonth < currentMonth;
-  const closing = closings.find(c => c.month === selectedMonth) ?? null;
+  // Days and weeks are a share of the month's plan, their realized goes by each entry's date.
+  const isClosed = period === 'month' && selectedMonth < currentMonth;
+  const closing = period === 'month' ? closings.find(c => c.month === selectedMonth) ?? null : null;
   const countingCtx = useMemo(() => countingContext(closings, timeZone), [closings, timeZone]);
-  const currentForecastMonth = useMemo(
-    () => isClosed ? (closing?.data.plan ?? undefined) : forecastMonths.find(m => m.monthKey === selectedMonth),
-    [isClosed, closing, forecastMonths, selectedMonth],
+  const today = utcToLocal(new Date(), timeZone).date;
+  const activeDay = selectedDay?.startsWith(selectedMonth) ? selectedDay : today.startsWith(selectedMonth) ? today : `${selectedMonth}-01`;
+  const range = useMemo(
+    () => period === 'month' ? null : periodRange(period, activeDay),
+    [period, activeDay],
   );
+  const periodName = PERIODS.find(p => p.key === period)!.total;
+  // A week can start in a closed month: those days take that month's frozen plan.
+  const planMonths = useMemo(
+    () => [...closings.map(c => c.data.plan).filter((p): p is ForecastMonth => !!p), ...forecastMonths],
+    [closings, forecastMonths],
+  );
+  const currentForecastMonth = useMemo(() => {
+    if (range) return computeRangePlan(planMonths, range.from, range.to) ?? undefined;
+    return isClosed ? (closing?.data.plan ?? undefined) : forecastMonths.find(m => m.monthKey === selectedMonth);
+  }, [range, planMonths, isClosed, closing, forecastMonths, selectedMonth]);
+
+  // One calendar day or one week of the month shown: units planned, units sold, achievement.
+  const periodCards = useMemo(() => {
+    if (period === 'month') return [];
+    const ranges = period === 'day' ? monthDays(selectedMonth).map(d => ({ from: d, to: d })) : monthWeeks(selectedMonth);
+    return ranges.map(({ from, to }) => {
+      const plan = computeRangePlan(planMonths, from, to);
+      const done = computeRangeRealized(from, to, products, sales, expenses);
+      const ids = plan ? Object.keys(plan.quantitiesByProduct) : Object.keys(done.qtyByProduct);
+      return {
+        from,
+        to,
+        target: plan ? ids.reduce((s, id) => s + plan.quantitiesByProduct[id], 0) : null,
+        sold: ids.reduce((s, id) => s + (done.qtyByProduct[id] ?? 0), 0),
+        pct: planAchievementPct(plan, done),
+      };
+    });
+  }, [period, selectedMonth, planMonths, products, sales, expenses]);
+  const leadingBlanks = (new Date(`${selectedMonth}-01T00:00:00Z`).getUTCDay() + 6) % 7;
+  const showsToday = !!range && today >= range.from && today <= range.to;
+
   // Open months count late entries (recorded after their own month was closed).
-  const realized = useMemo(
-    () => isClosed ? (closing?.data.realized ?? null) : computeMonthRealized(selectedMonth, products, sales, expenses, countingCtx),
-    [isClosed, closing, selectedMonth, products, sales, expenses, countingCtx],
-  );
+  const realized = useMemo(() => {
+    if (range) return computeRangeRealized(range.from, range.to, products, sales, expenses);
+    return isClosed ? (closing?.data.realized ?? null) : computeMonthRealized(selectedMonth, products, sales, expenses, countingCtx);
+  }, [range, isClosed, closing, selectedMonth, products, sales, expenses, countingCtx]);
+  const shownPeriod = !currentForecastMonth
+    ? null
+    : !range
+      ? `Mois affiché : ${currentForecastMonth.label}`
+      : range.from === range.to
+        ? `${longDate(range.from)} : part du mois`
+        : `Semaine du ${shortDate(range.from)} au ${shortDate(range.to)} : part du mois`;
+  const noPlanText = range ? 'Le budget prévisionnel ne couvre pas cette période.' : 'Le budget prévisionnel ne couvre pas ce mois-là.';
+  const showQty = (qty: number) => range ? oneDecimal(qty) : String(Math.round(qty));
   const realizedByProduct = realized?.qtyByProduct ?? {};
   // Names as they were at closing, so a deleted or renamed product still reads right.
-  const productName = (id: string) => closing?.data.products[id]?.name ?? products.find(p => p.id === id)?.name ?? 'Produit supprimé';
+  const productName = (id: string) => closing?.data.products[id]?.name
+    ?? products.find(p => p.id === id)?.name
+    ?? closings.find(c => c.data.products[id])?.data.products[id].name
+    ?? words.deletedItem;
 
   const comparisonRows = useMemo(() => {
     const productIds = new Set<string>();
@@ -130,10 +202,10 @@ export function Goals() {
       const realizedQty = realizedByProduct[productId] ?? 0;
       const reference = forecastQty ?? 0;
       const pct = reference > 0 ? Math.min(100, (realizedQty / reference) * 100) : 0;
-      return { productId, productName: isClosed ? productName(productId) : (product?.name ?? 'Produit inconnu'), forecastQty, realizedQty, pct };
+      return { productId, productName: isClosed || range ? productName(productId) : (product?.name ?? words.unknownItem), forecastQty, realizedQty, pct };
     }).filter(r => r.forecastQty !== null)
       .sort((a, b) => b.pct - a.pct);
-  }, [currentForecastMonth, realizedByProduct, products, isClosed, closing]);
+  }, [currentForecastMonth, realizedByProduct, products, isClosed, closing, range, closings]);
 
   // Progression globale du mois = moyenne de la progression (réalisé/prévisionnel) par
   // produit — même sens que les barres individuelles, résumé en un seul indicateur.
@@ -171,7 +243,7 @@ export function Goals() {
     // Dépenses pub réelles sans produit rattaché — pas de prévu correspondant (le
     // prévisionnel se construit toujours à partir d'une quantité par produit).
     if (realizedPubByProduct['__none__']) {
-      rows.push({ productId: '__none__', productName: 'Sans produit rattaché', forecastAmount: 0, realizedAmount: realizedPubByProduct['__none__'], pct: 0 });
+      rows.push({ productId: '__none__', productName: `Sans ${terms.item} rattaché${words.e}`, forecastAmount: 0, realizedAmount: realizedPubByProduct['__none__'], pct: 0 });
     }
     return rows;
   }, [currentForecastMonth, realizedPubByProduct, products, closing]);
@@ -285,15 +357,15 @@ export function Goals() {
           </h1>
           <p className="text-xs sm:text-sm text-gray-500">
             {mainTab === 'objectifs'
-              ? 'Progression du mois sélectionné par rapport au budget prévisionnel'
-              : 'Projection dynamique à partir des quantités visées par produit'}
+              ? 'Progression de la période choisie par rapport au budget prévisionnel'
+              : `Projection dynamique à partir des quantités visées par ${terms.item}`}
           </p>
         </div>
         {mainTab === 'objectifs' && (
           <input
             type="month"
             value={selectedMonth}
-            onChange={e => setSelectedMonth(e.target.value)}
+            onChange={e => { if (e.target.value) setSelectedMonth(e.target.value); }}
             className="shrink-0 border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300"
           />
         )}
@@ -308,6 +380,92 @@ export function Goals() {
           </button>
         ))}
       </div>
+
+      {mainTab === 'objectifs' && (
+        <div className="flex flex-wrap gap-2">
+          {PERIODS.map(p => (
+            <button key={p.key}
+              onClick={() => setPeriod(p.key)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${period === p.key ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
+              {p.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {mainTab === 'objectifs' && range && (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-3 sm:p-4">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div className="min-w-0">
+              <h2 className="font-semibold text-gray-900 text-sm capitalize">{monthLabel(selectedMonth)}</h2>
+              <p className="text-xs text-gray-400">Réalisé / prévu, en unités. Choisis {period === 'day' ? 'un jour' : 'une semaine'} pour voir son détail.</p>
+            </div>
+            {!showsToday && (
+              <button
+                onClick={() => { setSelectedMonth(today.slice(0, 7)); setSelectedDay(today); }}
+                className="shrink-0 px-3 py-1.5 rounded-xl text-xs font-semibold bg-gray-100 text-gray-600 hover:bg-gray-200">
+                {period === 'day' ? "Aujourd'hui" : 'Cette semaine'}
+              </button>
+            )}
+          </div>
+
+          {period === 'day' ? (
+            <div className="grid grid-cols-7 gap-1">
+              {WEEK_DAYS.map(d => <div key={d} className="text-center text-[11px] font-medium text-gray-400 pb-1">{d}</div>)}
+              {Array.from({ length: leadingBlanks }, (_, i) => <div key={`blank-${i}`} />)}
+              {periodCards.map(c => {
+                const started = c.from <= today;
+                const tint = started && c.pct != null ? achievementTint(c.pct) : 'bg-gray-50 text-gray-500';
+                return (
+                  <button key={c.from}
+                    onClick={() => setSelectedDay(c.from)}
+                    title={longDate(c.from)}
+                    aria-pressed={c.from === activeDay}
+                    className={`min-h-[52px] min-w-0 rounded-lg px-0.5 py-1 flex flex-col items-center justify-between transition-all ${tint} ${c.from === activeDay ? 'ring-2 ring-indigo-600' : 'hover:ring-1 hover:ring-gray-300'}`}>
+                    <span className={`text-xs ${c.from === today ? 'font-black underline' : 'font-semibold'}`}>{Number(c.from.slice(8))}</span>
+                    <span className="text-[10px] leading-tight truncate max-w-full">
+                      {c.target != null ? `${c.sold}/${oneDecimal(c.target)}` : c.sold || '—'}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {periodCards.map(c => {
+                const selected = activeDay >= c.from && activeDay <= c.to;
+                const pct = c.pct ?? 0;
+                return (
+                  <button key={c.from}
+                    // The clicked week's first day inside this month, so the month shown stays put.
+                    onClick={() => setSelectedDay(c.from.startsWith(selectedMonth) ? c.from : `${selectedMonth}-01`)}
+                    aria-pressed={selected}
+                    className={`w-full text-left rounded-xl border p-3 transition-all ${selected ? 'border-indigo-600 ring-1 ring-indigo-600' : 'border-gray-100 hover:border-gray-300'}`}>
+                    <div className="flex items-center justify-between gap-3 text-sm">
+                      <span className="font-medium text-gray-800">
+                        {shortDate(c.from)} → {shortDate(c.to)}
+                        {today >= c.from && today <= c.to && <span className="ml-2 text-[11px] font-semibold text-indigo-600">En cours</span>}
+                      </span>
+                      <span className="text-gray-600 shrink-0">
+                        <span className="font-semibold text-gray-900">{c.sold}</span>
+                        {c.target != null ? ` / ${oneDecimal(c.target)}` : ''}
+                      </span>
+                    </div>
+                    {c.pct != null && (
+                      <div className="flex items-center gap-2 mt-2">
+                        <div className="flex-1 bg-gray-100 rounded-full h-1.5">
+                          <div className={`h-1.5 rounded-full ${achievementColor(pct)}`} style={{ width: `${pct}%` }} />
+                        </div>
+                        <span className="text-xs text-gray-500 w-10 text-right shrink-0">{Math.round(pct)}%</span>
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {mainTab === 'objectifs' && isClosed && (
         closing ? (
@@ -341,7 +499,7 @@ export function Goals() {
         <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-2xl p-5 text-white">
           <div className="flex items-center gap-3 mb-3">
             <Target size={22} />
-            <span className="font-semibold">Progression globale du mois</span>
+            <span className="font-semibold">Progression globale {periodName}</span>
           </div>
           <div className="text-4xl font-black mb-2">{Math.round(globalProgressPct)}%</div>
           <div className="w-full bg-white/20 rounded-full h-2">
@@ -352,7 +510,7 @@ export function Goals() {
           </div>
           <div className="flex items-center gap-2 text-sm text-white/70 mt-2">
             <TrendingUp size={14} />
-            Moyenne sur {comparisonRows.length} produit{comparisonRows.length !== 1 ? 's' : ''} suivi{comparisonRows.length !== 1 ? 's' : ''}
+            Moyenne sur {comparisonRows.length} {comparisonRows.length !== 1 ? terms.items : terms.item} suivi{words.e}{comparisonRows.length !== 1 ? 's' : ''}
           </div>
         </div>
       )}
@@ -361,17 +519,17 @@ export function Goals() {
         <div className="p-4 pb-3">
           <h2 className="font-semibold text-gray-900 text-sm">Budget prévisionnel vs Réalisé</h2>
           <p className="text-xs text-gray-400">
-            {currentForecastMonth ? `Mois affiché : ${currentForecastMonth.label}` : "Le budget prévisionnel ne couvre pas ce mois-là."}
+            {shownPeriod ?? noPlanText}
           </p>
         </div>
         {comparisonRows.length === 0 ? (
-          <p className="text-sm text-gray-400 text-center py-10">Aucune quantité projetée pour ce mois — définis le budget prévisionnel dans l'autre onglet.</p>
+          <p className="text-sm text-gray-400 text-center py-10">Aucune quantité projetée pour cette période — définis le budget prévisionnel dans l'autre onglet.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100">
-                  <th className="text-left font-medium text-gray-500 px-4 py-2">Produit</th>
+                  <th className="text-left font-medium text-gray-500 px-4 py-2">{words.Item}</th>
                   <th className="text-right font-medium text-gray-500 px-3 py-2">Prévisionnel</th>
                   <th className="text-right font-medium text-gray-500 px-3 py-2">Réalisé</th>
                   <th className="text-left font-medium text-gray-500 px-4 py-2 w-1/3">Progression</th>
@@ -379,11 +537,11 @@ export function Goals() {
               </thead>
               <tbody>
                 {comparisonRows.map(r => {
-                  const color = r.pct >= 100 ? 'bg-emerald-500' : r.pct >= 60 ? 'bg-indigo-500' : r.pct >= 30 ? 'bg-amber-500' : 'bg-red-400';
+                  const color = achievementColor(r.pct);
                   return (
                     <tr key={r.productId} className="border-b border-gray-50">
                       <td className="px-4 py-2.5 text-gray-800 font-medium truncate max-w-[160px]">{r.productName}</td>
-                      <td className="text-right px-3 py-2.5 text-gray-600">{r.forecastQty != null ? Math.round(r.forecastQty) : '—'}</td>
+                      <td className="text-right px-3 py-2.5 text-gray-600">{r.forecastQty != null ? showQty(r.forecastQty) : '—'}</td>
                       <td className="text-right px-3 py-2.5 font-semibold text-gray-900">{r.realizedQty}</td>
                       <td className="px-4 py-2.5">
                         <div className="flex items-center gap-2">
@@ -407,7 +565,7 @@ export function Goals() {
           <div>
             <h2 className="font-semibold text-gray-900 text-sm">Dépenses : Prévu vs Réalisé</h2>
             <p className="text-xs text-gray-400">
-              {currentForecastMonth ? `Mois affiché : ${currentForecastMonth.label}` : "Le budget prévisionnel ne couvre pas ce mois-là."} — surtout la publicité.
+              {shownPeriod ?? noPlanText} — surtout la publicité.
             </p>
           </div>
           {otherExpenseRows.length > 0 && (
@@ -483,7 +641,7 @@ export function Goals() {
               })}
               {pubExpanded && pubByProductRows.length === 0 && (
                 <tr className="border-b border-gray-50 bg-gray-50/50">
-                  <td colSpan={4} className="px-9 py-2 text-xs text-gray-400">Aucune dépense pub ni quantité projetée ce mois-ci, par produit.</td>
+                  <td colSpan={4} className="px-9 py-2 text-xs text-gray-400">Aucune dépense pub ni quantité projetée sur cette période, par {terms.item}.</td>
                 </tr>
               )}
               {showOtherExpenses && otherExpenseRows.map(r => {
@@ -561,7 +719,7 @@ export function Goals() {
                 <h2 className="font-semibold text-gray-900 text-sm">Quantité et budget pub projetés, par mois</h2>
                 <p className="text-xs text-gray-400">
                   Seul le premier mois se saisit — les suivants appliquent la croissance de {forecast.monthlyGrowthPct}%/mois automatiquement.
-                  Budget pub laissé vide = calculé depuis l'historique du produit (dépense pub / unité vendue).
+                  Budget pub laissé vide = calculé depuis l'historique {words.ofItem} (dépense pub / unité vendue).
                 </p>
               </div>
               <button onClick={handleSaveQuantities} disabled={savingQty}
@@ -570,13 +728,13 @@ export function Goals() {
               </button>
             </div>
             {products.length === 0 ? (
-              <p className="text-xs text-gray-400 px-4 pb-4">Aucun produit.</p>
+              <p className="text-xs text-gray-400 px-4 pb-4">{words.noItem}.</p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-gray-100">
-                      <th className="text-left font-medium text-gray-500 px-4 py-2 sticky left-0 bg-white">Produit</th>
+                      <th className="text-left font-medium text-gray-500 px-4 py-2 sticky left-0 bg-white">{words.Item}</th>
                       {forecastMonths.map(m => (
                         <th key={m.monthKey} className="text-right font-medium text-gray-500 px-3 py-2 whitespace-nowrap min-w-[90px]">{m.label}</th>
                       ))}
@@ -607,7 +765,7 @@ export function Goals() {
                                   value={adBudgetMap[p.id] ?? ''}
                                   onChange={e => setAdBudgetMap(m => ({ ...m, [p.id]: e.target.value }))}
                                   placeholder={computedAdBudget ? String(Math.round(computedAdBudget)) : '0'}
-                                  title="Budget pub pour ce produit — vide = calculé automatiquement depuis l'historique"
+                                  title={`Budget pub pour ${words.thisItem} — vide = calculé automatiquement depuis l'historique`}
                                   className="w-24 border border-gray-200 rounded-lg px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-indigo-300 text-right text-gray-500"
                                 />
                               </div>
@@ -694,7 +852,7 @@ export function Goals() {
                   <tbody>
                     {history.map(h => (
                       <tr key={h.month} className="border-b border-gray-50 hover:bg-gray-50 cursor-pointer"
-                        onClick={() => { setSelectedMonth(h.month); setMainTab('objectifs'); }}
+                        onClick={() => { setPeriod('month'); setSelectedMonth(h.month); setMainTab('objectifs'); }}
                         title="Voir le détail de ce mois">
                         <td className="px-4 py-2.5 font-medium text-gray-800 capitalize">{h.label}</td>
                         <td className="text-right px-3 py-2.5 text-gray-500">{h.plannedRevenue != null ? fmt(h.plannedRevenue) : '—'}</td>

@@ -4,6 +4,12 @@ import { PrismaService } from '../prisma/prisma.service';
 import { WhatsAppService } from '../whatsapp/whatsapp.service';
 import { CustomerHistoryService } from '../common/customer-history.service';
 import { phoneKey } from '../common/phone';
+import { detachStoreOrders } from './logistics.service';
+
+const RELANCE_STATUSES = ['pending', 'dispatched', 'postponed'];
+const DELETABLE_STATUSES = ['pending', 'postponed'];
+// After this many relances, a customer whose order is still waiting gets no other one.
+const MAX_RELANCES = 3;
 
 @Injectable()
 export class FollowUpService {
@@ -57,30 +63,34 @@ export class FollowUpService {
     delayH: number,
     template: string,
     businessId: string | null = null,
-  ): Promise<number> {
-    const cutoff = new Date(Date.now() - delayH * 3600 * 1000);
+    orderIds?: string[],
+  ): Promise<{ sent: number; deleted: number }> {
     const DAILY_CAP = 20; // max messages per session to stay under WA limits
 
-    const orders = await this.prisma.manualOrder.findMany({
-      where: {
-        userId,
-        ...(businessId ? { businessId } : {}),
-        status: { in: ['pending', 'dispatched', 'postponed'] },
-        isDraft: false,
-        createdAt: { lte: cutoff },
-        customerPhone: { not: null },
-        NOT: { id: { in: await this.sentOrderIds(userId, 'relance') } },
-      },
-      include: { items: { include: { product: true } } },
-    });
+    const orders = (await this.relanceList(userId, businessId, delayH))
+      .filter(o => !orderIds || orderIds.includes(o.id));
 
     let sent = 0;
+    let deleted = 0;
+    const messaged = new Set<string>(); // one message per customer per run, however many orders
+
     for (const order of orders) {
-      if (sent >= DAILY_CAP) {
-        this.logger.warn(`[followup] relance userId=${userId}: cap ${DAILY_CAP} atteint, arrêt`);
-        break;
+      if (order.relanceAction === 'delete') {
+        if (await this.deleteAfterRelances(order)) deleted++;
+        continue;
       }
+      if (order.relanceAction === 'hold') continue;
+
       const phone = order.customerPhone!;
+      const client = phoneKey(phone) ?? phone;
+      if (messaged.has(client)) continue;
+      if (sent >= DAILY_CAP) {
+        this.logger.warn(`[followup] relance userId=${userId}: cap ${DAILY_CAP} atteint, arrêt de l'envoi`);
+        continue; // orders further down may still have to be deleted
+      }
+      if (messaged.size > 0) await this.randomDelay();
+      messaged.add(client);
+
       const productName = this.firstProductName(order.items as any[]);
       const num = String(order.orderNumber).padStart(4, '0');
       const message = this.fillTemplate(template, {
@@ -89,18 +99,88 @@ export class FollowUpService {
         produit: productName,
       });
 
+      // Recorded first: a relance we could not count must never go out, or the customer
+      // would get one every day without ever reaching the limit.
+      const entry = await this.prisma.waFollowUp.create({
+        data: { userId, orderId: order.id, type: 'relance', phone, message },
+      });
       const ok = await this.whatsapp.notifyOrder(userId, order.businessId ?? null, phone, message).catch(() => false);
-      if (ok) {
-        await this.prisma.waFollowUp.create({
-          data: { userId, orderId: order.id, type: 'relance', phone, message },
-        }).catch(() => {});
-        sent++;
-      }
-      if (orders.indexOf(order) < orders.length - 1) await this.randomDelay();
+      if (ok) sent++;
+      else await this.prisma.waFollowUp.delete({ where: { id: entry.id } });
     }
 
-    this.logger.log(`[followup] relance userId=${userId}: ${sent}/${orders.length} sent (cap=${DAILY_CAP})`);
-    return sent;
+    this.logger.log(`[followup] relance userId=${userId}: ${sent} sent, ${deleted} deleted, ${orders.length} listed (cap=${DAILY_CAP})`);
+    return { sent, deleted };
+  }
+
+  /**
+   * The orders due a relance, each with how many relances its customer has already had.
+   * Only relances about the customer's open orders count: an old delivered order must
+   * not get their new one deleted. A relance is due after the delay, counted from the
+   * order's creation and then from its last relance.
+   */
+  private async relanceList(userId: string, businessId: string | null, delayH: number) {
+    const cutoff = new Date(Date.now() - delayH * 3600 * 1000);
+    const open = await this.prisma.manualOrder.findMany({
+      where: {
+        userId,
+        ...(businessId ? { businessId } : {}),
+        status: { in: RELANCE_STATUSES },
+        isDraft: false,
+        excludeFromRelance: false,
+        customerPhone: { not: null },
+      },
+      include: { items: { include: { product: true } } },
+      orderBy: { createdAt: 'asc' },
+    });
+    const relances = await this.prisma.waFollowUp.findMany({
+      where: { type: 'relance', orderId: { in: open.map(o => o.id) } },
+      select: { orderId: true, sentAt: true },
+    });
+
+    const clientOf = (phone: string | null) => phoneKey(phone) ?? phone ?? '';
+    const orderClient = new Map(open.map(o => [o.id, clientOf(o.customerPhone)]));
+    const countByClient = new Map<string, number>();
+    const lastByOrder = new Map<string, Date>();
+    for (const r of relances) {
+      const client = orderClient.get(r.orderId)!;
+      countByClient.set(client, (countByClient.get(client) ?? 0) + 1);
+      const last = lastByOrder.get(r.orderId);
+      if (!last || r.sentAt > last) lastByOrder.set(r.orderId, r.sentAt);
+    }
+
+    return open
+      .filter(o => o.createdAt <= cutoff && (lastByOrder.get(o.id) ?? o.createdAt) <= cutoff)
+      .map(o => {
+        const relanceCount = countByClient.get(clientOf(o.customerPhone)) ?? 0;
+        // The parcel of an assigned order is with the delivery partner: it stays, but the
+        // customer gets no more messages.
+        const relanceAction: 'send' | 'delete' | 'hold' = relanceCount < MAX_RELANCES
+          ? 'send'
+          : o.status === 'dispatched' ? 'hold' : 'delete';
+        return { ...o, relanceCount, relanceAction };
+      });
+  }
+
+  private async deleteAfterRelances(order: {
+    id: string; userId: string; orderNumber: number; customerPhone: string | null; relanceCount: number;
+  }): Promise<boolean> {
+    const where = { id: order.id, status: { in: DELETABLE_STATUSES }, isDraft: false };
+    return this.prisma.$transaction(async tx => {
+      await detachStoreOrders(tx, where);
+      const { count } = await tx.manualOrder.deleteMany({ where });
+      if (count === 0) return false;
+      await tx.waFollowUp.create({
+        data: {
+          userId: order.userId,
+          orderId: order.id,
+          type: 'relance_deleted',
+          phone: order.customerPhone ?? '',
+          message: `Commande #${String(order.orderNumber).padStart(4, '0')} supprimée : toujours en attente après ${order.relanceCount} relances.`,
+        },
+      });
+      return true;
+    });
   }
 
   // ─── Fidélisation (livrées) ────────────────────────────────────────────────
@@ -192,22 +272,7 @@ export class FollowUpService {
 
   async previewRelance(userId: string, businessId: string | null = null) {
     const config = await this.getConfig(userId, businessId);
-    const cutoff = new Date(Date.now() - config.relanceDelayH * 3600 * 1000);
-    const alreadySent = await this.sentOrderIds(userId, 'relance');
-
-    return this.prisma.manualOrder.findMany({
-      where: {
-        userId,
-        ...(businessId ? { businessId } : {}),
-        status: { in: ['pending', 'dispatched', 'postponed'] },
-        isDraft: false,
-        createdAt: { lte: cutoff },
-        customerPhone: { not: null },
-        NOT: { id: { in: alreadySent } },
-      },
-      include: { items: { include: { product: true } } },
-      orderBy: { createdAt: 'asc' },
-    });
+    return this.relanceList(userId, businessId, config.relanceDelayH);
   }
 
   async previewLoyalty(userId: string, businessId: string | null = null) {
@@ -267,10 +332,10 @@ export class FollowUpService {
   }
 
   // Manual triggers (for UI buttons)
-  async triggerRelance(userId: string, businessId: string | null = null): Promise<number> {
+  async triggerRelance(userId: string, businessId: string | null = null, orderIds?: string[]) {
     const config = await this.getConfig(userId, businessId);
-    if (!config.relanceEnabled) return 0;
-    return this.sendRelanceForUser(userId, config.relanceDelayH, config.relanceTemplate, businessId);
+    if (!config.relanceEnabled) return { sent: 0, deleted: 0 };
+    return this.sendRelanceForUser(userId, config.relanceDelayH, config.relanceTemplate, businessId, orderIds);
   }
 
   async triggerLoyalty(userId: string, businessId: string | null = null): Promise<number> {

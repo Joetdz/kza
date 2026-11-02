@@ -4,9 +4,11 @@ import { useStore } from '../store/useStore';
 import { computeProductAnalytics, computeGlobalKpis } from '../utils/calculations';
 import { exportToExcel } from '../utils/exportExcel';
 import { exportAnalyticsPdf } from '../utils/exportPdf';
+import { useSegment } from '../hooks/useSegment';
 import { useCurrency } from '../hooks/useCurrency';
 
 export function Export() {
+  const { terms, words } = useSegment();
   const { products, sales, expenses, goals, dateRange, cpaThreshold, hydrate } = useStore();
   const { fmt: MAD } = useCurrency();
   const { from, to } = dateRange;
@@ -62,7 +64,7 @@ export function Export() {
         <h2 className="font-semibold text-gray-900 mb-4">Résumé des données</h2>
         <div className="grid grid-cols-2 gap-3">
           {[
-            { label: 'Produits', value: stats.products },
+            { label: words.Items, value: stats.products },
             { label: 'Ventes', value: stats.sales },
             { label: 'Dépenses', value: stats.expenses },
             { label: 'Objectifs', value: stats.goals },
@@ -97,7 +99,7 @@ export function Export() {
                 4 feuilles: Produits, Ventes, Dépenses, Analytique
               </p>
               <ul className="mt-2 space-y-1">
-                {['Tous les produits avec KPIs', 'Historique des ventes par ligne', 'Toutes les dépenses catégorisées', 'Analyse financière complète par produit'].map(item => (
+                {[`${words.everyItem} avec KPIs`, 'Historique des ventes par ligne', 'Toutes les dépenses catégorisées', `Analyse financière complète par ${terms.item}`].map(item => (
                   <li key={item} className="flex items-center gap-2 text-xs text-gray-500">
                     <CheckCircle size={12} className="text-emerald-500 shrink-0" />
                     {item}
@@ -128,7 +130,7 @@ export function Export() {
                 Tableau analytique formaté avec KPIs globaux
               </p>
               <ul className="mt-2 space-y-1">
-                {['KPIs globaux en en-tête', 'Tableau par produit: CA, marge, ROI, CPA', 'Classement stratégique (scale/stop/...)', 'Rotation de stock'].map(item => (
+                {['KPIs globaux en en-tête', `Tableau par ${terms.item}: CA, marge, ROI, CPA`, 'Classement stratégique (scale/stop/...)', 'Rotation de stock'].map(item => (
                   <li key={item} className="flex items-center gap-2 text-xs text-gray-500">
                     <CheckCircle size={12} className="text-red-400 shrink-0" />
                     {item}

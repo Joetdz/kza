@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.BudgetForecastSchema = exports.BudgetForecastExpenseSchema = exports.BudgetForecastProductSchema = exports.BusinessSchema = exports.UpdateBusinessSchema = exports.CreateBusinessSchema = exports.SUPPORTED_CURRENCIES = exports.GoalSchema = exports.UpdateGoalSchema = exports.CreateGoalSchema = exports.RecurringExpenseSchema = exports.UpdateRecurringExpenseSchema = exports.CreateRecurringExpenseSchema = exports.RECURRING_FREQUENCIES = exports.ExpenseSchema = exports.UpdateExpenseSchema = exports.CreateExpenseSchema = exports.SaleSchema = exports.CreateSaleSchema = exports.SaleItemSchema = exports.MovementSchema = exports.CreateMovementSchema = exports.ProductSchema = exports.UpdateProductSchema = exports.CreateProductSchema = exports.DELIVERY_ZONES = exports.RDC_VILLES = exports.KINSHASA_COMMUNES = exports.SALE_STATUSES = exports.MOVEMENT_TYPES = exports.EXPENSE_CATEGORIES = exports.SALE_CHANNELS = void 0;
 const zod_1 = require("zod");
+const stock_1 = require("./stock");
 // ─── Constantes ──────────────────────────────────────────────────────────────
 exports.SALE_CHANNELS = ['WhatsApp', 'Meta Ads', 'TikTok', 'Instagram', 'Boutique', 'Autre'];
 exports.EXPENSE_CATEGORIES = ['pub', 'transport', 'stock', 'other'];
@@ -60,6 +61,9 @@ exports.CreateMovementSchema = zod_1.z.object({
     productId: zod_1.z.string().uuid(),
     type: zod_1.z.enum(exports.MOVEMENT_TYPES),
     quantity: zod_1.z.number().min(0.1),
+    kind: zod_1.z.enum(stock_1.MOVEMENT_KINDS).optional(),
+    /** Stock-in: what one unit cost. Otherwise the cost it left or came back at; set by the server. */
+    unitCost: zod_1.z.number().nullable().optional(),
     reason: zod_1.z.string().default(''),
     date: zod_1.z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
 });
@@ -72,6 +76,8 @@ exports.SaleItemSchema = zod_1.z.object({
     productId: zod_1.z.string().uuid(),
     quantity: zod_1.z.number().min(0.1),
     unitPrice: zod_1.z.number().min(0),
+    /** Purchase cost frozen when the sale was recorded; set by the server. */
+    unitCost: zod_1.z.number().nullable().optional(),
 });
 exports.CreateSaleSchema = zod_1.z.object({
     items: zod_1.z.array(exports.SaleItemSchema).min(1),

@@ -1,4 +1,4 @@
-import { segmentForSector, termsFor, firstStepsFor } from '@kza/shared';
+import { segmentForSector, termsFor, wordsFor, firstStepsFor } from '@kza/shared';
 import { useStore } from '../store/useStore';
 import { useModules } from './useModules';
 
@@ -12,11 +12,13 @@ export function useSegment() {
   const currentBusinessId = useStore(s => s.currentBusinessId);
   const sector = businesses.find(b => b.id === currentBusinessId)?.sector ?? null;
   const { modules, has } = useModules();
+  const terms = termsFor(sector, has('stock'));
 
   return {
     sector,
     segment: segmentForSector(sector),
-    terms: termsFor(sector, has('stock')),
+    terms,
+    words: wordsFor(terms),
     firstSteps: firstStepsFor(sector, modules),
   };
 }

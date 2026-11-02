@@ -33,9 +33,20 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+/** The reason a request was refused (a 4xx from the API), or the fallback. */
+export function apiMessage(error: unknown, fallback: string): string {
+  const match = error instanceof Error ? /^API 4\d\d: (.*)$/s.exec(error.message) : null;
+  if (!match) return fallback;
+  try {
+    const { message } = JSON.parse(match[1]);
+    return typeof message === 'string' ? message : fallback;
+  } catch { return fallback; }
+}
+
 // ─── Products ────────────────────────────────────────────────
 export const productsApi = {
   getAll: () => req<Product[]>('/products'),
+  getReservations: () => req<Record<string, number>>('/products/reservations'),
   create: (body: Omit<Product, 'id' | 'createdAt' | 'updatedAt'>) =>
     req<Product>('/products', { method: 'POST', body: JSON.stringify(body) }),
   update: (id: string, body: Partial<Product>) =>
@@ -57,8 +68,10 @@ export const movementsApi = {
   getAll: () => req<StockMovement[]>('/movements'),
   getByProduct: (productId: string) =>
     req<StockMovement[]>(`/movements/product/${productId}`),
-  create: (body: Omit<StockMovement, 'id' | 'createdAt'>) =>
+  create: (body: Omit<StockMovement, 'id' | 'createdAt'> & { unitCost?: number }) =>
     req<StockMovement>('/movements', { method: 'POST', body: JSON.stringify(body) }),
+  inventory: (body: { date: string; note?: string; lines: { productId: string; countedQuantity: number }[] }) =>
+    req<{ products: Product[]; movements: StockMovement[] }>('/movements/inventory', { method: 'POST', body: JSON.stringify(body) }),
 };
 
 // ─── Sales ───────────────────────────────────────────────────

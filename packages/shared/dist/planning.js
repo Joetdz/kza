@@ -23,6 +23,11 @@ exports.advanceForecast = advanceForecast;
 exports.countingContext = countingContext;
 exports.countingMonth = countingMonth;
 exports.computeMonthRealized = computeMonthRealized;
+exports.computeRangeRealized = computeRangeRealized;
+exports.periodRange = periodRange;
+exports.monthDays = monthDays;
+exports.monthWeeks = monthWeeks;
+exports.computeRangePlan = computeRangePlan;
 exports.buildClosingData = buildClosingData;
 exports.planAchievementPct = planAchievementPct;
 const time_1 = require("./time");
@@ -186,6 +191,16 @@ function countingMonth(entry, ctx) {
     return recordedMonth;
 }
 function computeMonthRealized(month, products, sales, expenses, ctx) {
+    return computeRealized(products, sales, expenses, entry => countingMonth(entry, ctx) === month, entry => entry.date.slice(0, 7) !== month);
+}
+/** Realized between two dates (included), by each entry's own date. */
+function computeRangeRealized(from, to, products, sales, expenses) {
+    return computeRealized(products, sales, expenses, entry => {
+        const day = entry.date.slice(0, 10);
+        return day >= from && day <= to;
+    }, () => false);
+}
+function computeRealized(products, sales, expenses, counts, isLate) {
     const cost = {};
     products.forEach(p => { cost[p.id] = p.acquisitionCost; });
     const r = {
@@ -195,24 +210,24 @@ function computeMonthRealized(month, products, sales, expenses, ctx) {
     for (const s of sales) {
         if (s.status === 'cancelled')
             continue;
-        if (countingMonth(s, ctx) !== month)
+        if (!counts(s))
             continue;
-        if (s.date.slice(0, 7) !== month)
+        if (isLate(s))
             r.lateEntries++;
         for (const i of s.items) {
             const amount = i.quantity * i.unitPrice;
             r.revenue += amount;
+            r.cogs += i.quantity * (i.unitCost ?? cost[i.productId ?? ''] ?? 0);
             if (!i.productId)
                 continue;
             r.qtyByProduct[i.productId] = (r.qtyByProduct[i.productId] ?? 0) + i.quantity;
             r.revenueByProduct[i.productId] = (r.revenueByProduct[i.productId] ?? 0) + amount;
-            r.cogs += i.quantity * (cost[i.productId] ?? 0);
         }
     }
     for (const e of expenses) {
-        if (countingMonth(e, ctx) !== month)
+        if (!counts(e))
             continue;
-        if (e.date.slice(0, 7) !== month)
+        if (isLate(e))
             r.lateEntries++;
         r.expensesByCategory[e.category] = (r.expensesByCategory[e.category] ?? 0) + e.amount;
         r.expensesTotal += e.amount;
@@ -223,6 +238,70 @@ function computeMonthRealized(month, products, sales, expenses, ctx) {
     }
     r.profit = r.revenue - r.cogs - r.expensesTotal;
     return r;
+}
+/** First and last day (included) of the day or the Monday-to-Sunday week around `today`. */
+function periodRange(period, today) {
+    if (period === 'day')
+        return { from: today, to: today };
+    const day = new Date(`${today}T00:00:00Z`);
+    const fromMonday = (day.getUTCDay() + 6) % 7;
+    const shifted = (days) => new Date(day.getTime() + days * 86400000).toISOString().slice(0, 10);
+    return { from: shifted(-fromMonday), to: shifted(6 - fromMonday) };
+}
+function daysInMonth(monthKey) {
+    const [y, m] = monthKey.split('-').map(Number);
+    return new Date(Date.UTC(y, m, 0)).getUTCDate();
+}
+/** Every day of a month ("YYYY-MM-DD"). */
+function monthDays(monthKey) {
+    return Array.from({ length: daysInMonth(monthKey) }, (_, i) => `${monthKey}-${String(i + 1).padStart(2, '0')}`);
+}
+/** The Monday-to-Sunday weeks touching a month; the first and last can overlap its neighbours. */
+function monthWeeks(monthKey) {
+    const weeks = [];
+    for (const day of monthDays(monthKey)) {
+        const week = periodRange('week', day);
+        if (weeks[weeks.length - 1]?.from !== week.from)
+            weeks.push(week);
+    }
+    return weeks;
+}
+/**
+ * The plan for a few days: each day gets an equal share of its own month's plan, so a
+ * week across two months takes from both. null = no plan covers any of these days.
+ */
+function computeRangePlan(months, from, to) {
+    const plan = {
+        label: from === to ? from : `${from} → ${to}`,
+        monthKey: from.slice(0, 7),
+        quantitiesByProduct: {}, adBudgetByProduct: {}, revenue: 0, cogs: 0, grossProfit: 0, adBudget: 0,
+        knownOpexByCategory: {}, manualOpexTotal: 0, totalOpex: 0, ebitda: 0,
+    };
+    const addAll = (into, values, share) => {
+        for (const [key, value] of Object.entries(values))
+            into[key] = (into[key] ?? 0) + value * share;
+    };
+    let covered = false;
+    const end = new Date(`${to}T00:00:00Z`).getTime();
+    for (let t = new Date(`${from}T00:00:00Z`).getTime(); t <= end; t += 86400000) {
+        const monthKey = new Date(t).toISOString().slice(0, 7);
+        const month = months.find(m => m.monthKey === monthKey);
+        if (!month)
+            continue;
+        covered = true;
+        const share = 1 / daysInMonth(monthKey);
+        addAll(plan.quantitiesByProduct, month.quantitiesByProduct, share);
+        addAll(plan.adBudgetByProduct, month.adBudgetByProduct, share);
+        addAll(plan.knownOpexByCategory, month.knownOpexByCategory, share);
+        plan.revenue += month.revenue * share;
+        plan.cogs += month.cogs * share;
+        plan.grossProfit += month.grossProfit * share;
+        plan.adBudget += month.adBudget * share;
+        plan.manualOpexTotal += month.manualOpexTotal * share;
+        plan.totalOpex += month.totalOpex * share;
+        plan.ebitda += month.ebitda * share;
+    }
+    return covered ? plan : null;
 }
 function buildClosingData(month, inputs) {
     const { products, sales, expenses, recurringExpenses, forecast, ctx } = inputs;

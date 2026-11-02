@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { format } from 'date-fns';
 import { sectorLabel } from '@kza/shared';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -197,10 +198,10 @@ function SBadge({ status }: { status: string }) {
 
 // ── Detail: CA ────────────────────────────────────────────────────────────────
 
-function DetailCA({ onClose }: { onClose: () => void }) {
+function DetailCA({ month, onClose }: { month?: string; onClose: () => void }) {
   const [data, setData] = useState<RevenueDetail | null>(null);
   const [loading, setLoading] = useState(true);
-  useEffect(() => { adminApi.getRevenueDetail().then(setData).finally(() => setLoading(false)); }, []);
+  useEffect(() => { setLoading(true); adminApi.getRevenueDetail(month).then(setData).finally(() => setLoading(false)); }, [month]);
 
   const avgPerSale = data && data.byBusiness.reduce((s, b) => s + b.saleCount, 0) > 0
     ? data.byBusiness.reduce((s, b) => s + b.revenue, 0) / data.byBusiness.reduce((s, b) => s + b.saleCount, 0)
@@ -283,10 +284,10 @@ function DetailCA({ onClose }: { onClose: () => void }) {
 
 // ── Detail: Ventes ────────────────────────────────────────────────────────────
 
-function DetailVentes({ onClose }: { onClose: () => void }) {
+function DetailVentes({ month, onClose }: { month?: string; onClose: () => void }) {
   const [data, setData] = useState<SalesDetail | null>(null);
   const [loading, setLoading] = useState(true);
-  useEffect(() => { adminApi.getSalesDetail().then(setData).finally(() => setLoading(false)); }, []);
+  useEffect(() => { setLoading(true); adminApi.getSalesDetail(month).then(setData).finally(() => setLoading(false)); }, [month]);
 
   const channelTotals = data?.byChannel.reduce((acc, r) => {
     acc[r.channel] = (acc[r.channel] ?? 0) + r.count;
@@ -366,10 +367,10 @@ function DetailVentes({ onClose }: { onClose: () => void }) {
 
 // ── Detail: Dépenses ──────────────────────────────────────────────────────────
 
-function DetailDepenses({ onClose }: { onClose: () => void }) {
+function DetailDepenses({ month, onClose }: { month?: string; onClose: () => void }) {
   const [data, setData] = useState<ExpensesDetail | null>(null);
   const [loading, setLoading] = useState(true);
-  useEffect(() => { adminApi.getExpensesDetail().then(setData).finally(() => setLoading(false)); }, []);
+  useEffect(() => { setLoading(true); adminApi.getExpensesDetail(month).then(setData).finally(() => setLoading(false)); }, [month]);
 
   return (
     <DetailShell title="Détail — Dépenses" icon={ArrowDownCircle} onClose={onClose} loading={loading}>
@@ -609,8 +610,9 @@ function DetailUsers({ onClose }: { onClose: () => void }) {
 
 type DetailKey = 'ca' | 'depenses' | 'benefice' | 'ventes' | 'users' | 'produits' | null;
 
-function TabOverview({ overview, refreshing, onRefresh }: {
+function TabOverview({ overview, refreshing, onRefresh, month, onShowAll }: {
   overview: AdminOverview; refreshing: boolean; onRefresh: () => void;
+  month?: string; onShowAll: (all: boolean) => void;
 }) {
   const { totalRevenue, totalExpenses, netProfit, totalSalesCount, salesBreakdown,
     totalProducts, totalUsers, totalBusinesses, waConnected, revenueByDay, topBusinesses } = overview;
@@ -631,7 +633,17 @@ function TabOverview({ overview, refreshing, onRefresh }: {
 
       {/* Row 1 — Activité commerciale */}
       <div>
-        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Activité commerciale — toutes devises · <span className="text-indigo-400 normal-case font-normal">Cliquez sur une carte pour les détails</span></p>
+        <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Activité commerciale — toutes devises · <span className="text-indigo-400 normal-case font-normal">Cliquez sur une carte pour les détails</span></p>
+          <div className="flex bg-gray-100 rounded-lg p-0.5 text-xs">
+            {[{ all: false, label: 'Ce mois' }, { all: true, label: "Tout l'historique" }].map(o => (
+              <button key={o.label} onClick={() => onShowAll(o.all)}
+                className={`px-3 py-1 rounded-md font-medium ${!month === o.all ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}>
+                {o.label}
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <KpiCard icon={DollarSign} color="bg-indigo-500"
             label="Chiffre d'affaires" value={fmtNum(totalRevenue)}
@@ -654,10 +666,10 @@ function TabOverview({ overview, refreshing, onRefresh }: {
       </div>
 
       {/* Detail panels — row 1 */}
-      {detail === 'ca'       && <DetailCA        onClose={() => setDetail(null)} />}
-      {detail === 'depenses' && <DetailDepenses   onClose={() => setDetail(null)} />}
+      {detail === 'ca'       && <DetailCA        month={month} onClose={() => setDetail(null)} />}
+      {detail === 'depenses' && <DetailDepenses   month={month} onClose={() => setDetail(null)} />}
       {detail === 'benefice' && <DetailBenefice   topBusinesses={topBusinesses} onClose={() => setDetail(null)} />}
-      {detail === 'ventes'   && <DetailVentes     onClose={() => setDetail(null)} />}
+      {detail === 'ventes'   && <DetailVentes     month={month} onClose={() => setDetail(null)} />}
 
       {/* Row 2 — Plateforme */}
       <div>
@@ -680,7 +692,7 @@ function TabOverview({ overview, refreshing, onRefresh }: {
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
         <div className="sm:col-span-2 lg:col-span-2 bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-gray-900">CA — 30 derniers jours</h3>
+            <h3 className="font-semibold text-gray-900">CA — {month ? 'ce mois' : '30 derniers jours'}</h3>
             <button onClick={onRefresh} disabled={refreshing}
               className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-700 disabled:opacity-40">
               <RefreshCw size={12} className={refreshing ? 'animate-spin' : ''} /> Actualiser
@@ -706,7 +718,7 @@ function TabOverview({ overview, refreshing, onRefresh }: {
               </AreaChart>
             </ResponsiveContainer>
           ) : (
-            <div className="h-48 flex items-center justify-center text-gray-400 text-sm">Aucune vente payée sur 30 jours</div>
+            <div className="h-48 flex items-center justify-center text-gray-400 text-sm">Aucune vente payée sur {month ? 'ce mois' : '30 jours'}</div>
           )}
         </div>
 
@@ -1484,6 +1496,8 @@ export function AdminDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [tab, setTab] = useState<Tab>('overview');
+  const [showAll, setShowAll] = useState(false);
+  const month = showAll ? undefined : format(new Date(), 'yyyy-MM');
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -1491,7 +1505,7 @@ export function AdminDashboard() {
     setError(null);
     try {
       const [ov, s, c] = await Promise.all([
-        adminApi.getOverview(),
+        adminApi.getOverview(month),
         adminApi.getStats(),
         adminApi.getClients(),
       ]);
@@ -1504,9 +1518,10 @@ export function AdminDashboard() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [month]);
 
-  useEffect(() => { load(); }, [load]);
+  // Switching period keeps the page on screen; only the first load shows the spinner.
+  useEffect(() => { load(overview !== null); }, [load]);
 
   if (loading) {
     return (
@@ -1576,7 +1591,7 @@ export function AdminDashboard() {
 
       {/* Tab content */}
       {tab === 'overview' && (
-        <TabOverview overview={overview!} refreshing={refreshing} onRefresh={() => load(true)} />
+        <TabOverview overview={overview!} refreshing={refreshing} onRefresh={() => load(true)} month={month} onShowAll={setShowAll} />
       )}
       {tab === 'audience' && <TabAudience clients={clients} />}
       {tab === 'leads' && <TabLeads clients={clients} />}

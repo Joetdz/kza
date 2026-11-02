@@ -82,7 +82,7 @@ export class MonthlyClosingService {
         this.prisma.product.findMany({ where: { businessId }, select: { id: true, name: true, sellingPrice: true, acquisitionCost: true } }),
         this.prisma.sale.findMany({
           where: { businessId },
-          select: { date: true, createdAt: true, status: true, items: { select: { productId: true, quantity: true, unitPrice: true } } },
+          select: { date: true, createdAt: true, status: true, items: { select: { productId: true, quantity: true, unitPrice: true, unitCost: true } } },
         }),
         this.prisma.expense.findMany({ where: { businessId }, select: { date: true, createdAt: true, category: true, amount: true, productId: true } }),
         this.prisma.recurringExpense.findMany({ where: { businessId }, select: { active: true, frequency: true, amount: true, category: true, month: true } }),

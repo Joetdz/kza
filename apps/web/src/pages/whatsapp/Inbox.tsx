@@ -10,6 +10,7 @@ import {
 import { useWhatsApp, WaContact, WaMessage } from '../../hooks/useWhatsApp';
 import { waApi } from '../../api/whatsapp';
 import { STATIC_BASE } from '../../api';
+import { useSegment } from '../../hooks/useSegment';
 import { useStore } from '../../store/useStore';
 
 // ── WA Web color palette ─────────────────────────────────────────────────────
@@ -305,6 +306,7 @@ function ConnectScreen({
 }
 
 export function Inbox() {
+  const { terms, words } = useSegment();
   const {
     statusLoaded, connected, phone, qr, pairingCode, pairingError, loading, contacts, messages, sync,
     loadContacts, loadMessages, sendMessage, updateContact,
@@ -516,7 +518,7 @@ export function Inbox() {
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-semibold transition-colors"
               style={{ background: showProductStats ? '#00a88420' : 'transparent', color: showProductStats ? '#00a884' : C.icon, border: `1px solid ${showProductStats ? '#00a884' : 'transparent'}` }}>
               <BarChart2 size={15} />
-              <span className="hidden sm:inline">Stats produits</span>
+              <span className="hidden sm:inline">Stats {terms.items}</span>
             </button>
             {contacts.some(c => isLidPhone(c.phone)) && (
               <button onClick={repairLids} disabled={repairingLids}
@@ -580,7 +582,7 @@ export function Inbox() {
             <div className="px-4 py-3 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <TrendingUp size={14} style={{ color: '#00a884' }} />
-                <span className="text-xs font-semibold" style={{ color: C.text }}>Produits mentionnés</span>
+                <span className="text-xs font-semibold" style={{ color: C.text }}>{words.Items} mentionné{words.e}s</span>
               </div>
               <span className="text-[10px]" style={{ color: C.textSub }}>Taux de conversion</span>
             </div>
@@ -974,7 +976,7 @@ export function Inbox() {
               { key: 'leadNeed', label: 'Besoin' },
               { key: 'leadBudget', label: 'Budget' },
               { key: 'leadCity', label: 'Ville' },
-              { key: 'leadProduct', label: 'Produit' },
+              { key: 'leadProduct', label: words.Item },
               { key: 'leadUrgency', label: 'Urgence' },
             ].filter(f => (selectedContact as any)[f.key]).map(f => (
               <div key={f.key} className="flex justify-between text-xs py-1 border-b"

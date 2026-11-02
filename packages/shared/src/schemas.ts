@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { MOVEMENT_KINDS } from './stock';
 
 // ─── Constantes ──────────────────────────────────────────────────────────────
 
@@ -71,6 +72,9 @@ export const CreateMovementSchema = z.object({
   productId: z.string().uuid(),
   type: z.enum(MOVEMENT_TYPES),
   quantity: z.number().min(0.1),
+  kind: z.enum(MOVEMENT_KINDS).optional(),
+  /** Stock-in: what one unit cost. Otherwise the cost it left or came back at; set by the server. */
+  unitCost: z.number().nullable().optional(),
   reason: z.string().default(''),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
 });
@@ -86,6 +90,8 @@ export const SaleItemSchema = z.object({
   productId: z.string().uuid(),
   quantity: z.number().min(0.1),
   unitPrice: z.number().min(0),
+  /** Purchase cost frozen when the sale was recorded; set by the server. */
+  unitCost: z.number().nullable().optional(),
 });
 
 export const CreateSaleSchema = z.object({

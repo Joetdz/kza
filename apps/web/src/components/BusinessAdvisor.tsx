@@ -4,6 +4,7 @@ import {
   BrainCircuit, Send, Loader2, ChevronDown, Sparkles,
   Trash2, Mic, MicOff, PhoneCall, PhoneOff, X,
 } from 'lucide-react';
+import { useSegment } from '../hooks/useSegment';
 import { useRole } from '../hooks/useRole';
 
 const BASE = (import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api');
@@ -48,7 +49,6 @@ async function fetchAudio(text: string): Promise<HTMLAudioElement | null> {
 }
 
 const SUGGESTIONS = [
-  'Quels sont mes produits les plus rentables ?',
   'Comment améliorer mon taux de conversion ?',
   'Quels leads devrais-je prioriser ?',
   'Analyse mon chiffre d\'affaires du mois',
@@ -67,6 +67,7 @@ const CALL_STATUS: Record<CallState, string> = {
 };
 
 export function BusinessAdvisor() {
+  const { terms } = useSegment();
   const { canSeeFinances } = useRole();
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<'chat' | 'call'>('chat');
@@ -428,7 +429,7 @@ export function BusinessAdvisor() {
               {/* Suggestions */}
               {messages.length <= 1 && !loading && (
                 <div className="px-3 py-2 shrink-0 flex gap-2 overflow-x-auto" style={{ borderTop: '1px solid #1e293b' }}>
-                  {SUGGESTIONS.map((s, i) => (
+                  {[`${terms.feminine ? 'Quelles' : 'Quels'} sont mes ${terms.items} les plus rentables ?`, ...SUGGESTIONS].map((s, i) => (
                     <button key={i} onClick={() => sendChat(s)}
                       className="shrink-0 text-xs px-3 py-1.5 rounded-full whitespace-nowrap transition-colors hover:bg-indigo-600"
                       style={{ background: '#1e293b', color: '#94a3b8', border: '1px solid #334155' }}>

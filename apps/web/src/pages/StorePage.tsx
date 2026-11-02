@@ -7,6 +7,8 @@ import {
   Sparkles, RefreshCw, Music, Scissors, Image as ImageIcon, ArrowDown, ArrowUp,
 } from 'lucide-react';
 import { mediaApi, uploadApi, type ProductMedia } from '../api';
+import { useSegment } from '../hooks/useSegment';
+import { toast } from '../hooks/useToast';
 import { useStore } from '../store/useStore';
 
 const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api';
@@ -827,6 +829,7 @@ function PhotoToVideoStudio({
   onSaved: (url: string) => void;
   onCancel: () => void;
 }) {
+  const { words } = useSegment();
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imageEl, setImageEl] = useState<HTMLImageElement | null>(null);
   const [useProductImg, setUseProductImg] = useState(!!(product.imageUrl));
@@ -963,7 +966,7 @@ function PhotoToVideoStudio({
           <div className="flex gap-2 mb-2">
             <button onClick={() => setUseProductImg(true)}
               className={`flex-1 py-1.5 rounded-xl text-[10px] font-medium transition-colors border ${useProductImg ? 'bg-pink-600 text-white border-pink-600' : 'bg-white text-gray-500 border-gray-200 hover:border-pink-300'}`}>
-              Image du produit
+              Image {words.ofItem}
             </button>
             <button onClick={() => setUseProductImg(false)}
               className={`flex-1 py-1.5 rounded-xl text-[10px] font-medium transition-colors border ${!useProductImg ? 'bg-pink-600 text-white border-pink-600' : 'bg-white text-gray-500 border-gray-200 hover:border-pink-300'}`}>
@@ -1078,6 +1081,7 @@ function PhotoToVideoStudio({
 // ── StorePage ─────────────────────────────────────────────────────────────────
 
 export function StorePage() {
+  const { terms, words } = useSegment();
   const { currentBusinessId } = useStore();
   const [tab, setTab] = useState<'config' | 'products' | 'creations' | 'share' | 'orders'>('config');
   const [store, setStore] = useState<any>(null);
@@ -1263,8 +1267,14 @@ export function StorePage() {
   };
 
   const updateOrderStatus = async (orderId: string, status: string) => {
-    await api(`/store/my/orders/${orderId}`, { method: 'PUT', body: JSON.stringify({ status }) });
-    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status } : o));
+    try {
+      await api(`/store/my/orders/${orderId}`, { method: 'PUT', body: JSON.stringify({ status }) });
+      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status } : o));
+    } catch (e) {
+      let message = 'Erreur lors du changement de statut';
+      try { message = JSON.parse((e as Error).message).message ?? message; } catch { /* not JSON: keep the fallback */ }
+      toast.error(message);
+    }
   };
 
   const handleUploadMedia = async (productId: string, file: File | undefined) => {
@@ -1392,7 +1402,7 @@ export function StorePage() {
 
   const TABS = [
     { key: 'config',    label: 'Configuration' },
-    { key: 'products',  label: 'Produits' },
+    { key: 'products',  label: words.Items },
     { key: 'creations', label: 'Créations' },
     { key: 'share',     label: 'Lien & Partage' },
     { key: 'orders',    label: 'Commandes' },
@@ -1409,7 +1419,7 @@ export function StorePage() {
         </div>
         <div>
           <h1 className="text-xl font-black text-gray-900">Ma Boutique en ligne</h1>
-          <p className="text-sm text-gray-500">Exposez vos produits et recevez les commandes sur WhatsApp</p>
+          <p className="text-sm text-gray-500">Exposez vos {terms.items} et recevez les commandes sur WhatsApp</p>
         </div>
       </div>
 
@@ -1545,7 +1555,7 @@ export function StorePage() {
             </div>
           )}
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-sm text-gray-500">{visibleIds.size} produit(s) sélectionné(s)</p>
+            <p className="text-sm text-gray-500">{visibleIds.size} {terms.item}(s) sélectionné{words.e}(s)</p>
             <div className="flex gap-2">
               <button onClick={() => setVisibleIds(new Set(products.map(p => p.id)))}
                 className="text-xs text-indigo-600 hover:underline">Tout sélectionner</button>
@@ -1556,7 +1566,7 @@ export function StorePage() {
           </div>
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm divide-y divide-gray-50">
             {products.length === 0 && (
-              <p className="text-sm text-gray-400 text-center py-8">Aucun produit. Ajoutez-en dans la page Stock.</p>
+              <p className="text-sm text-gray-400 text-center py-8">{words.noItem}. Ajoutez-en dans la page {terms.catalogue}.</p>
             )}
             {products.map(p => {
               const selected = visibleIds.has(p.id);
@@ -1593,7 +1603,7 @@ export function StorePage() {
                           <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{form.currency}</span>
                         </div>
                         {!storePriceMap[p.id] && (
-                          <p className="text-[10px] text-amber-500 mt-0.5 ml-1">⚠ Définissez un prix pour ce produit</p>
+                          <p className="text-[10px] text-amber-500 mt-0.5 ml-1">⚠ Définissez un prix pour {words.thisItem}</p>
                         )}
                       </div>
                       {/* Prix barré */}
@@ -1691,7 +1701,7 @@ export function StorePage() {
             </div>
           ) : storeProducts.length === 0 ? (
             <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4 text-sm text-amber-700">
-              Sélectionnez d'abord des produits dans l'onglet "Produits" pour leur attacher des créations.
+              Sélectionnez d'abord des {terms.items} dans l'onglet "{words.Items}" pour leur attacher des créations.
             </div>
           ) : (
             <>
@@ -1944,6 +1954,7 @@ export function StorePage() {
                     <option value="pending">En attente</option>
                     <option value="confirmed">Confirmée</option>
                     <option value="delivered">Livrée</option>
+                    {(order.status === 'delivered' || order.status === 'returned') && <option value="returned">Retournée</option>}
                     <option value="cancelled">Annulée</option>
                   </select>
                 </div>

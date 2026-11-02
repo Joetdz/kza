@@ -13,7 +13,7 @@
 import { utcToLocal } from './time';
 
 export interface PlanProduct { id: string; name?: string; sellingPrice: number; acquisitionCost: number }
-export interface PlanSaleItem { productId?: string | null; quantity: number; unitPrice: number }
+export interface PlanSaleItem { productId?: string | null; quantity: number; unitPrice: number; unitCost?: number | null }
 export interface PlanSale { date: string; createdAt?: string | null; status?: string | null; items: PlanSaleItem[] }
 export interface PlanExpense { date: string; createdAt?: string | null; category: string; amount: number; productId?: string | null }
 export interface PlanRecurringExpense { active: boolean; frequency: string; amount: number; category: string; month?: number | null }
@@ -247,6 +247,34 @@ export function computeMonthRealized(
   expenses: PlanExpense[],
   ctx: CountingContext,
 ): MonthRealized {
+  return computeRealized(
+    products, sales, expenses,
+    entry => countingMonth(entry, ctx) === month,
+    entry => entry.date.slice(0, 7) !== month,
+  );
+}
+
+/** Realized between two dates (included), by each entry's own date. */
+export function computeRangeRealized(
+  from: string,
+  to: string,
+  products: PlanProduct[],
+  sales: PlanSale[],
+  expenses: PlanExpense[],
+): MonthRealized {
+  return computeRealized(products, sales, expenses, entry => {
+    const day = entry.date.slice(0, 10);
+    return day >= from && day <= to;
+  }, () => false);
+}
+
+function computeRealized(
+  products: PlanProduct[],
+  sales: PlanSale[],
+  expenses: PlanExpense[],
+  counts: (entry: { date: string; createdAt?: string | null }) => boolean,
+  isLate: (entry: { date: string }) => boolean,
+): MonthRealized {
   const cost: Record<string, number> = {};
   products.forEach(p => { cost[p.id] = p.acquisitionCost; });
 
@@ -257,20 +285,20 @@ export function computeMonthRealized(
 
   for (const s of sales) {
     if (s.status === 'cancelled') continue;
-    if (countingMonth(s, ctx) !== month) continue;
-    if (s.date.slice(0, 7) !== month) r.lateEntries++;
+    if (!counts(s)) continue;
+    if (isLate(s)) r.lateEntries++;
     for (const i of s.items) {
       const amount = i.quantity * i.unitPrice;
       r.revenue += amount;
+      r.cogs += i.quantity * (i.unitCost ?? cost[i.productId ?? ''] ?? 0);
       if (!i.productId) continue;
       r.qtyByProduct[i.productId] = (r.qtyByProduct[i.productId] ?? 0) + i.quantity;
       r.revenueByProduct[i.productId] = (r.revenueByProduct[i.productId] ?? 0) + amount;
-      r.cogs += i.quantity * (cost[i.productId] ?? 0);
     }
   }
   for (const e of expenses) {
-    if (countingMonth(e, ctx) !== month) continue;
-    if (e.date.slice(0, 7) !== month) r.lateEntries++;
+    if (!counts(e)) continue;
+    if (isLate(e)) r.lateEntries++;
     r.expensesByCategory[e.category] = (r.expensesByCategory[e.category] ?? 0) + e.amount;
     r.expensesTotal += e.amount;
     if (e.category === 'pub') {
@@ -280,6 +308,76 @@ export function computeMonthRealized(
   }
   r.profit = r.revenue - r.cogs - r.expensesTotal;
   return r;
+}
+
+// ─── Today / this week ───────────────────────────────────────────────────────
+
+export type GoalPeriod = 'day' | 'week' | 'month';
+
+/** First and last day (included) of the day or the Monday-to-Sunday week around `today`. */
+export function periodRange(period: 'day' | 'week', today: string): { from: string; to: string } {
+  if (period === 'day') return { from: today, to: today };
+  const day = new Date(`${today}T00:00:00Z`);
+  const fromMonday = (day.getUTCDay() + 6) % 7;
+  const shifted = (days: number) => new Date(day.getTime() + days * 86_400_000).toISOString().slice(0, 10);
+  return { from: shifted(-fromMonday), to: shifted(6 - fromMonday) };
+}
+
+function daysInMonth(monthKey: string): number {
+  const [y, m] = monthKey.split('-').map(Number);
+  return new Date(Date.UTC(y, m, 0)).getUTCDate();
+}
+
+/** Every day of a month ("YYYY-MM-DD"). */
+export function monthDays(monthKey: string): string[] {
+  return Array.from({ length: daysInMonth(monthKey) }, (_, i) => `${monthKey}-${String(i + 1).padStart(2, '0')}`);
+}
+
+/** The Monday-to-Sunday weeks touching a month; the first and last can overlap its neighbours. */
+export function monthWeeks(monthKey: string): { from: string; to: string }[] {
+  const weeks: { from: string; to: string }[] = [];
+  for (const day of monthDays(monthKey)) {
+    const week = periodRange('week', day);
+    if (weeks[weeks.length - 1]?.from !== week.from) weeks.push(week);
+  }
+  return weeks;
+}
+
+/**
+ * The plan for a few days: each day gets an equal share of its own month's plan, so a
+ * week across two months takes from both. null = no plan covers any of these days.
+ */
+export function computeRangePlan(months: ForecastMonth[], from: string, to: string): ForecastMonth | null {
+  const plan: ForecastMonth = {
+    label: from === to ? from : `${from} → ${to}`,
+    monthKey: from.slice(0, 7),
+    quantitiesByProduct: {}, adBudgetByProduct: {}, revenue: 0, cogs: 0, grossProfit: 0, adBudget: 0,
+    knownOpexByCategory: {}, manualOpexTotal: 0, totalOpex: 0, ebitda: 0,
+  };
+  const addAll = (into: Record<string, number>, values: Record<string, number>, share: number) => {
+    for (const [key, value] of Object.entries(values)) into[key] = (into[key] ?? 0) + value * share;
+  };
+
+  let covered = false;
+  const end = new Date(`${to}T00:00:00Z`).getTime();
+  for (let t = new Date(`${from}T00:00:00Z`).getTime(); t <= end; t += 86_400_000) {
+    const monthKey = new Date(t).toISOString().slice(0, 7);
+    const month = months.find(m => m.monthKey === monthKey);
+    if (!month) continue;
+    covered = true;
+    const share = 1 / daysInMonth(monthKey);
+    addAll(plan.quantitiesByProduct, month.quantitiesByProduct, share);
+    addAll(plan.adBudgetByProduct, month.adBudgetByProduct, share);
+    addAll(plan.knownOpexByCategory, month.knownOpexByCategory, share);
+    plan.revenue += month.revenue * share;
+    plan.cogs += month.cogs * share;
+    plan.grossProfit += month.grossProfit * share;
+    plan.adBudget += month.adBudget * share;
+    plan.manualOpexTotal += month.manualOpexTotal * share;
+    plan.totalOpex += month.totalOpex * share;
+    plan.ebitda += month.ebitda * share;
+  }
+  return covered ? plan : null;
 }
 
 // ─── Closing ─────────────────────────────────────────────────────────────────

@@ -126,6 +126,11 @@ model StockMovement {
   productId  String   @map("product_id") @db.Uuid
   type       String
   quantity   Float
+  // purchase | initial | sale | return | loss | inventory | other (MOVEMENT_KINDS in @kza/shared)
+  kind       String   @default("other")
+  unitCost   Float?   @map("unit_cost")
+  // Inventory only: the stock counted, from which the recount in products.reconcile restarts.
+  countedQuantity Float? @map("counted_quantity")
   reason     String   @default("")
   date       DateTime @db.Date
   createdAt  DateTime @default(now()) @map("created_at")
@@ -155,7 +160,10 @@ model Sale {
   createdAt     DateTime   @default(now()) @map("created_at")
   userId        String?    @map("user_id")
   businessId    String?    @map("business_id") @db.Uuid
+  // The delivered order this sale comes from: its stock and status follow that order.
+  manualOrderId String?    @map("manual_order_id") @db.Uuid
 
+  manualOrder  ManualOrder? @relation(fields: [manualOrderId], references: [id], onDelete: SetNull)
   items        SaleItem[]
   payments     SalePayment[]
   installments SaleInstallment[]
@@ -171,6 +179,7 @@ model SaleItem {
   productId String?  @map("product_id") @db.Uuid
   quantity  Float
   unitPrice Float    @map("unit_price")
+  unitCost  Float?   @map("unit_cost")
 
   sale    Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
   product Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
@@ -872,7 +881,9 @@ model ManualOrder {
   totalAmount        Decimal         @map("total_amount") @db.Decimal(10, 2)
   status             String          @default("pending")
   isDraft            Boolean         @default(false) @map("is_draft")
-  sourceContactId    String?         @map("source_contact_id") @db.Uuid
+  // On: no relance for this order, and so no deletion after too many relances either.
+  excludeFromRelance Boolean         @default(false) @map("exclude_from_relance")
+  sourceContactId   String?         @map("source_contact_id") @db.Uuid
   partnerId          String?         @map("partner_id") @db.Uuid
   partner            DeliveryPartner? @relation(fields: [partnerId], references: [id])
   locationId         String?         @map("location_id") @db.Uuid
@@ -887,6 +898,7 @@ model ManualOrder {
   collectedCdf          Decimal?        @map("collected_cdf") @db.Decimal(10, 2)
 
   items              ManualOrderItem[]
+  sales              Sale[]
   storeOrder         StoreOrder?     // inverse side of StoreOrder.manualOrderId — unused directly, required by Prisma
   createdAt          DateTime        @default(now()) @map("created_at")
   updatedAt          DateTime        @default(now()) @updatedAt @map("updated_at")
@@ -945,12 +957,12 @@ model WaFollowUp {
   id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId    String   @map("user_id")
   orderId   String   @map("order_id") @db.Uuid
-  type      String   // "relance" | "loyalty"
+  type      String   // "relance" | "loyalty" | "relance_deleted" (order removed after too many relances)
   phone     String
   message   String
   sentAt    DateTime @default(now()) @map("sent_at")
 
-  @@unique([orderId, type])
+  @@index([orderId, type])
   @@index([userId])
   @@map("wa_followups")
 }

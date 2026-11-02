@@ -333,12 +333,15 @@ function FeedCard({
   useEffect(() => {
     const a = audioRef.current;
     if (!a) return;
-    if (isActive) {
-      a.currentTime = 0;
-      a.play().catch(() => {});
-    } else {
+    if (!isActive) {
       a.pause();
+      return;
     }
+    a.currentTime = 0;
+    // The store now opens on this slide: browsers refuse sound until the visitor's first touch.
+    const retry = () => { a.play().catch(() => {}); };
+    a.play().catch(() => window.addEventListener('pointerdown', retry, { once: true }));
+    return () => window.removeEventListener('pointerdown', retry);
   }, [isActive]);
 
   // Whether any sound control is relevant
@@ -491,7 +494,9 @@ export function PublicStore({ slug, initialReelId }: Props) {
   const [ordering, setOrdering] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
 
-  const [view, setView] = useState<'shop' | 'feed'>('shop');
+  // The store opens on its reels; a store without any opens on its catalogue instead.
+  const [view, setView] = useState<'shop' | 'feed'>('feed');
+  const openingFeed = useRef(true);
   const [feed, setFeed] = useState<FeedItem[]>([]);
   const [feedLoading, setFeedLoading] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -557,8 +562,13 @@ export function PublicStore({ slug, initialReelId }: Props) {
       setFeedLoading(true);
       fetch(`${BASE}/store/${slug}/feed`)
         .then(r => r.json())
-        .then(data => setFeed(Array.isArray(data) ? data : []))
-        .catch(() => setFeed([]))
+        .then(data => Array.isArray(data) ? data : [])
+        .catch(() => [] as FeedItem[])
+        .then(items => {
+          setFeed(items);
+          if (items.length === 0 && openingFeed.current) setView('shop');
+          openingFeed.current = false;
+        })
         .finally(() => setFeedLoading(false));
     }
   }, [view]);
@@ -573,11 +583,12 @@ export function PublicStore({ slug, initialReelId }: Props) {
     };
     container.addEventListener('scroll', onScroll, { passive: true });
     return () => container.removeEventListener('scroll', onScroll);
-  }, [view]);
+    // The container only exists once the loading and confirmation screens are gone.
+  }, [view, loading, confirmed]);
 
   // Deep-link: when initialReelId is set, open feed and scroll to the reel
   useEffect(() => {
-    if (!initialReelId || feed.length === 0) return;
+    if (!initialReelId || feed.length === 0 || loading) return;
     const idx = feed.findIndex(f => f.id === initialReelId);
     if (idx < 0) return;
     setView('feed');
@@ -585,7 +596,7 @@ export function PublicStore({ slug, initialReelId }: Props) {
     setTimeout(() => {
       feedRef.current?.scrollTo({ top: idx * window.innerHeight, behavior: 'instant' });
     }, 100);
-  }, [initialReelId, feed]);
+  }, [initialReelId, feed, loading]);
 
   const addToCart = (product: Product) => {
     setCart(prev => {
@@ -644,7 +655,12 @@ export function PublicStore({ slug, initialReelId }: Props) {
           })),
         }),
       });
-      const { waUrl } = await res.json();
+      const body = await res.json().catch(() => null);
+      if (!res.ok) {
+        window.alert(body?.message ?? "Votre commande n'a pas pu être enregistrée. Réessayez.");
+        return;
+      }
+      const { waUrl } = body;
       // Client envoie depuis son propre numéro vers le business
       window.open(waUrl, '_blank');
       fbq('track', 'Purchase', {
@@ -658,7 +674,9 @@ export function PublicStore({ slug, initialReelId }: Props) {
       setCart([]);
       localStorage.removeItem(`cart_${slug}`);
       localStorage.removeItem(`form_${slug}`);
-    } catch { /* ignore */ }
+    } catch {
+      window.alert("Connexion impossible : votre commande n'a pas été envoyée. Réessayez.");
+    }
     finally { setOrdering(false); }
   };
 

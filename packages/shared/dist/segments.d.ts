@@ -148,6 +148,31 @@ export interface SegmentExperience {
 export declare const SEGMENT_EXPERIENCE: Record<string, SegmentExperience>;
 /** Words for the catalogue. Without stock tracking, "Stock" becomes "Catalogue". */
 export declare function termsFor(sector: string | null | undefined, tracksStock: boolean): SegmentTerms;
+/** The catalogue's word with its articles and agreement, for sentences and labels. */
+export declare function wordsFor({ item, items, feminine }: SegmentTerms): {
+    Item: string;
+    Items: string;
+    /** Agreement ending: `vendu${e}s`. */
+    e: string;
+    /** "un produit" / "une prestation" */
+    oneItem: string;
+    /** "le produit" / "la prestation" / "l'article" */
+    theItem: string;
+    /** "du produit" / "de la prestation" / "de l'article" */
+    ofItem: string;
+    /** "ce produit" / "cette prestation" / "cet article" */
+    thisItem: string;
+    /** "Nouveau produit" / "Nouvelle prestation" / "Nouvel article" */
+    newItem: string;
+    /** "Aucun produit" / "Aucune prestation" */
+    noItem: string;
+    /** "tous les produits" / "toutes les prestations" */
+    everyItem: string;
+    /** "Produit inconnu" / "Prestation inconnue" */
+    unknownItem: string;
+    /** "Produit supprimé" / "Prestation supprimée" */
+    deletedItem: string;
+};
 /** "premier produit" / "première prestation". */
 export declare function firstItem(terms: SegmentTerms): string;
 /** "Tous les produits" / "Toutes les prestations". */

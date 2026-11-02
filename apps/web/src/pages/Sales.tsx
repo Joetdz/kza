@@ -13,6 +13,7 @@ import { downloadInvoice, getInvoiceBase64 } from '../utils/invoicePdf';
 import { salesApi } from '../api';
 import type { SaleChannel, SaleItem, SaleStatus } from '../types';
 import { SALE_STATUSES, KINSHASA_COMMUNES, RDC_VILLES } from '@kza/shared';
+import { useSegment } from '../hooks/useSegment';
 import { useModules } from '../hooks/useModules';
 
 const PAGE_SIZE = 10;
@@ -34,6 +35,7 @@ const CHANNEL_BADGE: Record<SaleChannel, 'green' | 'blue' | 'gray' | 'amber' | '
 };
 
 export function Sales() {
+  const { terms, words } = useSegment();
   const { products, sales, loading, addSale, updateSaleStatus, deleteSale, businesses, currentBusinessId } = useStore();
   const currentBusiness = businesses.find(b => b.id === currentBusinessId);
   const { fmt: MAD, currency } = useCurrency();
@@ -265,7 +267,7 @@ export function Sales() {
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
             type="text"
-            placeholder="Rechercher par produit, canal ou client..."
+            placeholder={`Rechercher par ${terms.item}, canal ou client...`}
             value={search}
             onChange={e => { setSearch(e.target.value); setPage(1); }}
             className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
@@ -402,7 +404,7 @@ export function Sales() {
                     <div key={i} className="flex items-center gap-2 text-sm">
                       <div className="w-1.5 h-1.5 rounded-full bg-indigo-400 shrink-0" />
                       <span className="flex-1 text-gray-700">
-                        {product?.name ?? 'Produit inconnu'}
+                        {product?.name ?? words.unknownItem}
                         <span className="text-gray-400"> × {item.quantity}</span>
                       </span>
                       <span className="font-medium text-gray-900">{MAD(item.unitPrice)}/u</span>
@@ -520,14 +522,14 @@ export function Sales() {
           {/* Produits */}
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label className="text-xs font-medium text-gray-600">Produits *</label>
+              <label className="text-xs font-medium text-gray-600">{words.Items} *</label>
               <button onClick={addItem} className="text-xs text-indigo-600 hover:text-indigo-800 font-medium">+ Ajouter ligne</button>
             </div>
             <div className="space-y-2">
               {items.map((item, idx) => (
                 <div key={idx} className="flex flex-wrap gap-x-2 gap-y-1.5 items-end border-b border-gray-50 pb-2 last:border-0 last:pb-0 sm:border-0 sm:pb-0">
                   <div className="w-full sm:flex-1">
-                    {idx === 0 && <div className="text-xs text-gray-400 mb-1">Produit</div>}
+                    {idx === 0 && <div className="text-xs text-gray-400 mb-1">{words.Item}</div>}
                     <select value={item.productId} onChange={e => updateItem(idx, 'productId', e.target.value)}
                       className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-300">
                       <option value="">Choisir...</option>

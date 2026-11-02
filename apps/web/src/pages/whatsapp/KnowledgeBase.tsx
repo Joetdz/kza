@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Plus, Trash2, Edit2, X, Check, BookOpen, Search, Package, ChevronDown, ChevronUp, Sparkles, Loader2 } from 'lucide-react';
 import { waApi } from '../../api/whatsapp';
+import { useSegment } from '../../hooks/useSegment';
 import { productsApi, resolveImageUrl } from '../../api';
 
 const CATEGORIES = [
@@ -25,6 +26,7 @@ const BLANK = {
 type Tab = 'manual' | 'products';
 
 export function KnowledgeBase() {
+  const { terms, words } = useSegment();
   const [activeTab, setActiveTab] = useState<Tab>('manual');
   const [entries, setEntries] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
@@ -192,7 +194,7 @@ export function KnowledgeBase() {
   const generateFormScript = async () => {
     setGeneratingForm(true);
     try {
-      const { script } = await waApi.generateScript({ name: form.title || 'ce produit' });
+      const { script } = await waApi.generateScript({ name: form.title || words.thisItem });
       setForm(f => ({ ...f, closingScript: script }));
     } catch {
       // silently fail
@@ -220,7 +222,7 @@ export function KnowledgeBase() {
           </div>
           <div>
             <h2 className="font-bold text-gray-900">Base de connaissance</h2>
-            <p className="text-xs text-gray-500">Alimentez l'IA avec vos infos produits, FAQ et scripts de closing</p>
+            <p className="text-xs text-gray-500">Alimentez l'IA avec vos infos {terms.items}, FAQ et scripts de closing</p>
           </div>
         </div>
         {activeTab === 'manual' && (
@@ -245,7 +247,7 @@ export function KnowledgeBase() {
           onClick={() => setActiveTab('products')}
           className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${activeTab === 'products' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
         >
-          <Package size={14} /> Produits en stock
+          <Package size={14} /> {words.Items}
           <span className="bg-indigo-100 text-indigo-600 text-xs px-1.5 py-0.5 rounded-full">{products.length}</span>
         </button>
       </div>
@@ -254,11 +256,11 @@ export function KnowledgeBase() {
       {activeTab === 'products' && (
         <div className="space-y-3">
           <p className="text-xs text-gray-500">
-            Ajoutez un script de closing pour chaque produit. L'IA l'utilisera automatiquement quand un client s'y intéresse.
+            Ajoutez un script de closing pour chaque {terms.item}. L'IA l'utilisera automatiquement quand un client s'y intéresse.
           </p>
           {products.length === 0 && (
             <div className="text-center py-10 text-gray-400 text-sm bg-white rounded-2xl border border-gray-100">
-              Aucun produit en stock trouvé.
+              {words.noItem} trouvé{words.e}.
             </div>
           )}
           {products.map(product => {

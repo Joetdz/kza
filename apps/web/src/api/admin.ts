@@ -171,11 +171,13 @@ export type UserDetail = {
   businessCount: number; businesses: string[]; waConnected: boolean;
 };
 
+const monthQuery = (month?: string) => (month ? `?month=${month}` : '');
+
 export const adminApi = {
-  getOverview: () => req<AdminOverview>('/admin/overview'),
-  getRevenueDetail: () => req<RevenueDetail>('/admin/detail/revenue'),
-  getSalesDetail: () => req<SalesDetail>('/admin/detail/sales'),
-  getExpensesDetail: () => req<ExpensesDetail>('/admin/detail/expenses'),
+  getOverview: (month?: string) => req<AdminOverview>(`/admin/overview${monthQuery(month)}`),
+  getRevenueDetail: (month?: string) => req<RevenueDetail>(`/admin/detail/revenue${monthQuery(month)}`),
+  getSalesDetail: (month?: string) => req<SalesDetail>(`/admin/detail/sales${monthQuery(month)}`),
+  getExpensesDetail: (month?: string) => req<ExpensesDetail>(`/admin/detail/expenses${monthQuery(month)}`),
   getProductsDetail: () => req<ProductsDetail>('/admin/detail/products'),
   getUsersDetail: () => req<UserDetail[]>('/admin/detail/users'),
   getStats: () => req<AdminStats>('/admin/stats'),

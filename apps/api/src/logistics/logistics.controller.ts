@@ -1,12 +1,23 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, Query, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query, Headers, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CurrentUser, AuthUser } from '../auth/current-user.decorator';
 import { WhatsAppService } from '../whatsapp/whatsapp.service';
 import { FollowUpService } from './followup.service';
 import { CustomerHistoryService } from '../common/customer-history.service';
-import { LogisticsService } from './logistics.service';
+import { detachStoreOrders, LogisticsService } from './logistics.service';
+import { assertStockAvailable, lockProducts } from '../movements/stock-rules';
 import { phoneKey } from '../common/phone';
 import { join } from 'path';
+
+function webOrigin(value?: string): string | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url.origin : null;
+  } catch {
+    return null;
+  }
+}
 
 @Controller()
 export class LogisticsController {
@@ -336,27 +347,33 @@ export class LogisticsController {
     const maxResult = await this.prisma.manualOrder.aggregate({ where: { userId: user.ownerId }, _max: { orderNumber: true } });
     const orderNumber = (maxResult._max.orderNumber ?? 0) + 1;
 
-    const order = await this.prisma.manualOrder.create({
-      data: {
-        userId: user.ownerId,
-        businessId: user.businessId ?? user.ownerId,
-        orderNumber,
-        customerName: body.customerName,
-        customerPhone: body.customerPhone,
-        city: body.city,
-        address: body.address,
-        deliveryFee: body.deliveryFee ?? 0,
-        totalAmount,
-        notes: body.notes,
-        partnerId: body.partnerId || null,
-        locationId: body.locationId || null,
-        scheduledAt: body.scheduledAt ? new Date(body.scheduledAt) : null,
-        items: {
-          create: body.items.map(i => ({ productId: i.productId, quantity: i.quantity, unitPrice: i.unitPrice })),
+    const order = await this.prisma.$transaction(async tx => {
+      // Locked until the order exists, so two orders cannot reserve the same units.
+      await lockProducts(tx, body.items.map(i => i.productId));
+      await assertStockAvailable(tx, body.items);
+
+      return tx.manualOrder.create({
+        data: {
+          userId: user.ownerId,
+          businessId: user.businessId ?? user.ownerId,
+          orderNumber,
+          customerName: body.customerName,
+          customerPhone: body.customerPhone,
+          city: body.city,
+          address: body.address,
+          deliveryFee: body.deliveryFee ?? 0,
+          totalAmount,
+          notes: body.notes,
+          partnerId: body.partnerId || null,
+          locationId: body.locationId || null,
+          scheduledAt: body.scheduledAt ? new Date(body.scheduledAt) : null,
+          items: {
+            create: body.items.map(i => ({ productId: i.productId, quantity: i.quantity, unitPrice: i.unitPrice })),
+          },
         },
-      },
-      include: { items: { include: { product: true } }, partner: true, location: true },
-    });
+        include: { items: { include: { product: true } }, partner: true, location: true },
+      });
+    }, { timeout: 20_000 });
 
     // Stock is decremented only when the order is marked "delivered" — not at creation.
     return order;
@@ -379,6 +396,7 @@ export class LogisticsController {
     @CurrentUser() user: AuthUser,
     @Param('id') id: string,
     @Body() body: { status: string; deliveryPersonName?: string; partnerId?: string; collectedUsd?: number; collectedCdf?: number },
+    @Headers('origin') origin?: string,
   ) {
     const order = await this.prisma.manualOrder.findFirst({
       where: { id, ...this.where(user) },
@@ -406,22 +424,13 @@ export class LogisticsController {
       deliveryNum = todayCount + 1;
     }
 
-    // willDeliver: let LogisticsService.markDelivered() be the one place that flips the
-    // status to 'delivered' (it also does the stock movement atomically) — omit status
-    // here in that case so the two don't race/double-write.
-    const willDeliver = body.status === 'delivered' && order.status !== 'delivered';
-
-    const updated = await this.prisma.manualOrder.update({
-      where: { id },
-      data: {
-        ...(willDeliver ? {} : { status: body.status }),
-        ...(body.partnerId ? { partnerId: body.partnerId } : {}),
-        ...(isNewDispatch ? { dispatchedAt: new Date() } : {}),
-        ...(isUnassign ? { dispatchedAt: null, partnerId: null } : {}),
-        ...(body.deliveryPersonName ? { deliveryPersonName: body.deliveryPersonName } : {}),
-        ...(body.status === 'delivered' && body.collectedUsd != null ? { collectedUsd: body.collectedUsd } : {}),
-        ...(body.status === 'delivered' && body.collectedCdf != null ? { collectedCdf: body.collectedCdf } : {}),
-      },
+    const updated = await this.logisticsService.setStatus(order, body.status, {
+      ...(body.partnerId ? { partnerId: body.partnerId } : {}),
+      ...(isNewDispatch ? { dispatchedAt: new Date() } : {}),
+      ...(isUnassign ? { dispatchedAt: null, partnerId: null } : {}),
+      ...(body.deliveryPersonName ? { deliveryPersonName: body.deliveryPersonName } : {}),
+      ...(body.status === 'delivered' && body.collectedUsd != null ? { collectedUsd: body.collectedUsd } : {}),
+      ...(body.status === 'delivered' && body.collectedCdf != null ? { collectedCdf: body.collectedCdf } : {}),
     });
 
     // Auto-send WA when dispatched to a partner
@@ -448,7 +457,8 @@ export class LogisticsController {
           return `• ${i.product?.name ?? 'Produit'} × ${i.quantity} — ${price}`;
         }).join('\n');
 
-        const portalBase = (process.env.FRONTEND_URL ?? 'http://localhost:5173').replace(/\/$/, '');
+        // The domain the user is working on, so the link follows whichever one sent the order
+        const portalBase = webOrigin(origin) ?? (process.env.FRONTEND_URL ?? 'http://localhost:5173').replace(/\/$/, '');
         const portalLink = `${portalBase}/#/partenaire/${partner.token}`;
 
         const scheduledLine = order.scheduledAt
@@ -484,11 +494,6 @@ export class LogisticsController {
           .then(sent => this.logger.log(`[dispatch] WA sent=${sent} for order=${id}`))
           .catch(err => this.logger.warn(`[dispatch] WA error: ${err?.message}`));
       }
-    }
-
-    if (willDeliver) {
-      await this.logisticsService.markDelivered(id);
-      return { ...updated, status: 'delivered' };
     }
 
     return updated;
@@ -538,9 +543,23 @@ export class LogisticsController {
     return { sent };
   }
 
+  // Only drafts: they hold no stock and no sale, so nothing else has to follow.
+  @Post('my/logistics/orders/delete-drafts')
+  async deleteDrafts(@CurrentUser() user: AuthUser, @Body() body: { ids: string[] }) {
+    const where = { id: { in: body.ids }, ...this.where(user), isDraft: true, status: { not: 'delivered' } };
+    return this.prisma.$transaction(async tx => {
+      await detachStoreOrders(tx, where);
+      return tx.manualOrder.deleteMany({ where });
+    }, { timeout: 20_000 });
+  }
+
   @Delete('my/logistics/orders/:id')
   deleteOrder(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.prisma.manualOrder.deleteMany({ where: { id, ...this.where(user) } });
+    const where = { id, ...this.where(user) };
+    return this.prisma.$transaction(async tx => {
+      await detachStoreOrders(tx, where);
+      return tx.manualOrder.deleteMany({ where });
+    });
   }
 
   // ── Follow-up automatique ──────────────────────────────────────────────────
@@ -578,9 +597,8 @@ export class LogisticsController {
   }
 
   @Post('my/logistics/followup/trigger-relance')
-  async triggerRelance(@CurrentUser() user: AuthUser) {
-    const sent = await this.followUp.triggerRelance(user.ownerId, user.businessId || null);
-    return { sent };
+  triggerRelance(@CurrentUser() user: AuthUser, @Body() body: { orderIds?: string[] }) {
+    return this.followUp.triggerRelance(user.ownerId, user.businessId || null, body?.orderIds);
   }
 
   @Post('my/logistics/followup/trigger-loyalty')
@@ -661,29 +679,48 @@ export class LogisticsController {
       ? body.items.reduce((s, i) => s + i.quantity * i.unitPrice, 0)
       : Number(order.totalAmount);
 
+    return this.prisma.$transaction(async tx => {
+      // A draft reserves nothing yet: it is checked when confirmed.
+      if (body.items && !order.isDraft) {
+        await lockProducts(tx, body.items.map(i => i.productId));
+        await assertStockAvailable(tx, body.items, { excludeOrderId: id });
+      }
+
+      return tx.manualOrder.update({
+        where: { id },
+        data: {
+          ...(body.customerName !== undefined && { customerName: body.customerName }),
+          ...(body.customerPhone !== undefined && { customerPhone: body.customerPhone }),
+          ...(body.city !== undefined && { city: body.city }),
+          ...(body.address !== undefined && { address: body.address }),
+          ...(body.deliveryFee !== undefined && { deliveryFee: body.deliveryFee }),
+          ...(body.notes !== undefined && { notes: body.notes }),
+          totalAmount,
+          ...(body.items && {
+            items: {
+              deleteMany: {},
+              create: body.items.map(i => ({ productId: i.productId, quantity: i.quantity, unitPrice: i.unitPrice })),
+            },
+          }),
+        },
+        include: { items: { include: { product: true } }, partner: true, location: true },
+      });
+    }, { timeout: 20_000 });
+  }
+
+  // Toggle exclude from relance
+  @Patch('my/logistics/orders/:id/relance-toggle')
+  async toggleRelance(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    const order = await this.prisma.manualOrder.findFirst({ where: { id, ...this.where(user) } });
+    if (!order) throw new NotFoundException('Commande introuvable');
     return this.prisma.manualOrder.update({
       where: { id },
-      data: {
-        ...(body.customerName !== undefined && { customerName: body.customerName }),
-        ...(body.customerPhone !== undefined && { customerPhone: body.customerPhone }),
-        ...(body.city !== undefined && { city: body.city }),
-        ...(body.address !== undefined && { address: body.address }),
-        ...(body.deliveryFee !== undefined && { deliveryFee: body.deliveryFee }),
-        ...(body.notes !== undefined && { notes: body.notes }),
-        totalAmount,
-        ...(body.items && {
-          items: {
-            deleteMany: {},
-            create: body.items.map(i => ({ productId: i.productId, quantity: i.quantity, unitPrice: i.unitPrice })),
-          },
-        }),
-      },
+      data: { excludeFromRelance: !order.excludeFromRelance },
       include: { items: { include: { product: true } }, partner: true, location: true },
     });
   }
 
-  // Toggle exclude from relance
-@Post('my/logistics/orders/:id/confirm-draft')
+  @Post('my/logistics/orders/:id/confirm-draft')
   async confirmDraft(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     const order = await this.prisma.manualOrder.findFirst({
       where: { id, ...this.where(user), isDraft: true },
@@ -691,14 +728,7 @@ export class LogisticsController {
     });
     if (!order) throw new Error('Brouillon introuvable');
 
-    // Stock is decremented only when the order is marked "delivered" — not at confirmation.
-    const confirmed = await this.prisma.manualOrder.update({
-      where: { id },
-      data: { isDraft: false, status: 'pending' },
-      include: { items: { include: { product: true } }, partner: true, location: true },
-    });
-
-    return confirmed;
+    return this.logisticsService.confirmDraft(order);
   }
 
   // ── Versements (admin) ────────────────────────────────────────────

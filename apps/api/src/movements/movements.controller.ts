@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Body, Param } from '@nestjs/common';
 import { MovementsService } from './movements.service';
-import { CreateMovementDto } from './dto/create-movement.dto';
+import { CreateInventoryDto, CreateMovementDto } from './dto/create-movement.dto';
 import { CurrentUser, AuthUser } from '../auth/current-user.decorator';
 
 @Controller('movements')
@@ -20,5 +20,10 @@ export class MovementsController {
   @Post()
   create(@Body() dto: CreateMovementDto, @CurrentUser() user: AuthUser) {
     return this.service.create(dto, user.ownerId, user.businessId || undefined);
+  }
+
+  @Post('inventory')
+  inventory(@Body() dto: CreateInventoryDto, @CurrentUser() user: AuthUser) {
+    return this.service.inventory(dto, user.ownerId, user.businessId || undefined);
   }
 }

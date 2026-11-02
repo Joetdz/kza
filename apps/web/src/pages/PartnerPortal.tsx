@@ -233,7 +233,9 @@ function Portal({ data: initialData, token, onLogout }: {
           ? { ...o, status, deliveryPersonName: personName ?? o.deliveryPersonName }
           : o),
       }));
-    } catch { /* ignore */ }
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : 'Erreur lors du changement de statut');
+    }
     finally { setUpdatingId(null); }
   }
 
@@ -266,6 +268,8 @@ function Portal({ data: initialData, token, onLogout }: {
       setDeliveryPersonName('');
       setCollectedUsd('');
       setCollectedCdf('');
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : 'Erreur lors de la livraison');
     } finally { setSubmitting(false); }
   }
 

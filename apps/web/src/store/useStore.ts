@@ -1,7 +1,7 @@
 import { create } from 'zustand';
-import { format, subDays } from 'date-fns';
+import { format, startOfMonth } from 'date-fns';
 import type { Product, Sale, Expense, SalesGoal, StockMovement } from '../types';
-import { productsApi, movementsApi, salesApi, expensesApi, goalsApi, businessApi } from '../api';
+import { apiMessage, productsApi, movementsApi, salesApi, expensesApi, goalsApi, businessApi } from '../api';
 import { toast } from '../hooks/useToast';
 
 export type BusinessRole = 'owner' | 'manager' | 'operator';
@@ -66,7 +66,7 @@ interface AppStore {
   deleteProduct: (id: string) => Promise<void>;
 
   // Movement
-  addMovement: (m: Omit<StockMovement, 'id' | 'createdAt'>) => Promise<void>;
+  addMovement: (m: Omit<StockMovement, 'id' | 'createdAt'> & { unitCost?: number }) => Promise<void>;
 
   // Sale actions
   addSale: (s: Omit<Sale, 'id' | 'createdAt'>) => Promise<void>;
@@ -109,7 +109,7 @@ export const useStore = create<AppStore>()((set, get) => ({
 
   sidebarOpen: false,
   dateRange: {
-    from: format(subDays(now, 30), 'yyyy-MM-dd'),
+    from: format(startOfMonth(now), 'yyyy-MM-dd'),
     to: format(now, 'yyyy-MM-dd'),
   },
   cpaThreshold: 200,
@@ -243,7 +243,7 @@ export const useStore = create<AppStore>()((set, get) => ({
       toast.success(m.type === 'in' ? 'Entrée de stock enregistrée' : 'Sortie de stock enregistrée');
       // Sync authoritative quantities from DB in background
       productsApi.getAll().then(products => set({ products })).catch(() => {});
-    } catch { toast.error('Erreur lors du mouvement de stock'); throw new Error(); }
+    } catch (e) { toast.error(apiMessage(e, 'Erreur lors du mouvement de stock')); throw new Error(); }
   },
 
   // ─── Sales ─────────────────────────────────────────────────
@@ -278,7 +278,7 @@ export const useStore = create<AppStore>()((set, get) => ({
       if (takesStock(created.status)) {
         productsApi.getAll().then(products => set({ products })).catch(() => {});
       }
-    } catch { toast.error('Erreur lors de l\'enregistrement de la vente'); throw new Error(); }
+    } catch (e) { toast.error(apiMessage(e, 'Erreur lors de l\'enregistrement de la vente')); throw new Error(); }
   },
   updateSaleStatus: async (id, newStatus) => {
     try {
@@ -336,10 +336,10 @@ export const useStore = create<AppStore>()((set, get) => ({
       const labels: Record<string, string> = { paid: 'Payé', pending: 'En attente', cancelled: 'Annulé' };
       toast.success(`Statut mis à jour → ${labels[newStatus] ?? newStatus}`);
       // Sync authoritative quantities from DB in background when stock is affected
-      if ((oldStatus === 'paid') !== (newStatus === 'paid')) {
+      if (takesStock(oldStatus) !== takesStock(newStatus)) {
         productsApi.getAll().then(products => set({ products })).catch(() => {});
       }
-    } catch { toast.error('Erreur lors du changement de statut'); throw new Error(); }
+    } catch (e) { toast.error(apiMessage(e, 'Erreur lors du changement de statut')); throw new Error(); }
   },
   deleteSale: async (id) => {
     try {
@@ -375,7 +375,7 @@ export const useStore = create<AppStore>()((set, get) => ({
       if (wasPaid) {
         productsApi.getAll().then(products => set({ products })).catch(() => {});
       }
-    } catch { toast.error('Erreur lors de la suppression'); throw new Error(); }
+    } catch (e) { toast.error(apiMessage(e, 'Erreur lors de la suppression')); throw new Error(); }
   },
 
   // ─── Expenses ──────────────────────────────────────────────

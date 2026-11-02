@@ -25,7 +25,7 @@ export function Dashboard() {
   const { products, sales, expenses, dateRange, cpaThreshold } = useStore();
   const { fmt: MAD } = useCurrency();
   const { has } = useModules();
-  const { terms } = useSegment();
+  const { terms, words } = useSegment();
   // Services-only businesses have no stock to watch.
   const tracksStock = has('stock');
   const { from, to } = dateRange;
@@ -186,7 +186,7 @@ export function Dashboard() {
         {tracksStock && <KpiCard
           label="Stock critique"
           value={`${lowStockProducts.length}`}
-          sub={lowStockProducts.length > 0 ? 'Produits en alerte' : 'Tout est OK'}
+          sub={lowStockProducts.length > 0 ? `${words.Items} en alerte` : 'Tout est OK'}
           icon={AlertTriangle}
           iconColor={lowStockProducts.length > 0 ? 'text-red-500' : 'text-emerald-500'}
           trend={lowStockProducts.length > 0 ? 'down' : 'up'}
@@ -197,7 +197,7 @@ export function Dashboard() {
           value={MAD(kpis.totalStockValue)}
           sub={selectedProduct
             ? `${selectedProduct.quantity} unités × ${MAD(selectedProduct.sellingPrice > 0 ? selectedProduct.sellingPrice : selectedProduct.acquisitionCost)}`
-            : `${products.length} produits`}
+            : `${products.length} ${terms.items}`}
           icon={Package}
           iconColor="text-cyan-500"
         />}

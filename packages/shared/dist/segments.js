@@ -16,6 +16,7 @@ exports.solutionStatus = solutionStatus;
 exports.segmentForSector = segmentForSector;
 exports.sectorLabel = sectorLabel;
 exports.termsFor = termsFor;
+exports.wordsFor = wordsFor;
 exports.firstItem = firstItem;
 exports.allItems = allItems;
 exports.orderNav = orderNav;
@@ -409,8 +410,40 @@ function experienceFor(sector) {
 }
 /** Words for the catalogue. Without stock tracking, "Stock" becomes "Catalogue". */
 function termsFor(sector, tracksStock) {
+    // No segment chosen and no stock to track: what it sells can only be services.
+    if (!segmentForSector(sector) && !tracksStock)
+        return OFFER_TERMS;
     const terms = experienceFor(sector).terms;
     return terms.catalogue === 'Stock' && !tracksStock ? { ...terms, catalogue: 'Catalogue' } : terms;
+}
+/** The catalogue's word with its articles and agreement, for sentences and labels. */
+function wordsFor({ item, items, feminine }) {
+    const elided = /^[aeiouhéèê]/i.test(item);
+    const capital = (s) => s[0].toUpperCase() + s.slice(1);
+    return {
+        Item: capital(item),
+        Items: capital(items),
+        /** Agreement ending: `vendu${e}s`. */
+        e: feminine ? 'e' : '',
+        /** "un produit" / "une prestation" */
+        oneItem: `${feminine ? 'une' : 'un'} ${item}`,
+        /** "le produit" / "la prestation" / "l'article" */
+        theItem: elided ? `l'${item}` : `${feminine ? 'la' : 'le'} ${item}`,
+        /** "du produit" / "de la prestation" / "de l'article" */
+        ofItem: elided ? `de l'${item}` : `${feminine ? 'de la' : 'du'} ${item}`,
+        /** "ce produit" / "cette prestation" / "cet article" */
+        thisItem: `${feminine ? 'cette' : elided ? 'cet' : 'ce'} ${item}`,
+        /** "Nouveau produit" / "Nouvelle prestation" / "Nouvel article" */
+        newItem: `${feminine ? 'Nouvelle' : elided ? 'Nouvel' : 'Nouveau'} ${item}`,
+        /** "Aucun produit" / "Aucune prestation" */
+        noItem: `${feminine ? 'Aucune' : 'Aucun'} ${item}`,
+        /** "tous les produits" / "toutes les prestations" */
+        everyItem: `${feminine ? 'toutes' : 'tous'} les ${items}`,
+        /** "Produit inconnu" / "Prestation inconnue" */
+        unknownItem: `${capital(item)} ${feminine ? 'inconnue' : 'inconnu'}`,
+        /** "Produit supprimé" / "Prestation supprimée" */
+        deletedItem: `${capital(item)} ${feminine ? 'supprimée' : 'supprimé'}`,
+    };
 }
 /** "premier produit" / "première prestation". */
 function firstItem(terms) {

@@ -3,7 +3,8 @@ import { createPortal } from 'react-dom';
 import { Plus, Trash2, MapPin, Truck, ShoppingBag, ChevronRight, X, Package, MessageCircle, BarChart2, Link, Printer, Edit2, Check, Calendar, DollarSign, FileText, Bell, RefreshCw, Phone, Search, History } from 'lucide-react';
 import { CustomerHistoryPanel } from '../components/CustomerHistoryPanel';
 import { useStore } from '../store/useStore';
-import { logisticsApi, type StockLocation, type DeliveryPartner, type ManualOrder, type PartnerReport, type PartnerPayment, type FollowUpConfig, type FollowUpEntry, type CustomerLookup } from '../api/logistics';
+import { toast } from '../hooks/useToast';
+import { logisticsApi, type StockLocation, type DeliveryPartner, type ManualOrder, type RelanceOrder, type PartnerReport, type PartnerPayment, type FollowUpConfig, type FollowUpEntry, type CustomerLookup } from '../api/logistics';
 import { ScrollLock } from '../components/ui/ScrollLock';
 import { CitySelect } from '../components/CitySelect';
 import { waApi } from '../api/whatsapp';
@@ -79,6 +80,8 @@ export function Logistics() {
   // Orders filter & search
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedDrafts, setSelectedDrafts] = useState<Set<string>>(new Set());
+  const [deletingDrafts, setDeletingDrafts] = useState(false);
   // Edit non-draft order
   const [editOrderId, setEditOrderId] = useState<string | null>(null);
   const [editOrderForm, setEditOrderForm] = useState<Partial<ManualOrder & { items: any[] }>>({});
@@ -132,6 +135,8 @@ export function Logistics() {
   const [followUpTriggerLoading, setFollowUpTriggerLoading] = useState<'relance' | 'loyalty' | null>(null);
   const [followUpConfigDraft, setFollowUpConfigDraft] = useState<Partial<FollowUpConfig>>({});
   const [followUpPreview, setFollowUpPreview] = useState<{ type: 'relance' | 'loyalty'; orders: ManualOrder[] } | null>(null);
+  const [relanceOrders, setRelanceOrders] = useState<RelanceOrder[]>([]);
+  const [selectedRelance, setSelectedRelance] = useState<Set<string>>(new Set());
   const [followUpPreviewLoading, setFollowUpPreviewLoading] = useState<'relance' | 'loyalty' | null>(null);
 
   // Daily report
@@ -203,22 +208,33 @@ export function Logistics() {
   async function openFollowUpPreview(type: 'relance' | 'loyalty') {
     setFollowUpPreviewLoading(type);
     try {
-      const orders = type === 'relance'
-        ? await logisticsApi.previewRelance()
-        : await logisticsApi.previewLoyalty();
-      setFollowUpPreview({ type, orders });
+      if (type === 'relance') {
+        const orders = await logisticsApi.previewRelance();
+        setRelanceOrders(orders);
+        setSelectedRelance(new Set(orders.filter(o => o.relanceAction !== 'hold').map(o => o.id)));
+        setFollowUpPreview({ type, orders });
+      } else {
+        setFollowUpPreview({ type, orders: await logisticsApi.previewLoyalty() });
+      }
     } catch { /* ignore */ }
     finally { setFollowUpPreviewLoading(null); }
   }
 
   async function triggerFollowUp(type: 'relance' | 'loyalty') {
+    const chosen = relanceOrders.filter(o => selectedRelance.has(o.id));
+    if (type === 'relance') {
+      const toDelete = chosen.filter(o => o.relanceAction === 'delete').length;
+      if (toDelete > 0 && !confirm(`${toDelete} commande${toDelete > 1 ? 's' : ''} ayant déjà reçu 3 relances ${toDelete > 1 ? 'seront supprimées' : 'sera supprimée'} définitivement. Continuer ?`)) return;
+    }
     setFollowUpTriggerLoading(type);
     setFollowUpPreview(null);
     try {
       const res = type === 'relance'
-        ? await logisticsApi.triggerRelance()
+        ? await logisticsApi.triggerRelance(chosen.map(o => o.id))
         : await logisticsApi.triggerLoyalty();
-      alert(`${res.sent} message${res.sent !== 1 ? 's' : ''} envoyé${res.sent !== 1 ? 's' : ''}.`);
+      const deleted = (res as { deleted?: number }).deleted ?? 0;
+      alert(`${res.sent} message${res.sent !== 1 ? 's' : ''} envoyé${res.sent !== 1 ? 's' : ''}.${deleted > 0 ? ` ${deleted} commande${deleted > 1 ? 's' : ''} supprimée${deleted > 1 ? 's' : ''}.` : ''}`);
+      if (deleted > 0) setOrders(await logisticsApi.getOrders());
       setFollowUpHistory(await logisticsApi.getFollowUpHistory(100));
     } catch (e: any) {
       alert(e?.message ?? 'Erreur lors de l\'envoi');
@@ -420,8 +436,12 @@ export function Logistics() {
   }
 
   async function handleStatusChange(id: string, status: string, personName?: string) {
-    await logisticsApi.updateStatus(id, status, personName);
-    setOrders(prev => prev.map(o => o.id === id ? { ...o, status, deliveryPersonName: personName ?? o.deliveryPersonName } : o));
+    try {
+      await logisticsApi.updateStatus(id, status, personName);
+      setOrders(prev => prev.map(o => o.id === id ? { ...o, status, deliveryPersonName: personName ?? o.deliveryPersonName } : o));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Erreur lors du changement de statut');
+    }
   }
 
   async function confirmDispatch() {
@@ -470,6 +490,8 @@ export function Logistics() {
       setDeliveryPersonName('');
       setCollectedUsd('');
       setCollectedCdf('');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Erreur lors de la livraison');
     } finally { setSubmitting(false); }
   }
 
@@ -495,6 +517,37 @@ export function Logistics() {
     if (!confirm('Supprimer cette commande ?')) return;
     await logisticsApi.deleteOrder(id);
     setOrders(prev => prev.filter(o => o.id !== id));
+  }
+
+  function matchesSearch(o: ManualOrder) {
+    const q = searchQuery.trim().toLowerCase();
+    return !q
+      || orderNum(o.orderNumber).toLowerCase().includes(q)
+      || o.customerName.toLowerCase().includes(q)
+      || o.city.toLowerCase().includes(q)
+      || !!o.customerPhone?.toLowerCase().includes(q);
+  }
+
+  function toggleDraft(id: string) {
+    setSelectedDrafts(prev => {
+      const next = new Set(prev);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
+  }
+
+  async function handleDeleteDrafts(ids: string[]) {
+    if (!confirm(`Supprimer définitivement ${ids.length} brouillon${ids.length !== 1 ? 's' : ''} ?`)) return;
+    setDeletingDrafts(true);
+    try {
+      await logisticsApi.deleteDrafts(ids);
+      setOrders(prev => prev.filter(o => !ids.includes(o.id)));
+      setSelectedDrafts(new Set());
+    } catch {
+      toast.error('Erreur lors de la suppression des brouillons');
+    } finally {
+      setDeletingDrafts(false);
+    }
   }
 
   async function handleConfirmDraft(id: string) {
@@ -807,12 +860,19 @@ export function Logistics() {
             </div>
             {/* Filter + Search */}
             <div className="flex flex-wrap gap-2 mb-4">
-              {(['all', 'draft', 'pending', 'dispatched', 'delivered', 'returned', 'cancelled'] as const).map(s => (
-                <button key={s} onClick={() => setStatusFilter(s)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${statusFilter === s ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
-                  {s === 'all' ? 'Tous' : s === 'draft' ? 'Brouillons' : STATUS_LABELS[s]?.label ?? s}
-                </button>
-              ))}
+              {(['all', 'draft', 'pending', 'dispatched', 'delivered', 'returned', 'cancelled'] as const).map(s => {
+                // Same rules as the list below, so the count always matches what the filter shows.
+                const count = orders.filter(o => matchesSearch(o) && (
+                  s === 'all' || (s === 'draft' ? o.isDraft : !o.isDraft && o.status === s)
+                )).length;
+                return (
+                  <button key={s} onClick={() => setStatusFilter(s)}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${statusFilter === s ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
+                    {s === 'all' ? 'Tous' : s === 'draft' ? 'Brouillons' : STATUS_LABELS[s]?.label ?? s}
+                    <span className={`px-1.5 rounded-full text-[10px] leading-4 ${statusFilter === s ? 'bg-white/25 text-white' : 'bg-gray-200 text-gray-600'}`}>{count}</span>
+                  </button>
+                );
+              })}
               <div className="flex items-center gap-1.5 flex-1 min-w-[180px] border border-gray-200 rounded-xl px-3 py-1.5 bg-white focus-within:ring-2 focus-within:ring-indigo-400">
                 <Search size={13} className="text-gray-400 shrink-0" />
                 <input type="text" placeholder="Nom, ville, #commande…" value={searchQuery}
@@ -820,6 +880,25 @@ export function Logistics() {
                   className="flex-1 text-sm outline-none bg-transparent" />
               </div>
             </div>
+            {statusFilter === 'draft' && (() => {
+              const visible = orders.filter(o => o.isDraft && matchesSearch(o)).map(o => o.id);
+              if (visible.length === 0) return null;
+              const chosen = visible.filter(id => selectedDrafts.has(id));
+              const allChosen = chosen.length === visible.length;
+              return (
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-3 px-3 py-2 bg-amber-50 border border-amber-200 rounded-xl">
+                  <label className="flex items-center gap-2 text-xs font-semibold text-amber-800 cursor-pointer">
+                    <input type="checkbox" checked={allChosen} className="accent-amber-600"
+                      onChange={() => setSelectedDrafts(allChosen ? new Set() : new Set(visible))} />
+                    Tout sélectionner ({visible.length})
+                  </label>
+                  <button onClick={() => handleDeleteDrafts(chosen)} disabled={chosen.length === 0 || deletingDrafts}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-lg text-xs font-semibold hover:bg-red-700 disabled:opacity-40">
+                    <Trash2 size={12} /> {deletingDrafts ? 'Suppression…' : `Supprimer (${chosen.length})`}
+                  </button>
+                </div>
+              );
+            })()}
             <div className="space-y-3">
               {(() => {
                 const filteredOrders = orders.filter(o => {
@@ -827,19 +906,18 @@ export function Logistics() {
                     if (statusFilter === 'draft') { if (!o.isDraft) return false; }
                     else if (o.isDraft || o.status !== statusFilter) return false;
                   }
-                  if (searchQuery.trim()) {
-                    const q = searchQuery.toLowerCase();
-                    if (!orderNum(o.orderNumber).toLowerCase().includes(q) &&
-                        !o.customerName.toLowerCase().includes(q) &&
-                        !o.city.toLowerCase().includes(q) &&
-                        !(o.customerPhone?.toLowerCase().includes(q))) return false;
-                  }
-                  return true;
+                  return matchesSearch(o);
                 });
                 return filteredOrders.map(o => {
                 const st = STATUS_LABELS[o.status] ?? STATUS_LABELS.pending;
                 return (
                   <div key={o.id} className={`bg-white rounded-2xl p-4 border shadow-sm ${o.isDraft ? 'border-amber-200 bg-amber-50/30' : 'border-gray-100'}`}>
+                    {statusFilter === 'draft' && o.isDraft && (
+                      <label className="flex items-center gap-2 mb-2 text-xs text-gray-500 cursor-pointer w-fit">
+                        <input type="checkbox" checked={selectedDrafts.has(o.id)} onChange={() => toggleDraft(o.id)} className="accent-amber-600" />
+                        Sélectionner
+                      </label>
+                    )}
                     {/* Draft editing form */}
                     {o.isDraft && draftEditId === o.id ? (
                       <div className="space-y-3">
@@ -1157,6 +1235,17 @@ export function Logistics() {
                             </button>
                           </>
                         )}
+                        {!o.isDraft && o.status === 'delivered' && (
+                          <button
+                            onClick={() => {
+                              if (window.confirm('Enregistrer le retour ? La vente sera annulée et les articles remis en stock.')) {
+                                handleStatusChange(o.id, 'returned');
+                              }
+                            }}
+                            className="px-2.5 py-1.5 bg-orange-50 text-orange-700 rounded-lg text-xs font-semibold hover:bg-orange-100">
+                            Retour client
+                          </button>
+                        )}
                         {/* Edit non-draft order */}
                         {!o.isDraft && o.status !== 'delivered' && (
                           <button
@@ -1287,7 +1376,7 @@ export function Logistics() {
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="font-bold text-gray-900">Relance commandes non livrées</h3>
-                    <p className="text-xs text-gray-400 mt-0.5">Envoyé aux clients dont la commande est encore en attente ou assignée</p>
+                    <p className="text-xs text-gray-400 mt-0.5">Envoyé aux clients dont la commande est encore en attente ou assignée. Après 3 relances sans suite, la commande est supprimée au lieu d'une 4e relance (sauf si elle est chez le livreur).</p>
                   </div>
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input type="checkbox" checked={!!cfg.relanceEnabled}
@@ -1303,7 +1392,7 @@ export function Logistics() {
                     <input type="number" min="1" max="168" value={cfg.relanceDelayH ?? 24}
                       onChange={e => setFollowUpConfigDraft(d => ({ ...d, relanceDelayH: parseInt(e.target.value) || 24 }))}
                       className="w-24 border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-400 text-center" />
-                    <span className="text-sm text-gray-500">heure(s) après la création de la commande</span>
+                    <span className="text-sm text-gray-500">heure(s) après la création de la commande, puis entre chaque relance</span>
                   </div>
                 </div>
 
@@ -1346,32 +1435,51 @@ export function Logistics() {
                     </div>
                     {followUpPreview.orders.length > 0 && (
                       <>
+                        <div className="flex flex-wrap gap-2 mb-2">
+                          <button onClick={() => setSelectedRelance(new Set(relanceOrders.filter(o => o.relanceAction !== 'hold').map(o => o.id)))}
+                            className="px-2.5 py-1 rounded-lg bg-white border border-amber-200 text-xs font-semibold text-amber-800">Tout</button>
+                          <button onClick={() => setSelectedRelance(new Set(relanceOrders.filter(o => o.status === 'pending' && o.relanceAction !== 'hold').map(o => o.id)))}
+                            className="px-2.5 py-1 rounded-lg bg-white border border-amber-200 text-xs font-semibold text-amber-800">En attente seulement</button>
+                          <button onClick={() => setSelectedRelance(new Set())}
+                            className="px-2.5 py-1 rounded-lg bg-white border border-amber-200 text-xs font-semibold text-amber-800">Aucune</button>
+                        </div>
                         <div className="space-y-2 max-h-52 overflow-y-auto mb-3">
-                          {followUpPreview.orders.map(o => {
+                          {relanceOrders.map(o => {
                             const st = STATUS_LABELS[o.status] ?? STATUS_LABELS.pending;
                             return (
-                              <div key={o.id} className="flex items-center gap-3 bg-white rounded-lg px-3 py-2 border border-amber-100">
+                              <label key={o.id} className={`flex items-center gap-3 bg-white rounded-lg px-3 py-2 border border-amber-100 ${o.relanceAction === 'hold' ? 'opacity-60' : 'cursor-pointer'}`}>
+                                <input type="checkbox" className="accent-amber-600 shrink-0" disabled={o.relanceAction === 'hold'}
+                                  checked={selectedRelance.has(o.id)}
+                                  onChange={() => setSelectedRelance(prev => {
+                                    const next = new Set(prev);
+                                    if (!next.delete(o.id)) next.add(o.id);
+                                    return next;
+                                  })} />
                                 <div className="flex-1 min-w-0">
                                   <div className="flex items-center gap-2 flex-wrap">
                                     <span className="font-bold text-xs text-indigo-600">{orderNum(o.orderNumber)}</span>
                                     <span className="font-medium text-sm text-gray-800 truncate">{o.customerName}</span>
                                     <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${st.color}`}>{st.label}</span>
+                                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${o.relanceAction === 'send' ? 'bg-gray-100 text-gray-600' : 'bg-red-100 text-red-700'}`}>
+                                      {o.relanceAction === 'send' ? `${o.relanceCount}/3 relances` : o.relanceAction === 'delete' ? '3/3 : sera supprimée' : '3/3 : chez le livreur, à traiter'}
+                                    </span>
                                   </div>
                                   <p className="text-xs text-gray-400 truncate">{o.customerPhone} · {o.city}</p>
                                   <p className="text-xs text-gray-400">
                                     Créée le {new Date(o.createdAt).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })}
                                   </p>
                                 </div>
-                              </div>
+                              </label>
                             );
                           })}
                         </div>
-                        <button onClick={() => triggerFollowUp('relance')} disabled={!!followUpTriggerLoading}
+                        <p className="text-[11px] text-amber-700 mb-2">20 messages au maximum par envoi, et un seul par client.</p>
+                        <button onClick={() => triggerFollowUp('relance')} disabled={!!followUpTriggerLoading || selectedRelance.size === 0}
                           className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-amber-600 text-white text-sm font-semibold hover:bg-amber-700 disabled:opacity-50 transition-colors">
                           {followUpTriggerLoading === 'relance'
                             ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                             : <Bell size={14} />}
-                          Envoyer à tous ({followUpPreview.orders.length})
+                          Traiter la sélection ({selectedRelance.size})
                         </button>
                       </>
                     )}
@@ -1483,8 +1591,8 @@ export function Logistics() {
                     {followUpHistory.map(entry => (
                       <div key={entry.id} className="flex items-start gap-3 py-2 border-b border-gray-50 last:border-0">
                         <span className={`mt-0.5 shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full
-                          ${entry.type === 'relance' ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>
-                          {entry.type === 'relance' ? 'Relance' : 'Fidélisation'}
+                          ${entry.type === 'relance' ? 'bg-amber-100 text-amber-700' : entry.type === 'relance_deleted' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+                          {entry.type === 'relance' ? 'Relance' : entry.type === 'relance_deleted' ? 'Suppression' : 'Fidélisation'}
                         </span>
                         <div className="flex-1 min-w-0">
                           <p className="text-xs text-gray-500 truncate">{entry.phone}</p>

@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, type Product } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { lockProducts, reservedByProduct } from '../movements/stock-rules';
 import { CreateProductDto, CreateVariantsDto } from './dto/create-product.dto';
 
 const clean = (s: string | null | undefined): string | null => s?.replace(/\s+/g, ' ').trim() || null;
@@ -64,6 +65,8 @@ export class ProductsService {
         data: {
           productId: product.id,
           type: 'in',
+          kind: 'initial',
+          unitCost: dto.acquisitionCost || null,
           quantity: dto.quantity,
           reason: 'Stock initial',
           date: new Date(dto.entryDate),
@@ -83,6 +86,15 @@ export class ProductsService {
     const group = dto.variantGroup !== undefined ? clean(dto.variantGroup) : existing.variantGroup;
     const label = dto.variantLabel !== undefined ? clean(dto.variantLabel) : existing.variantLabel;
     const name = group && label ? variantName(group, label) : dto.name;
+
+    // Once a product tracks stock, these only change through stock movements. The alert
+    // threshold stays editable: it is a setting, not stock data.
+    const stockLocked = existing.trackStock && dto.trackStock !== false;
+    if (stockLocked) {
+      delete dto.quantity;
+      delete dto.acquisitionCost;
+      delete dto.entryDate;
+    }
 
     const updated = await this.prisma.product.update({
       where: { id },
@@ -113,6 +125,7 @@ export class ProductsService {
           data: {
             productId: id,
             type: delta > 0 ? 'in' : 'out',
+            kind: 'inventory',
             quantity: Math.abs(delta),
             reason: 'Ajustement manuel',
             date: new Date(),
@@ -183,6 +196,12 @@ export class ProductsService {
     return { id };
   }
 
+  /** Units promised to orders and pending sales, per product (see reservedByProduct). */
+  async reservations(userId: string, businessId?: string) {
+    const where = businessId ? { businessId } : { userId };
+    return Object.fromEntries(await reservedByProduct(this.prisma, where));
+  }
+
   async reconcile(userId: string, businessId?: string) {
     const where = businessId ? { businessId } : { userId };
     const products = await this.prisma.product.findMany({ where });
@@ -194,45 +213,66 @@ export class ProductsService {
       'Retour — vente annulée', 'Retour — vente suspendue', 'Retour — vente supprimée',
     ];
 
-    let fixedCount = 0;
+    const net = (movements: { type: string; quantity: number }[]) =>
+      movements.reduce((acc, m) => (m.type === 'in' ? acc + m.quantity : acc - m.quantity), 0);
 
-    const updated = await Promise.all(
-      products
-        .filter(p => p.trackStock)
-        .map(async (product) => {
+    let fixedCount = 0;
+    const updated: Product[] = [];
+
+    // One at a time, each locked: a sale landing mid-recount would otherwise be overwritten.
+    for (const { id } of products.filter(p => p.trackStock)) {
+      updated.push(await this.prisma.$transaction(async tx => {
+        const [product] = await lockProducts(tx, [id]);
+
+        // The last physical count is the truth at its date. Everything since then wrote its
+        // movement, so old sales and old drift no longer matter.
+        const count = await tx.stockMovement.findFirst({
+          where: { productId: id, kind: 'inventory', countedQuantity: { not: null } },
+          orderBy: { createdAt: 'desc' },
+          select: { countedQuantity: true, createdAt: true },
+        });
+
+        let computed: number;
+        if (count) {
+          const since = await tx.stockMovement.findMany({
+            where: { productId: id, createdAt: { gt: count.createdAt } },
+            select: { type: true, quantity: true },
+          });
+          computed = count.countedQuantity! + net(since);
+        } else {
           // 1. Manual stock movements (stock initial, restocks, manual adjustments)
           //    Filter by productId only — businessId is null on old records
-          const movements = await this.prisma.stockMovement.findMany({
+          const movements = await tx.stockMovement.findMany({
             where: {
-              productId: product.id,
-              NOT: { reason: { in: SALE_REASONS } },
+              productId: id,
+              // Delivered orders also record a sale, counted in step 2; a return cancels it.
+              NOT: [
+                { reason: { in: SALE_REASONS } },
+                { reason: { startsWith: 'Commande #' } },
+                { reason: { startsWith: 'Retour — commande #' } },
+              ],
             },
             select: { type: true, quantity: true },
           });
 
-          const fromMovements = movements.reduce((acc, m) =>
-            m.type === 'in' ? acc + m.quantity : acc - m.quantity, 0);
-
-          // 2. All currently-paid sale items — source of truth for deductions.
-          //    Covers old sales that never created a StockMovement record.
-          const paidItems = await this.prisma.saleItem.findMany({
-            where: { productId: product.id, sale: { status: 'paid' } },
+          // 2. All sale items whose stock has left (paid or credit) — source of truth for
+          //    deductions. Covers old sales that never created a StockMovement record.
+          const paidItems = await tx.saleItem.findMany({
+            where: { productId: id, sale: { status: { in: ['paid', 'credit'] } } },
             select: { quantity: true },
           });
 
-          const fromSales = paidItems.reduce((acc, i) => acc + i.quantity, 0);
+          computed = net(movements) - paidItems.reduce((acc, i) => acc + i.quantity, 0);
+        }
 
-          const quantity = Math.max(0, fromMovements - fromSales);
+        const quantity = Math.max(0, computed);
 
-          if (Math.abs(quantity - product.quantity) < 0.001) return product;
+        if (Math.abs(quantity - product.quantity) < 0.001) return product;
 
-          fixedCount++;
-          return this.prisma.product.update({
-            where: { id: product.id },
-            data: { quantity },
-          });
-        }),
-    );
+        fixedCount++;
+        return tx.product.update({ where: { id }, data: { quantity } });
+      }));
+    }
 
     return { products: updated, fixedCount };
   }
