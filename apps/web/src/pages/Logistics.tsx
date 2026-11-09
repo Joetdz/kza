@@ -924,8 +924,9 @@ export function Logistics() {
                     {o.isDraft && draftEditId === o.id ? (
                       <div className="space-y-3">
                         <div className="flex items-center gap-2 mb-2">
-                          <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">Brouillon IA — Édition</span>
+                          <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">{o.storeOrder ? 'Brouillon' : 'Brouillon IA'} — Édition</span>
                           <span className="font-black text-indigo-600 text-sm">{orderNum(o.orderNumber)}</span>
+                          {o.storeOrder && <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-pink-100 text-pink-700">🛍️ Boutique</span>}
                         </div>
 
                         {/* Produits */}
@@ -1106,9 +1107,14 @@ export function Logistics() {
                           <span className="font-black text-indigo-600 text-sm">{orderNum(o.orderNumber)}</span>
                           <p className="font-bold text-gray-900">{o.customerName}</p>
                           {o.isDraft
-                            ? <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">Brouillon IA</span>
+                            ? <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">{o.storeOrder ? 'Brouillon' : 'Brouillon IA'}</span>
                             : <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${st.color}`}>{st.label}</span>
                           }
+                          {o.storeOrder && (
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-pink-100 text-pink-700" title="Commande passée sur la boutique en ligne">
+                              🛍️ Boutique
+                            </span>
+                          )}
                           {/* Rank in this customer's history — only worth showing past the first */}
                           {!!o.customerOrderRank && o.customerOrderRank > 1 && (
                             <span

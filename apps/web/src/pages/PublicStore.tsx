@@ -1,25 +1,32 @@
 import { useState, useEffect, useRef } from 'react';
-import { ShoppingCart, Plus, Minus, Trash2, Loader2, ArrowLeft, Package, CheckCircle, Play, Pause, Film, LayoutGrid, ShoppingBag, Volume2, VolumeX, Share2, Flame, Clock, Heart, Eye } from 'lucide-react';
+import { ShoppingCart, Plus, Minus, Trash2, Loader2, ArrowLeft, Package, CheckCircle, Play, Pause, Film, LayoutGrid, ShoppingBag, Volume2, VolumeX, Share2, Flame, Clock, Heart, Eye, X, User } from 'lucide-react';
+import { cachedCustomer, customerApi, customerAuthHeader, customerToken, LAST_STORE_KEY, VISITOR_KEY } from '../api/customer';
+import { links, shareUrl } from '../lib/links';
 
 // Meta Pixel helper — no-op if pixel not loaded
 const fbq = (...args: any[]) => { (window as any).fbq?.(...args); };
 
+// On Ikele one visit crosses many stores: each pixel is set up once, beside the others.
+const pixelsInited = new Set<string>();
+
 function injectMetaPixel(pixelId: string) {
-  if ((window as any).fbqLoaded) return;
-  (window as any).fbqLoaded = true;
   const f = window as any, b = document, e = 'script';
-  if (f.fbq) return;
-  const n: any = f.fbq = function (...a: any[]) {
-    n.callMethod ? n.callMethod.apply(n, a) : n.queue.push(a);
-  };
-  if (!f._fbq) f._fbq = n;
-  n.push = n; n.loaded = true; n.version = '2.0'; n.queue = [];
-  const t = b.createElement(e) as HTMLScriptElement;
-  t.async = true;
-  t.src = 'https://connect.facebook.net/en_US/fbevents.js';
-  b.head.appendChild(t);
+  if (!f.fbqLoaded && !f.fbq) {
+    f.fbqLoaded = true;
+    const n: any = f.fbq = function (...a: any[]) {
+      n.callMethod ? n.callMethod.apply(n, a) : n.queue.push(a);
+    };
+    if (!f._fbq) f._fbq = n;
+    n.push = n; n.loaded = true; n.version = '2.0'; n.queue = [];
+    const t = b.createElement(e) as HTMLScriptElement;
+    t.async = true;
+    t.src = 'https://connect.facebook.net/en_US/fbevents.js';
+    b.head.appendChild(t);
+  }
+  if (pixelsInited.has(pixelId)) return;
+  pixelsInited.add(pixelId);
   fbq('init', pixelId);
-  fbq('track', 'PageView');
+  fbq('trackSingle', pixelId, 'PageView');
 }
 
 const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api';
@@ -50,7 +57,107 @@ function calcLineTotal(product: Product, qty: number): number {
   return qty * sp;
 }
 
+const EMPTY_FORM: OrderForm = { customerName: '', customerPhone: '', deliveryZone: '', commune: '', avenue: '', reference: '', notes: '' };
+
+const orderFormComplete = (form: OrderForm) =>
+  !!(form.customerName.trim() && form.customerPhone.trim() && form.deliveryZone && form.commune.trim() && form.avenue.trim());
+
+/**
+ * The order form of a store, kept in this browser between visits. A signed-in customer's
+ * name, number and default address fill the fields still empty.
+ */
+function useOrderForm(slug: string) {
+  const [form, setForm] = useState<OrderForm>(() => {
+    try {
+      return { ...EMPTY_FORM, ...JSON.parse(localStorage.getItem(`form_${slug}`) ?? '{}') };
+    } catch {
+      return EMPTY_FORM;
+    }
+  });
+
+  const [customer, setCustomer] = useState(() => (customerToken() ? cachedCustomer() : null));
+  useEffect(() => {
+    try { localStorage.setItem(LAST_STORE_KEY, slug); } catch { /* ignore */ }
+    if (!customerToken()) return;
+    Promise.all([customerApi.me(), customerApi.addresses().catch(() => [])])
+      .then(([me, addresses]) => {
+        setCustomer(me);
+        const address = addresses.find(a => a.isDefault) ?? addresses[0];
+        // Only empty fields: what the visitor already typed stays.
+        setForm(f => ({
+          ...f,
+          customerName: f.customerName || me.name,
+          customerPhone: f.customerPhone || me.phone,
+          ...(address && !f.avenue ? {
+            deliveryZone: f.deliveryZone || address.city,
+            commune: f.commune || address.commune,
+            avenue: address.avenue,
+            reference: f.reference || address.reference,
+          } : {}),
+        }));
+      })
+      .catch(() => setCustomer(null));
+  }, [slug]);
+
+  useEffect(() => {
+    localStorage.setItem(`form_${slug}`, JSON.stringify(form));
+  }, [form, slug]);
+
+  return { form, setForm, customer };
+}
+
+/** UTM params of the link that brought the visitor (FB Ads link tracking). */
+function readUtm(): Record<string, string> {
+  const p = new URLSearchParams(window.location.search);
+  const utm: Record<string, string> = {};
+  ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content'].forEach(k => {
+    const v = p.get(k); if (v) utm[k] = v;
+  });
+  return utm;
+}
+
+/** Sends the order and returns the WhatsApp link that tells the seller. Throws the message to show. */
+async function submitStoreOrder(
+  slug: string, form: OrderForm, cart: CartItem[], deliveryFee: number, utm: Record<string, string>,
+): Promise<string> {
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}/store/${slug}/order`, {
+      method: 'POST',
+      // Signed in: the order joins the customer's history.
+      headers: { 'Content-Type': 'application/json', ...customerAuthHeader() },
+      body: JSON.stringify({
+        customerName: form.customerName,
+        customerPhone: form.customerPhone,
+        deliveryZone: form.deliveryZone,
+        commune: form.commune || undefined,
+        avenue: form.avenue || undefined,
+        reference: form.reference || undefined,
+        deliveryFee,
+        notes: form.notes || undefined,
+        utmSource: utm.utm_source,
+        utmMedium: utm.utm_medium,
+        utmCampaign: utm.utm_campaign,
+        utmContent: utm.utm_content,
+        items: cart.map(i => ({
+          productId: i.product.id,
+          name: i.product.name,
+          qty: i.qty,
+          unitPrice: calcLineTotal(i.product, i.qty) / i.qty,
+        })),
+      }),
+    });
+  } catch {
+    throw new Error("Connexion impossible : votre commande n'a pas été envoyée. Réessayez.");
+  }
+  const body = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(body?.message ?? "Votre commande n'a pas pu être enregistrée. Réessayez.");
+  return body.waUrl;
+}
+
 interface CartDrawerProps {
+  /** Replaces « Mon panier (n articles) ». */
+  title?: string;
   cart: CartItem[];
   store: StoreData | null;
   color: string;
@@ -64,14 +171,13 @@ interface CartDrawerProps {
   onOrder: () => void;
 }
 
-function CartDrawer({ cart, store, color, form, ordering, total, totalItems, onClose, onUpdateQty, onFormChange, onOrder }: CartDrawerProps) {
+function CartDrawer({ title, cart, store, color, form, ordering, total, totalItems, onClose, onUpdateQty, onFormChange, onOrder }: CartDrawerProps) {
   const cur = store?.currency ?? 'CDF';
   const zones = store?.deliveryZones ?? [];
   const selectedZone = zones.find(z => z.city === form.deliveryZone);
   const deliveryFee = selectedZone?.fee ?? 0;
-  const grandTotal = total + deliveryFee;
 
-  const canOrder = !ordering && form.customerName.trim() && form.customerPhone.trim() && form.deliveryZone && form.commune.trim() && form.avenue.trim();
+  const canOrder = !ordering && orderFormComplete(form);
 
   return (
     <div className="fixed inset-0 z-50 flex">
@@ -80,7 +186,7 @@ function CartDrawer({ cart, store, color, form, ordering, total, totalItems, onC
 
         {/* Header fixe */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
-          <h2 className="font-bold text-gray-900">Mon panier ({totalItems} article{totalItems > 1 ? 's' : ''})</h2>
+          <h2 className="font-bold text-gray-900">{title ?? `Mon panier (${totalItems} article${totalItems > 1 ? 's' : ''})`}</h2>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors">
             <ArrowLeft size={18} className="text-gray-500" />
           </button>
@@ -223,7 +329,7 @@ function CartDrawer({ cart, store, color, form, ordering, total, totalItems, onC
 
 interface ProductMedia { id: string; url: string; type: string }
 
-const CITY_COMMUNES: Record<string, string[]> = {
+export const CITY_COMMUNES: Record<string, string[]> = {
   'Kinshasa': [
     'Bandalungwa', 'Barumbu', 'Bumbu', 'Gombe', 'Kalamu', 'Kasa-Vubu',
     'Kimbanseke', 'Kinshasa', 'Kintambo', 'Kisenso', 'Lemba', 'Limete',
@@ -263,30 +369,32 @@ interface Product {
 
 interface DeliveryZone { city: string; fee: number }
 
-interface FeedItem {
+export interface FeedItem {
   id: string;
   url: string;
   type: string;
   caption: string | null;
   audioUrl: string | null;
+  thumbnailUrl?: string | null;
   viewCount: number;
   likeCount: number;
   liked: boolean;
   product: Product;
 }
 
-// The store has no accounts: a random id kept in this browser stands for the visitor,
-// so a like counts once. Without storage it only lasts for this visit.
+// No account needed: a random id kept in this browser stands for the visitor, so a like
+// counts once. Signed in, it is the account's id. Without storage it lasts for this visit.
 let visitIdFallback: string | null = null;
-function visitorId(): string {
+export function visitorId(): string {
   const fresh = () => typeof crypto.randomUUID === 'function'
     ? crypto.randomUUID()
     // randomUUID only exists on https: same format from random bytes.
     : '10000000-1000-4000-8000-100000000000'.replace(/[018]/g, c =>
       (Number(c) ^ (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (Number(c) / 4)))).toString(16));
   try {
-    let id = localStorage.getItem('kza_visitor_id');
-    if (!id) { id = fresh(); localStorage.setItem('kza_visitor_id', id); }
+    // Signed in, this is the account's own id (set at login, see api/customer).
+    let id = localStorage.getItem(VISITOR_KEY);
+    if (!id) { id = fresh(); localStorage.setItem(VISITOR_KEY, id); }
     return id;
   } catch {
     return visitIdFallback ??= fresh();
@@ -309,7 +417,21 @@ function shuffleFeed(items: FeedItem[]): FeedItem[] {
   return out;
 }
 
-const compactCount = (n: number) => new Intl.NumberFormat('fr-FR', { notation: 'compact', maximumFractionDigits: 1 }).format(n);
+export interface StoreProfile {
+  name: string;
+  slug: string;
+  description: string | null;
+  logoUrl: string | null;
+  followers: number;
+  following: boolean;
+  likes: number;
+  products: number;
+}
+
+/** Two taps closer than this are a double tap (like), not two pauses. */
+const DOUBLE_TAP_MS = 280;
+
+export const compactCount = (n: number) => new Intl.NumberFormat('fr-FR', { notation: 'compact', maximumFractionDigits: 1 }).format(n);
 
 /** Seconds a reel stays on screen before it counts as seen. */
 const VIEW_AFTER_MS = 2000;
@@ -326,26 +448,45 @@ interface StoreData {
   products: Product[];
 }
 
-interface Props { slug: string; initialReelId?: string }
+interface Props {
+  slug: string;
+  initialReelId?: string;
+  /** Opens on the catalogue instead of the reels. */
+  initialView?: 'shop' | 'feed';
+  /** Put in the cart on opening, cart shown: "Commander" from Ikele's global feed. */
+  addProductId?: string;
+  /** Inside Ikele: a way back to the marketplace. */
+  onExit?: () => void;
+}
 
 // ── FeedCard — one TikTok slide ────────────────────────────────────────────────
 
-function FeedCard({
+export function FeedCard({
   item,
   color,
   currency,
   slug,
   isActive,
+  isNext,
+  profile,
   onOrder,
   onLike,
+  onOpenProfile,
+  onFollow,
 }: {
-  item: FeedItem;
+  item: Omit<FeedItem, 'product'> & { product: { name: string; sellingPrice: number } };
   color: string;
   currency: string;
   slug: string;
   isActive: boolean;
+  /** The reel after the one on screen: its video loads ahead so the swipe starts at once. */
+  isNext: boolean;
+  profile: Pick<StoreProfile, 'name' | 'slug' | 'logoUrl' | 'following'> | null;
   onOrder: () => void;
-  onLike: () => void;
+  /** liked: the state wanted, so a double tap only ever likes. */
+  onLike: (liked: boolean) => void;
+  onOpenProfile: () => void;
+  onFollow: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -405,7 +546,7 @@ function FeedCard({
 
   const handleShare = (e: React.MouseEvent) => {
     e.stopPropagation();
-    const url = `${window.location.origin}/#/boutique/${slug}/reel/${item.id}`;
+    const url = shareUrl(links.reel(slug, item.id));
     if (navigator.share) {
       navigator.share({ title: item.product.name, url }).catch(() => {});
     } else {
@@ -425,9 +566,32 @@ function FeedCard({
     setTimeout(() => setShowPlayIcon(false), 700);
   };
 
+  // TikTok: one tap pauses, a double tap likes with a heart where the finger is. The
+  // pause waits a moment, so a double tap doesn't pause too.
+  const lastTap = useRef(0);
+  const singleTapTimer = useRef<ReturnType<typeof setTimeout>>();
+  const [hearts, setHearts] = useState<{ id: number; x: number; y: number }[]>([]);
+  useEffect(() => () => clearTimeout(singleTapTimer.current), []);
+
+  const handleTap = (e: React.MouseEvent<HTMLDivElement>) => {
+    const now = Date.now();
+    if (now - lastTap.current < DOUBLE_TAP_MS) {
+      clearTimeout(singleTapTimer.current);
+      lastTap.current = 0;
+      const box = e.currentTarget.getBoundingClientRect();
+      const heart = { id: now, x: e.clientX - box.left, y: e.clientY - box.top };
+      setHearts(h => [...h, heart]);
+      setTimeout(() => setHearts(h => h.filter(x => x.id !== heart.id)), 900);
+      if (!item.liked) onLike(true);
+      return;
+    }
+    lastTap.current = now;
+    singleTapTimer.current = setTimeout(togglePlay, DOUBLE_TAP_MS);
+  };
+
   return (
-    <div className="relative h-screen w-full snap-start overflow-hidden bg-black flex-shrink-0"
-      onClick={togglePlay}>
+    <div className="relative h-full w-full snap-start overflow-hidden bg-black flex-shrink-0 select-none"
+      onClick={handleTap}>
       {/* Hidden audio track — auto-plays when slide is active */}
       {hasAudio && (
         <audio
@@ -447,6 +611,8 @@ function FeedCard({
           loop
           muted={videoMuted}
           playsInline
+          // Only the reel on screen and the next one download; the others wait their turn.
+          preload={isActive || isNext ? 'auto' : 'none'}
           className="absolute inset-0 w-full h-full object-cover"
         />
       ) : (
@@ -487,15 +653,44 @@ function FeedCard({
         </div>
       )}
 
-      {/* Likes and views (right side, as on TikTok) */}
+      {/* Double-tap hearts */}
+      {hearts.map(h => (
+        <Heart key={h.id} size={96}
+          className="absolute z-30 text-red-500 fill-red-500 pointer-events-none drop-shadow-xl"
+          style={{ left: h.x - 48, top: h.y - 48, animation: 'kza-heart 900ms ease-out forwards' }} />
+      ))}
+
+      {/* Store, likes and views (right side, as on TikTok) */}
       <div className="absolute right-3 bottom-56 z-20 flex flex-col items-center gap-4">
+        {profile && (
+          <div className="relative mb-2">
+            <button
+              onClick={e => { e.stopPropagation(); onOpenProfile(); }}
+              aria-label={`Profil de ${profile.name}`}
+              className="w-12 h-12 rounded-full border-2 border-white overflow-hidden flex items-center justify-center text-white font-black text-lg"
+              style={{ background: color }}>
+              {profile.logoUrl
+                ? <img src={profile.logoUrl} alt="" className="w-full h-full object-cover" />
+                : profile.name.charAt(0).toUpperCase()}
+            </button>
+            {!profile.following && (
+              <button
+                onClick={e => { e.stopPropagation(); onFollow(); }}
+                aria-label={`S'abonner à ${profile.name}`}
+                className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center">
+                <Plus size={13} strokeWidth={3} />
+              </button>
+            )}
+          </div>
+        )}
         <button
-          onClick={e => { e.stopPropagation(); onLike(); }}
+          onClick={e => { e.stopPropagation(); onLike(!item.liked); }}
           aria-pressed={item.liked}
           aria-label={item.liked ? 'Retirer le like' : 'Liker'}
           className="flex flex-col items-center gap-1 active:scale-90 transition-transform">
           <span className="w-11 h-11 rounded-full bg-black/30 backdrop-blur-sm flex items-center justify-center">
-            <Heart size={24} className={item.liked ? 'text-red-500 fill-red-500' : 'text-white'} />
+            <Heart size={24}
+              className={`transition-transform duration-200 ${item.liked ? 'text-red-500 fill-red-500 scale-110' : 'text-white'}`} />
           </span>
           <span className="text-white text-xs font-semibold drop-shadow">{compactCount(item.likeCount)}</span>
         </button>
@@ -509,6 +704,13 @@ function FeedCard({
 
       {/* Bottom bar — gradient + product info + CTA */}
       <div className="absolute bottom-0 left-0 right-0 px-4 pb-8 pt-14 bg-gradient-to-t from-black/80 via-black/40 to-transparent z-10">
+        {profile && (
+          <button
+            onClick={e => { e.stopPropagation(); onOpenProfile(); }}
+            className="text-white/90 text-sm font-semibold mb-1 drop-shadow">
+            @{profile.slug}
+          </button>
+        )}
         <p className="text-white font-black text-lg leading-tight mb-0.5 drop-shadow-lg line-clamp-1">
           {item.product.name}
         </p>
@@ -542,9 +744,169 @@ function FeedCard({
   );
 }
 
+// ── OrderConfirmed ─────────────────────────────────────────────────────────────
+
+function OrderConfirmed({ total, currency, color, signedIn, form, accountLink, onContinue, continueLabel = 'Continuer mes achats' }: {
+  total: number;
+  currency: string;
+  color: string;
+  signedIn: boolean;
+  /** Its name and number start the account the visitor is invited to create. */
+  form: OrderForm;
+  accountLink: string;
+  onContinue: () => void;
+  continueLabel?: string;
+}) {
+  return (
+    <div className="min-h-screen flex flex-col items-center justify-center gap-5 p-6 text-center"
+      style={{ background: 'linear-gradient(135deg, #f0fdf4, #dcfce7)' }}>
+      <div className="w-24 h-24 rounded-full flex items-center justify-center shadow-xl"
+        style={{ background: '#25d366' }}>
+        <CheckCircle size={44} color="white" strokeWidth={2.5} />
+      </div>
+      <div>
+        <h2 className="text-2xl font-black text-gray-900 mb-2">Commande reçue !</h2>
+        <p className="text-sm text-gray-500 max-w-xs leading-relaxed">
+          Votre commande a été transmise au vendeur. Il vous contactera sous peu pour confirmer la livraison.
+        </p>
+      </div>
+      <div className="bg-white rounded-2xl px-5 py-4 shadow-sm border border-green-100 text-sm text-gray-600 max-w-xs w-full">
+        <p className="font-semibold text-gray-900 mb-1">Paiement à la livraison</p>
+        <p className="font-bold text-lg mt-1" style={{ color: '#25d366' }}>{total.toLocaleString('fr-FR')} {currency}</p>
+      </div>
+      {signedIn ? (
+        <a href={accountLink} className="text-sm font-semibold text-gray-700 underline">
+          Suivre ma commande dans mon compte
+        </a>
+      ) : (
+        // Invited after the order, never before: an account is never needed to buy.
+        <div className="bg-white rounded-2xl px-5 py-4 shadow-sm border border-gray-100 max-w-xs w-full text-left">
+          <p className="font-bold text-gray-900 text-sm mb-1">Suis ta livraison en direct</p>
+          <p className="text-xs text-gray-500 mb-3">
+            Crée ton compte avec ton numéro WhatsApp : tu retrouves cette commande, tes adresses et les boutiques que tu suis.
+          </p>
+          <a
+            href={`${accountLink}&mode=signup&retour=1&tel=${encodeURIComponent(form.customerPhone)}&nom=${encodeURIComponent(form.customerName)}`}
+            className="block text-center py-2.5 rounded-xl text-sm font-semibold text-white" style={{ background: color }}>
+            Créer mon compte
+          </a>
+        </div>
+      )}
+      <button onClick={onContinue}
+        className="px-6 py-3 rounded-2xl text-sm font-semibold text-white transition-all shadow-md"
+        style={{ background: color }}>
+        {continueLabel}
+      </button>
+    </div>
+  );
+}
+
+// ── QuickOrder ─────────────────────────────────────────────────────────────────
+
+/**
+ * « Commander » under a reel on Ikele: that product alone and the order form, over the
+ * reel, then the confirmation. No catalogue on the way.
+ */
+export function QuickOrder({ slug, productId, onClose }: { slug: string; productId: string; onClose: () => void }) {
+  const [store, setStore] = useState<StoreData | null>(null);
+  const [cart, setCart] = useState<CartItem[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [ordering, setOrdering] = useState(false);
+  const [confirmed, setConfirmed] = useState<number | null>(null);
+  const { form, setForm, customer } = useOrderForm(slug);
+
+  useEffect(() => {
+    fetch(`${BASE}/store/${slug}`)
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then((data: StoreData) => {
+        const product = data.products.find(p => p.id === productId);
+        if (!product) { setError("Ce produit n'est plus disponible."); return; }
+        setStore(data);
+        setCart([{ product, qty: 1 }]);
+        if (data.metaPixelId) {
+          injectMetaPixel(data.metaPixelId);
+          fbq('trackSingle', data.metaPixelId, 'InitiateCheckout', {
+            content_ids: [product.id], content_type: 'product', value: product.sellingPrice, currency: data.currency,
+          });
+        }
+      })
+      .catch(() => setError('Connexion impossible, réessayez.'));
+  }, [slug, productId]);
+
+  const color = store?.primaryColor ?? '#6366f1';
+  const total = cart.reduce((sum, i) => sum + calcLineTotal(i.product, i.qty), 0);
+  const totalItems = cart.reduce((sum, i) => sum + i.qty, 0);
+  const deliveryFee = store?.deliveryZones?.find(z => z.city === form.deliveryZone)?.fee ?? 0;
+
+  // Removing the only product closes the form.
+  const updateQty = (_productId: string, delta: number) => {
+    const qty = (cart[0]?.qty ?? 0) + delta;
+    if (qty <= 0) onClose();
+    else setCart(c => c.map(i => ({ ...i, qty })));
+  };
+
+  const order = async () => {
+    if (!store || !orderFormComplete(form) || cart.length === 0) return;
+    setOrdering(true);
+    try {
+      const waUrl = await submitStoreOrder(slug, form, cart, deliveryFee, readUtm());
+      window.open(waUrl, '_blank');
+      if (store.metaPixelId) {
+        fbq('trackSingle', store.metaPixelId, 'Purchase', {
+          value: total + deliveryFee, currency: store.currency, content_ids: cart.map(i => i.product.id),
+          content_type: 'product', num_items: totalItems,
+        });
+      }
+      setConfirmed(total);
+      localStorage.removeItem(`form_${slug}`);
+    } catch (e) {
+      window.alert((e as Error).message);
+    } finally {
+      setOrdering(false);
+    }
+  };
+
+  if (confirmed !== null) {
+    return (
+      <div className="fixed inset-0 z-50 overflow-y-auto">
+        <OrderConfirmed total={confirmed} currency={store?.currency ?? 'CDF'} color={color} signedIn={!!customer}
+          form={form} accountLink={links.account(slug)} onContinue={onClose} continueLabel="Continuer" />
+      </div>
+    );
+  }
+
+  if (!store) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={onClose}>
+        <div className="w-full max-w-md bg-white rounded-t-3xl px-6 pt-8 pb-10 flex flex-col items-center gap-4 text-center"
+          onClick={e => e.stopPropagation()}>
+          {error ? (
+            <>
+              <Package size={36} className="text-gray-300" />
+              <p className="text-sm text-gray-600">{error}</p>
+              <button onClick={onClose} className="px-6 py-2.5 rounded-xl bg-gray-900 text-white text-sm font-semibold">Fermer</button>
+            </>
+          ) : <Loader2 size={28} className="animate-spin text-gray-400" />}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <CartDrawer
+      title="Commander" cart={cart} store={store} color={color} form={form}
+      ordering={ordering} total={total} totalItems={totalItems}
+      onClose={onClose}
+      onUpdateQty={updateQty}
+      onFormChange={(field, value) => setForm(f => ({ ...f, [field]: value }))}
+      onOrder={order}
+    />
+  );
+}
+
 // ── Main component ─────────────────────────────────────────────────────────────
 
-export function PublicStore({ slug, initialReelId }: Props) {
+export function PublicStore({ slug, initialReelId, initialView, addProductId, onExit }: Props) {
   const [store, setStore] = useState<StoreData | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
@@ -556,10 +918,12 @@ export function PublicStore({ slug, initialReelId }: Props) {
   });
   const [showCart, setShowCart] = useState(false);
   const [ordering, setOrdering] = useState(false);
-  const [confirmed, setConfirmed] = useState(false);
+  /** The total of the order just sent: the confirmation screen shows it. */
+  const [confirmed, setConfirmed] = useState<number | null>(null);
+  const accountLink = links.account(slug);
 
   // The store opens on its reels; a store without any opens on its catalogue instead.
-  const [view, setView] = useState<'shop' | 'feed'>('feed');
+  const [view, setView] = useState<'shop' | 'feed'>(initialView ?? (addProductId ? 'shop' : 'feed'));
   const openingFeed = useRef(true);
   const [feed, setFeed] = useState<FeedItem[]>([]);
   const [feedLoading, setFeedLoading] = useState(false);
@@ -567,42 +931,14 @@ export function PublicStore({ slug, initialReelId }: Props) {
   const feedRef = useRef<HTMLDivElement>(null);
   const [detailProduct, setDetailProduct] = useState<Product | null>(null);
 
-  const [form, setForm] = useState(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem(`form_${slug}`) ?? '{}');
-      return {
-        customerName: saved.customerName ?? '',
-        customerPhone: saved.customerPhone ?? '',
-        deliveryZone: saved.deliveryZone ?? '',
-        commune: saved.commune ?? '',
-        avenue: saved.avenue ?? '',
-        reference: saved.reference ?? '',
-        notes: saved.notes ?? '',
-      };
-    } catch {
-      return { customerName: '', customerPhone: '', deliveryZone: '', commune: '', avenue: '', reference: '', notes: '' };
-    }
-  });
+  const { form, setForm, customer } = useOrderForm(slug);
 
-  // Persist cart + form to localStorage
+  // Persist cart to localStorage
   useEffect(() => {
     localStorage.setItem(`cart_${slug}`, JSON.stringify(cart));
   }, [cart, slug]);
 
-  useEffect(() => {
-    localStorage.setItem(`form_${slug}`, JSON.stringify(form));
-  }, [form, slug]);
-
-  // Capture UTM params from URL (FB Ads link tracking)
-  const utmRef = useRef<Record<string, string>>({});
-  useEffect(() => {
-    const p = new URLSearchParams(window.location.search);
-    const utm: Record<string, string> = {};
-    ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content'].forEach(k => {
-      const v = p.get(k); if (v) utm[k] = v;
-    });
-    utmRef.current = utm;
-  }, []);
+  const utmRef = useRef(readUtm());
 
   useEffect(() => {
     fetch(`${BASE}/store/${slug}`)
@@ -642,7 +978,7 @@ export function PublicStore({ slug, initialReelId }: Props) {
     const container = feedRef.current;
     if (!container) return;
     const onScroll = () => {
-      const index = Math.round(container.scrollTop / window.innerHeight);
+      const index = Math.round(container.scrollTop / container.clientHeight);
       setActiveIndex(index);
     };
     container.addEventListener('scroll', onScroll, { passive: true });
@@ -663,13 +999,15 @@ export function PublicStore({ slug, initialReelId }: Props) {
     return () => clearTimeout(timer);
   }, [activeReelId, slug]);
 
-  const toggleLike = (id: string) => {
+  const setLike = (id: string, liked: boolean) => {
     const item = feed.find(it => it.id === id);
-    if (!item) return;
-    const liked = !item.liked;
+    if (!item || item.liked === liked) return;
+    const delta = liked ? 1 : -1;
     const apply = (likedNow: boolean, likeCount: number) =>
       setFeed(f => f.map(it => it.id === id ? { ...it, liked: likedNow, likeCount } : it));
-    apply(liked, Math.max(0, item.likeCount + (liked ? 1 : -1)));
+    const addToProfile = (d: number) => setProfile(p => p && { ...p, likes: Math.max(0, p.likes + d) });
+    apply(liked, Math.max(0, item.likeCount + delta));
+    addToProfile(delta);
     fetch(`${BASE}/store/${slug}/feed/${id}/like`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -677,7 +1015,32 @@ export function PublicStore({ slug, initialReelId }: Props) {
     })
       .then(r => r.ok ? r.json() : Promise.reject())
       .then((res: { liked: boolean; likeCount: number }) => apply(res.liked, res.likeCount))
-      .catch(() => apply(item.liked, item.likeCount));
+      .catch(() => { apply(item.liked, item.likeCount); addToProfile(-delta); });
+  };
+
+  // The store's profile in the feed: followers, likes, products.
+  const [profile, setProfile] = useState<StoreProfile | null>(null);
+  const [showProfile, setShowProfile] = useState(false);
+  useEffect(() => {
+    fetch(`${BASE}/store/${slug}/profile?visitor=${visitorId()}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(p => setProfile(p))
+      .catch(() => {});
+  }, [slug]);
+
+  const toggleFollow = () => {
+    if (!profile) return;
+    const following = !profile.following;
+    const before = profile;
+    setProfile({ ...profile, following, followers: Math.max(0, profile.followers + (following ? 1 : -1)) });
+    fetch(`${BASE}/store/${slug}/follow`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ visitorId: visitorId(), following }),
+    })
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then((res: { following: boolean; followers: number }) => setProfile(p => p && { ...p, ...res }))
+      .catch(() => setProfile(before));
   };
 
   // Deep-link: when initialReelId is set, open feed and scroll to the reel
@@ -688,9 +1051,20 @@ export function PublicStore({ slug, initialReelId }: Props) {
     setView('feed');
     setActiveIndex(idx);
     setTimeout(() => {
-      feedRef.current?.scrollTo({ top: idx * window.innerHeight, behavior: 'instant' });
+      feedRef.current?.scrollTo({ top: idx * (feedRef.current?.clientHeight ?? window.innerHeight), behavior: 'instant' });
     }, 100);
   }, [initialReelId, feed, loading]);
+
+  // "Commander" from Ikele's global feed: the product waits in the cart, ready to order.
+  const addedOnOpen = useRef(false);
+  useEffect(() => {
+    if (!addProductId || !store || addedOnOpen.current) return;
+    addedOnOpen.current = true;
+    const product = store.products.find(p => p.id === addProductId);
+    if (!product) return;
+    if (!cart.some(i => i.product.id === product.id)) addToCart(product);
+    setShowCart(true);
+  }, [addProductId, store]);
 
   const addToCart = (product: Product) => {
     setCart(prev => {
@@ -721,40 +1095,10 @@ export function PublicStore({ slug, initialReelId }: Props) {
   const grandTotal = total + deliveryFee;
 
   const handleOrder = async () => {
-    if (!form.customerName.trim() || !form.customerPhone.trim() || !form.deliveryZone || !form.commune.trim() || !form.avenue.trim() || cart.length === 0) return;
+    if (!orderFormComplete(form) || cart.length === 0) return;
     setOrdering(true);
     try {
-      const utm = utmRef.current;
-      const res = await fetch(`${BASE}/store/${slug}/order`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          customerName: form.customerName,
-          customerPhone: form.customerPhone,
-          deliveryZone: form.deliveryZone,
-          commune: form.commune || undefined,
-          avenue: form.avenue || undefined,
-          reference: form.reference || undefined,
-          deliveryFee,
-          notes: form.notes || undefined,
-          utmSource: utm.utm_source,
-          utmMedium: utm.utm_medium,
-          utmCampaign: utm.utm_campaign,
-          utmContent: utm.utm_content,
-          items: cart.map(i => ({
-            productId: i.product.id,
-            name: i.product.name,
-            qty: i.qty,
-            unitPrice: calcLineTotal(i.product, i.qty) / i.qty,
-          })),
-        }),
-      });
-      const body = await res.json().catch(() => null);
-      if (!res.ok) {
-        window.alert(body?.message ?? "Votre commande n'a pas pu être enregistrée. Réessayez.");
-        return;
-      }
-      const { waUrl } = body;
+      const waUrl = await submitStoreOrder(slug, form, cart, deliveryFee, utmRef.current);
       // Client envoie depuis son propre numéro vers le business
       window.open(waUrl, '_blank');
       fbq('track', 'Purchase', {
@@ -764,12 +1108,12 @@ export function PublicStore({ slug, initialReelId }: Props) {
         content_type: 'product',
         num_items: totalItems,
       });
-      setConfirmed(true);
+      setConfirmed(total);
       setCart([]);
       localStorage.removeItem(`cart_${slug}`);
       localStorage.removeItem(`form_${slug}`);
-    } catch {
-      window.alert("Connexion impossible : votre commande n'a pas été envoyée. Réessayez.");
+    } catch (e) {
+      window.alert((e as Error).message);
     }
     finally { setOrdering(false); }
   };
@@ -795,30 +1139,10 @@ export function PublicStore({ slug, initialReelId }: Props) {
     );
   }
 
-  if (confirmed) {
+  if (confirmed !== null) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center gap-5 p-6 text-center"
-        style={{ background: 'linear-gradient(135deg, #f0fdf4, #dcfce7)' }}>
-        <div className="w-24 h-24 rounded-full flex items-center justify-center shadow-xl"
-          style={{ background: '#25d366' }}>
-          <CheckCircle size={44} color="white" strokeWidth={2.5} />
-        </div>
-        <div>
-          <h2 className="text-2xl font-black text-gray-900 mb-2">Commande reçue !</h2>
-          <p className="text-sm text-gray-500 max-w-xs leading-relaxed">
-            Votre commande a été transmise au vendeur. Il vous contactera sous peu pour confirmer la livraison.
-          </p>
-        </div>
-        <div className="bg-white rounded-2xl px-5 py-4 shadow-sm border border-green-100 text-sm text-gray-600 max-w-xs w-full">
-          <p className="font-semibold text-gray-900 mb-1">Paiement à la livraison</p>
-          <p className="font-bold text-lg mt-1" style={{ color: '#25d366' }}>{total.toLocaleString('fr-FR')} {store?.currency ?? 'CDF'}</p>
-        </div>
-        <button onClick={() => setConfirmed(false)}
-          className="px-6 py-3 rounded-2xl text-sm font-semibold text-white transition-all shadow-md"
-          style={{ background: color }}>
-          Continuer mes achats
-        </button>
-      </div>
+      <OrderConfirmed total={confirmed} currency={store?.currency ?? 'CDF'} color={color} signedIn={!!customer}
+        form={form} accountLink={accountLink} onContinue={() => setConfirmed(null)} />
     );
   }
 
@@ -829,12 +1153,22 @@ export function PublicStore({ slug, initialReelId }: Props) {
       <div className="relative h-screen w-full bg-black overflow-hidden">
         {/* Back + cart buttons */}
         <div className="absolute top-4 left-4 z-20 flex items-center gap-2">
+          {onExit && (
+            <button onClick={onExit} aria-label="Retour"
+              className="w-9 h-9 rounded-xl bg-black/40 backdrop-blur-sm text-white flex items-center justify-center">
+              <ArrowLeft size={16} />
+            </button>
+          )}
           <button
             onClick={() => setView('shop')}
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-black/40 backdrop-blur-sm text-white text-sm font-medium">
             <LayoutGrid size={15} />
             Boutique
           </button>
+          <a href={accountLink} aria-label={customer ? 'Mon compte' : 'Se connecter'}
+            className="w-9 h-9 rounded-xl bg-black/40 backdrop-blur-sm text-white flex items-center justify-center">
+            <User size={15} />
+          </a>
           {totalItems > 0 && (
             <button
               onClick={() => setShowCart(true)}
@@ -877,11 +1211,66 @@ export function PublicStore({ slug, initialReelId }: Props) {
               currency={store?.currency ?? 'CDF'}
               slug={slug}
               isActive={i === activeIndex}
+              isNext={i === activeIndex + 1}
+              profile={profile}
               onOrder={() => { addToCart(item.product); setShowCart(true); }}
-              onLike={() => toggleLike(item.id)}
+              onLike={liked => setLike(item.id, liked)}
+              onOpenProfile={() => setShowProfile(true)}
+              onFollow={toggleFollow}
             />
           ))}
         </div>
+
+        <style>{`@keyframes kza-heart {
+          0% { transform: scale(0.4) rotate(-12deg); opacity: 0; }
+          20% { transform: scale(1.15) rotate(-12deg); opacity: 1; }
+          40% { transform: scale(1) rotate(-12deg); opacity: 1; }
+          100% { transform: scale(1.1) translateY(-80px) rotate(-12deg); opacity: 0; }
+        }`}</style>
+
+        {showProfile && profile && (
+          <div className="absolute inset-0 z-40 flex items-end" onClick={() => setShowProfile(false)}>
+            <div className="absolute inset-0 bg-black/50" />
+            <div className="relative w-full bg-white rounded-t-3xl px-5 pt-6 pb-8 text-center" onClick={e => e.stopPropagation()}>
+              <button onClick={() => setShowProfile(false)} aria-label="Fermer"
+                className="absolute top-3 right-3 w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
+                <X size={16} className="text-gray-500" />
+              </button>
+              <div className="w-20 h-20 mx-auto rounded-full overflow-hidden flex items-center justify-center text-white font-black text-3xl"
+                style={{ background: color }}>
+                {profile.logoUrl
+                  ? <img src={profile.logoUrl} alt="" className="w-full h-full object-cover" />
+                  : profile.name.charAt(0).toUpperCase()}
+              </div>
+              <p className="mt-3 font-black text-lg text-gray-900">{profile.name}</p>
+              <p className="text-sm text-gray-400">@{profile.slug}</p>
+              <div className="grid grid-cols-3 gap-2 my-5">
+                {([
+                  [profile.followers, 'Abonnés'],
+                  [profile.likes, "J'aime"],
+                  [profile.products, 'Produits'],
+                ] as const).map(([n, label]) => (
+                  <div key={label}>
+                    <p className="font-black text-lg text-gray-900">{compactCount(n)}</p>
+                    <p className="text-xs text-gray-500">{label}</p>
+                  </div>
+                ))}
+              </div>
+              {profile.description && <p className="text-sm text-gray-600 mb-5 line-clamp-3">{profile.description}</p>}
+              <div className="flex gap-2">
+                <button onClick={toggleFollow}
+                  className={`flex-1 py-3 rounded-2xl font-bold text-sm ${profile.following ? 'bg-gray-100 text-gray-700' : 'text-white'}`}
+                  style={profile.following ? undefined : { background: '#ef4444' }}>
+                  {profile.following ? 'Abonné ✓' : "S'abonner"}
+                </button>
+                <button onClick={() => { setShowProfile(false); setView('shop'); }}
+                  className="flex-1 py-3 rounded-2xl font-bold text-sm text-white" style={{ background: color }}>
+                  Voir les produits
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {showCart && (
           <CartDrawer
@@ -905,6 +1294,11 @@ export function PublicStore({ slug, initialReelId }: Props) {
       <header className="sticky top-0 z-30 bg-white border-b border-gray-100 shadow-sm">
         <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
+            {onExit && (
+              <button onClick={onExit} aria-label="Retour" className="-ml-1 p-1.5 rounded-lg hover:bg-gray-100 text-gray-600">
+                <ArrowLeft size={18} />
+              </button>
+            )}
             <div className="w-9 h-9 rounded-xl flex items-center justify-center text-white font-black text-sm"
               style={{ background: color }}>
               {store!.name.slice(0, 2).toUpperCase()}
@@ -916,6 +1310,10 @@ export function PublicStore({ slug, initialReelId }: Props) {
           </div>
 
           <div className="flex items-center gap-2">
+            <a href={accountLink} aria-label={customer ? 'Mon compte' : 'Se connecter'}
+              className="w-9 h-9 rounded-xl border border-gray-200 hover:border-gray-300 flex items-center justify-center text-gray-600">
+              <User size={16} />
+            </a>
             {/* Feed toggle */}
             <button
               onClick={() => setView('feed')}

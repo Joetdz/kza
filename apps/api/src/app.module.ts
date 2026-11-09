@@ -25,6 +25,8 @@ import { FundraisingModule } from './fundraising/fundraising.module';
 import { AgendaModule } from './agenda/agenda.module';
 import { CreditModule } from './credit/credit.module';
 import { DocumentsModule } from './documents/documents.module';
+import { CustomersModule } from './customers/customers.module';
+import { IkeleModule } from './ikele/ikele.module';
 
 @Module({
   imports: [
@@ -56,6 +58,8 @@ import { DocumentsModule } from './documents/documents.module';
     AgendaModule,
     CreditModule,
     DocumentsModule,
+    CustomersModule,
+    IkeleModule,
   ],
   providers: [
     {

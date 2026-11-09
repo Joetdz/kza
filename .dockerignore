@@ -4,6 +4,8 @@ node_modules
 **/.turbo
 apps/api/dist
 apps/web/dist
+apps/ikele/dist
+**/dev-dist
 .wwebjs_auth
 **/.env.local
 *.log

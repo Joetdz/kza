@@ -15,6 +15,7 @@ import { Export } from './pages/Export';
 import { Landing } from './pages/Landing';
 import { StorePage } from './pages/StorePage';
 import { PublicStore } from './pages/PublicStore';
+import { CustomerAccount } from './pages/CustomerAccount';
 import { OnboardingTour } from './components/OnboardingTour';
 import { BusinessModal } from './components/BusinessModal';
 import { ResetPasswordPage } from './pages/ResetPasswordPage';
@@ -101,7 +102,18 @@ function AppInner() {
     const parts = hash.split('/');
     const slug = parts[2];
     const reelId = parts[3] === 'reel' && parts[4] ? parts[4] : undefined;
+    // Once Ikele is online, the stores live there: links already shared keep working.
+    const ikeleUrl = (import.meta.env.VITE_IKELE_URL as string | undefined)?.replace(/\/$/, '');
+    if (ikeleUrl && slug && slug !== 'undefined') {
+      window.location.replace(`${ikeleUrl}/#/@${slug}${reelId ? `/reels/${reelId}` : ''}`);
+      return null;
+    }
     if (slug && slug !== 'undefined') return <PublicStore slug={slug} initialReelId={reelId} />;
+  }
+
+  // Compte client des boutiques en ligne — auth propre, séparée de Supabase.
+  if (hash.startsWith('#/compte')) {
+    return <CustomerAccount />;
   }
 
   if (hash.startsWith('#/pricing')) {

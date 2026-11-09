@@ -46,12 +46,31 @@ const COLORS = [
   { label: 'Ardoise', value: '#475569' },
 ];
 
+/** Old videos given a thumbnail per visit of the Creations tab. */
+const THUMBNAILS_PER_VISIT = 6;
+
+// Ikele, the marketplace: where the store is shared from once it is set (VITE_IKELE_URL).
+const IKELE_URL = (import.meta.env.VITE_IKELE_URL as string | undefined)?.replace(/\/$/, '');
+
+// The Logistics statuses: an order shows the same word on both sides.
 const STATUS_LABELS: Record<string, { label: string; color: string; Icon: any }> = {
-  pending:   { label: 'En attente',  color: '#f59e0b', Icon: Clock },
-  confirmed: { label: 'Confirmée',   color: '#6366f1', Icon: CheckCircle },
-  delivered: { label: 'Livrée',      color: '#10b981', Icon: Truck },
-  cancelled: { label: 'Annulée',     color: '#ef4444', Icon: XCircle },
+  pending:    { label: 'En attente',     color: '#f59e0b', Icon: Clock },
+  dispatched: { label: 'Chez le livreur', color: '#3b82f6', Icon: Truck },
+  postponed:  { label: 'Reportée',       color: '#8b5cf6', Icon: Clock },
+  delivered:  { label: 'Livrée',         color: '#10b981', Icon: CheckCircle },
+  returned:   { label: 'Retournée',      color: '#f97316', Icon: RefreshCw },
+  cancelled:  { label: 'Annulée',        color: '#ef4444', Icon: XCircle },
+  fake:       { label: 'Fausse commande', color: '#6b7280', Icon: XCircle },
+  // Older orders, from before the statuses were shared with Logistics.
+  confirmed:  { label: 'Confirmée',      color: '#6366f1', Icon: CheckCircle },
 };
+
+/** What the owner may pick from here; assigning a delivery partner stays in Logistics. */
+function statusChoices(order: { status: string; manualOrderId: string | null }): string[] {
+  if (!order.manualOrderId) return [...new Set([order.status, 'pending', 'cancelled'])];
+  if (order.status === 'delivered' || order.status === 'returned') return ['delivered', 'returned'];
+  return [...new Set([order.status, 'pending', 'postponed', 'delivered', 'cancelled', 'fake'])];
+}
 
 // ── AudioRecorder ─────────────────────────────────────────────────────────────
 
@@ -935,12 +954,16 @@ function PhotoToVideoStudio({
     setSaving(true);
     try {
       const file = new File([savedBlob], 'pub15s.webm', { type: savedBlob.type });
-      const url = await uploadApi.uploadMedia(file);
+      const [url, thumbnailUrl] = await Promise.all([
+        uploadApi.uploadMedia(file),
+        uploadApi.uploadVideoThumbnail(savedBlob),
+      ]);
       await mediaApi.create({
         productId,
         url,
         type: 'video',
         caption: captionTop || undefined,
+        thumbnailUrl: thumbnailUrl ?? undefined,
       });
       onSaved(url);
     } catch {
@@ -1124,6 +1147,7 @@ export function StorePage() {
     currency: 'CDF',
     metaPixelId: '',
     active: true,
+    ikeleListed: true,
   });
 
   useEffect(() => {
@@ -1148,6 +1172,7 @@ export function StorePage() {
           currency: s.currency ?? 'CDF',
           metaPixelId: s.metaPixelId ?? '',
           active: s.active,
+          ikeleListed: s.ikeleListed ?? true,
         });
         setVisibleIds(new Set(s.visibleProductIds ?? []));
         if (s.storePrices) {
@@ -1214,6 +1239,25 @@ export function StorePage() {
       mediaApi.getAll().then(setMedia).catch(() => {});
     }
   }, [tab, store]);
+
+  // Videos from before thumbnails existed get theirs here, a few per visit, in the
+  // background: Ikele's grids show the still instead of loading the video.
+  const thumbnailsTried = useRef(new Set<string>());
+  useEffect(() => {
+    const missing = media
+      .filter(m => m.type === 'video' && !m.thumbnailUrl && !thumbnailsTried.current.has(m.id))
+      .slice(0, THUMBNAILS_PER_VISIT);
+    if (missing.length === 0) return;
+    missing.forEach(m => thumbnailsTried.current.add(m.id));
+    (async () => {
+      for (const m of missing) {
+        const thumbnailUrl = await uploadApi.uploadVideoThumbnail(m.url);
+        if (!thumbnailUrl) continue;
+        await mediaApi.update(m.id, { thumbnailUrl }).catch(() => {});
+        setMedia(prev => prev.map(x => x.id === m.id ? { ...x, thumbnailUrl } : x));
+      }
+    })();
+  }, [media]);
 
   const saveConfig = async () => {
     if (!form.name.trim() || !form.whatsappPhone.trim()) return;
@@ -1283,10 +1327,14 @@ export function StorePage() {
     setUploadingId(productId);
     setUploadPct(0);
     try {
-      const url = await uploadApi.uploadMedia(file, setUploadPct);
       const type = file.type.startsWith('video/') ? 'video' : 'image';
+      // The still is made from the file in hand, while the video itself uploads.
+      const [url, thumbnailUrl] = await Promise.all([
+        uploadApi.uploadMedia(file, setUploadPct),
+        type === 'video' ? uploadApi.uploadVideoThumbnail(file) : Promise.resolve(null),
+      ]);
       const caption = captionMap[productId] ?? '';
-      const created = await mediaApi.create({ productId, url, type, caption: caption || undefined });
+      const created = await mediaApi.create({ productId, url, type, caption: caption || undefined, thumbnailUrl: thumbnailUrl ?? undefined });
       setMedia(prev => [created, ...prev]);
       setCaptionMap(c => ({ ...c, [productId]: '' }));
     } catch (e) {
@@ -1393,7 +1441,9 @@ export function StorePage() {
     }
   };
 
-  const storeUrl = store ? `${window.location.origin}${window.location.pathname}#/boutique/${store.slug}` : '';
+  const storeUrl = !store ? ''
+    : IKELE_URL ? `${IKELE_URL}/#/@${store.slug}`
+      : `${window.location.origin}${window.location.pathname}#/boutique/${store.slug}`;
 
   if (loading) {
     return (
@@ -1534,6 +1584,18 @@ export function StorePage() {
             </div>
             <button onClick={() => setForm(f => ({ ...f, active: !f.active }))} className="transition-colors">
               {form.active
+                ? <ToggleRight size={32} className="text-indigo-600" />
+                : <ToggleLeft size={32} className="text-gray-300" />}
+            </button>
+          </div>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-700">Publier sur Ikele</p>
+              <p className="text-xs text-gray-400">Vos Reels et produits apparaissent dans le feed et la liste des boutiques d'Ikele. Désactivé, votre lien marche toujours.</p>
+            </div>
+            <button onClick={() => setForm(f => ({ ...f, ikeleListed: !f.ikeleListed }))} className="transition-colors shrink-0"
+              aria-pressed={form.ikeleListed} aria-label="Publier sur Ikele">
+              {form.ikeleListed
                 ? <ToggleRight size={32} className="text-indigo-600" />
                 : <ToggleLeft size={32} className="text-gray-300" />}
             </button>
@@ -1947,7 +2009,12 @@ export function StorePage() {
               <div key={order.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
                 <div className="flex items-start justify-between mb-3">
                   <div>
-                    <p className="font-semibold text-gray-900 text-sm">{order.customerName}</p>
+                    <p className="font-semibold text-gray-900 text-sm">
+                      {order.customerName}
+                      {order.logisticsNumber != null && (
+                        <span className="ml-2 text-[11px] font-bold text-indigo-600">Logistique #{String(order.logisticsNumber).padStart(4, '0')}</span>
+                      )}
+                    </p>
                     <p className="text-xs text-gray-400">{order.customerPhone} · {order.deliveryZone}</p>
                   </div>
                   <span className="text-xs font-medium px-2 py-1 rounded-lg flex items-center gap-1"
@@ -1968,11 +2035,12 @@ export function StorePage() {
                   <select value={order.status}
                     onChange={e => updateOrderStatus(order.id, e.target.value)}
                     className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 outline-none focus:ring-1 focus:ring-indigo-400">
-                    <option value="pending">En attente</option>
-                    <option value="confirmed">Confirmée</option>
-                    <option value="delivered">Livrée</option>
-                    {(order.status === 'delivered' || order.status === 'returned') && <option value="returned">Retournée</option>}
-                    <option value="cancelled">Annulée</option>
+                    {statusChoices(order).map(s => (
+                      // Shown, not picked: a partner is assigned from Logistics.
+                      <option key={s} value={s} disabled={s === 'dispatched' || s === 'confirmed'}>
+                        {STATUS_LABELS[s]?.label ?? s}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>

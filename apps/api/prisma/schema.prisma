@@ -635,15 +635,31 @@ model OnlineStore {
   metaPixelId     String?  @map("meta_pixel_id")
   deliveryZones   Json?    @map("delivery_zones")
   active          Boolean  @default(true)
+  /// Shown in Ikele's global feed and store list. Its link works either way.
+  ikeleListed     Boolean  @default(true) @map("ikele_listed")
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
-  products StoreProduct[]
-  orders   StoreOrder[]
+  products  StoreProduct[]
+  orders    StoreOrder[]
+  followers StoreFollower[]
 
   @@unique([userId, businessId])
   @@index([businessId])
   @@map("online_stores")
+}
+
+// One row per visitor following a store, from the reels feed. visitorId is the same random
+// browser id as for reel likes: the store has no accounts.
+model StoreFollower {
+  storeId   String   @map("store_id") @db.Uuid
+  visitorId String   @map("visitor_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  store OnlineStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@id([storeId, visitorId])
+  @@map("store_followers")
 }
 
 model StoreProduct {
@@ -685,9 +701,85 @@ model StoreOrder {
   // source of truth for fulfillment/stock. Nullable: historical rows predate this link.
   manualOrderId String?      @unique @map("manual_order_id") @db.Uuid
   manualOrder   ManualOrder? @relation(fields: [manualOrderId], references: [id])
+  // Set when a signed-in customer placed it; older orders are found by phone number.
+  customerId    String?      @map("customer_id") @db.Uuid
+  customer      Customer?    @relation(fields: [customerId], references: [id], onDelete: SetNull)
 
   @@index([storeId])
+  @@index([customerId])
   @@map("store_orders")
+}
+
+// ─── Comptes clients (boutiques en ligne) ─────────────────────────────────────
+// One account per WhatsApp number, valid on every store. Separate from Supabase: those
+// accounts are the merchants'. A store never sees what a customer bought elsewhere.
+
+model Customer {
+  id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// The number reduced by phoneKey (common/phone.ts): one account per subscriber.
+  phoneKey            String   @unique @map("phone_key")
+  phone               String
+  name                String
+  passwordHash        String   @map("password_hash")
+  /// Stands for the customer on reel likes and store follows, on every device.
+  visitorId           String   @unique @default(dbgenerated("gen_random_uuid()")) @map("visitor_id") @db.Uuid
+  preferredCategories String[] @default([]) @map("preferred_categories")
+  failedLogins        Int      @default(0) @map("failed_logins")
+  lockedUntil         DateTime? @map("locked_until")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @default(now()) @updatedAt @map("updated_at")
+
+  sessions  CustomerSession[]
+  addresses CustomerAddress[]
+  orders    StoreOrder[]
+
+  @@map("customers")
+}
+
+/// A code sent on WhatsApp (sign-up, forgotten password). Only its hash is kept.
+model CustomerOtp {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  phoneKey   String    @map("phone_key")
+  purpose    String
+  codeHash   String    @map("code_hash")
+  attempts   Int       @default(0)
+  expiresAt  DateTime  @map("expires_at")
+  consumedAt DateTime? @map("consumed_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  @@index([phoneKey, createdAt])
+  @@map("customer_otps")
+}
+
+/// Only the token's hash is kept; changing the password closes every session.
+model CustomerSession {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId String   @map("customer_id") @db.Uuid
+  tokenHash  String   @unique @map("token_hash")
+  expiresAt  DateTime @map("expires_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@map("customer_sessions")
+}
+
+model CustomerAddress {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId String   @map("customer_id") @db.Uuid
+  label      String   @default("")
+  city       String
+  commune    String   @default("")
+  avenue     String   @default("")
+  reference  String   @default("")
+  isDefault  Boolean  @default(false) @map("is_default")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@map("customer_addresses")
 }
 
 model ProductMedia {
@@ -697,6 +789,8 @@ model ProductMedia {
   type      String   @default("image")
   caption   String?
   audioUrl  String?  @map("audio_url")
+  /// A still of the video, for the TikTok-style grids.
+  thumbnailUrl String? @map("thumbnail_url")
   sortOrder Int      @default(0) @map("sort_order")
   viewCount Int      @default(0) @map("view_count")
   likeCount Int      @default(0) @map("like_count")

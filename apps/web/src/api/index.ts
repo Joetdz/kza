@@ -184,6 +184,49 @@ async function putToStorage(bucket: string, path: string, file: File, onProgress
   });
 }
 
+const THUMB_MAX_SIDE = 720;
+const THUMB_TIMEOUT_MS = 15_000;
+
+/**
+ * A still of a video (half a second in), as a JPEG to upload: the grids show it instead
+ * of loading every video. null when the browser can't read the video.
+ */
+export async function videoThumbnail(source: Blob | string): Promise<File | null> {
+  const src = typeof source === 'string' ? source : URL.createObjectURL(source);
+  const video = document.createElement('video');
+  const wait = (event: 'loadeddata' | 'seeked') => new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(reject, THUMB_TIMEOUT_MS);
+    video.addEventListener(event, () => { clearTimeout(timer); resolve(); }, { once: true });
+    video.addEventListener('error', () => { clearTimeout(timer); reject(); }, { once: true });
+  });
+  try {
+    video.muted = true;
+    video.playsInline = true;
+    video.preload = 'auto';
+    // A stored video is drawn only if its server allows it, or the canvas can't be read.
+    if (typeof source === 'string') video.crossOrigin = 'anonymous';
+    video.src = src;
+    await wait('loadeddata');
+    // Recorded videos may not know their length: Infinity or NaN.
+    video.currentTime = Math.min(0.5, (Number.isFinite(video.duration) ? video.duration : 1) / 2);
+    await wait('seeked');
+
+    const scale = Math.min(1, THUMB_MAX_SIDE / Math.max(video.videoWidth, video.videoHeight));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(video.videoWidth * scale);
+    canvas.height = Math.round(video.videoHeight * scale);
+    if (!canvas.width || !canvas.height) return null;
+    canvas.getContext('2d')!.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.8));
+    return blob ? new File([blob], 'thumbnail.jpg', { type: 'image/jpeg' }) : null;
+  } catch {
+    return null;
+  } finally {
+    video.removeAttribute('src');
+    if (typeof source !== 'string') URL.revokeObjectURL(src);
+  }
+}
+
 export const uploadApi = {
   uploadImage: async (file: File): Promise<string> => {
     const ext = file.name.split('.').pop() ?? 'jpg';
@@ -206,6 +249,12 @@ export const uploadApi = {
     await putToStorage('products', filename, file, onProgress);
     const { data } = supabase.storage.from('products').getPublicUrl(filename);
     return data.publicUrl;
+  },
+
+  /** A video's still, uploaded; null when it couldn't be made. Never fails the upload it goes with. */
+  uploadVideoThumbnail: async (video: Blob | string): Promise<string | null> => {
+    const still = await videoThumbnail(video);
+    return still ? uploadApi.uploadMedia(still).catch(() => null) : null;
   },
 
   uploadAudio: async (blob: Blob): Promise<string> => {
@@ -231,6 +280,7 @@ export interface ProductMedia {
   type: string;
   caption: string | null;
   audioUrl: string | null;
+  thumbnailUrl: string | null;
   sortOrder: number;
   viewCount: number;
   likeCount: number;
@@ -244,9 +294,9 @@ export type FeedItem = ProductMedia & {
 
 export const mediaApi = {
   getAll: () => req<ProductMedia[]>('/store/my/media'),
-  create: (body: { productId: string; url: string; type: string; caption?: string; audioUrl?: string }) =>
+  create: (body: { productId: string; url: string; type: string; caption?: string; audioUrl?: string; thumbnailUrl?: string }) =>
     req<ProductMedia>('/store/my/media', { method: 'POST', body: JSON.stringify(body) }),
-  update: (id: string, body: { audioUrl?: string | null; caption?: string }) =>
+  update: (id: string, body: { audioUrl?: string | null; caption?: string; thumbnailUrl?: string | null }) =>
     req<ProductMedia>(`/store/my/media/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   remove: (id: string) => req<{ id: string }>(`/store/my/media/${id}`, { method: 'DELETE' }),
   getFeed: (slug: string): Promise<FeedItem[]> =>

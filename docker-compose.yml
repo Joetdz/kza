@@ -12,6 +12,7 @@ services:
       SUPABASE_URL: ${SUPABASE_URL}
       SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
       FRONTEND_URL: ${FRONTEND_URL}
+      IKELE_URL: ${IKELE_URL:-}
       DATABASE_URL: ${DATABASE_URL:-}
       INTERNAL_SYNC_SECRET: ${INTERNAL_SYNC_SECRET:-}
     volumes:
@@ -28,9 +29,22 @@ services:
         VITE_SUPABASE_URL: ${VITE_SUPABASE_URL}
         VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY}
         VITE_ADMIN_EMAILS: ${VITE_ADMIN_EMAILS:-}
+        VITE_IKELE_URL: ${IKELE_URL:-}
     restart: unless-stopped
     ports:
       - "4173:80"
+
+  ikele:
+    build:
+      context: .
+      dockerfile: Dockerfile.ikele
+      args:
+        VITE_API_URL: ${VITE_API_URL}
+        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL}
+        VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY}
+    restart: unless-stopped
+    ports:
+      - "4174:80"
 
 volumes:
   wwebjs_auth:

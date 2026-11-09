@@ -3,14 +3,12 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { assertStockAvailable, lockProducts, restock } from '../movements/stock-rules';
 
-// Orders in these states hold no stock: coming back from one must find it available again.
-const INACTIVE_ORDER_STATUSES = ['returned', 'fake', 'cancelled'];
-
-// What the storefront shows for an order at this stage of its logistics.
-const storeStatusFor = (status: string) =>
-  status === 'fake' ? 'cancelled'
-    : ['cancelled', 'returned', 'delivered'].includes(status) ? status
-      : 'confirmed';
+/**
+ * Statuses the storefront dashboard may set. They are the Logistics ones, so both sides
+ * always show the same word. Assigning a delivery partner ("dispatched") needs a partner
+ * and stays in Logistics.
+ */
+export const STORE_SETTABLE_STATUSES = ['pending', 'postponed', 'delivered', 'returned', 'cancelled', 'fake'];
 
 /**
  * To call before deleting orders: their storefront orders stay as a record, unlinked, and
@@ -297,23 +295,25 @@ export class LogisticsService {
 
   /** A status chosen on the storefront dashboard, applied to the linked logistics order. */
   async applyStoreStatus(orderId: string, status: string) {
+    if (!STORE_SETTABLE_STATUSES.includes(status)) {
+      throw new BadRequestException(status === 'dispatched'
+        ? 'Pour assigner un livreur, passez par la Logistique.'
+        : 'Statut inconnu.');
+    }
     const order = await this.prisma.manualOrder.findUnique({ where: { id: orderId }, include: { items: true } });
     if (!order) return;
-    this.assertCanLeaveDelivered(order, status);
-
-    if (['delivered', 'returned', 'cancelled'].includes(status)) {
-      await this.setStatus(order, status, { isDraft: false });
-    } else if (status === 'confirmed' && order.isDraft) {
+    if (order.isDraft && status === 'pending') {
       await this.confirmDraft(order);
-    } else if (['confirmed', 'pending'].includes(status) && INACTIVE_ORDER_STATUSES.includes(order.status)) {
-      await this.setStatus(order, 'pending');
+      return;
     }
+    await this.setStatus(order, status, { isDraft: false });
   }
 
+  /** The storefront order shows the Logistics status as it is. */
   private async syncStoreStatus(orderId: string, status: string) {
     await this.prisma.storeOrder.updateMany({
       where: { manualOrderId: orderId },
-      data: { status: storeStatusFor(status) },
+      data: { status },
     }).catch(err => this.logger.warn(`syncStoreStatus: failed for order ${orderId}: ${err?.message}`));
   }
 }

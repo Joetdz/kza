@@ -21,9 +21,12 @@ async function bootstrap() {
     },
   });
 
-  // CORS — autorise le frontend React
+  // CORS — autorise les deux frontends : Kzion (FRONTEND_URL) et Ikele (IKELE_URL).
+  const allowedOrigins = [process.env.FRONTEND_URL, process.env.IKELE_URL]
+    .filter((o): o is string => !!o)
+    .map(o => o.replace(/\/$/, ''));
   app.enableCors({
-    origin: process.env.FRONTEND_URL ??/^http:\/\/(localhost|127\.0\.0\.1|172\.16\.\d+\.\d+):\d+$/,
+    origin: allowedOrigins.length ? allowedOrigins : /^http:\/\/(localhost|127\.0\.0\.1|172\.16\.\d+\.\d+):\d+$/,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Business-Id'],
   });

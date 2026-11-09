@@ -1,4 +1,4 @@
-import { Controller, Get, Put, Post, Patch, Delete, Body, Param, Query, NotFoundException, BadRequestException, Res } from '@nestjs/common';
+import { Controller, Get, Put, Post, Patch, Delete, Body, Param, Query, Headers, NotFoundException, BadRequestException, Res } from '@nestjs/common';
 import { Response } from 'express';
 import { PrismaService } from '../prisma/prisma.service';
 import { WhatsAppService } from '../whatsapp/whatsapp.service';
@@ -6,6 +6,7 @@ import { PushService } from '../push/push.service';
 import { CurrentUser, AuthUser } from '../auth/current-user.decorator';
 import { Public } from '../auth/public.decorator';
 import { LogisticsService } from '../logistics/logistics.service';
+import { CustomersService } from '../customers/customers.service';
 import { assertStockAvailable, lockProducts } from '../movements/stock-rules';
 import OpenAI from 'openai';
 
@@ -18,6 +19,7 @@ interface StoreConfigDto {
   metaPixelId?: string;
   deliveryZones?: Array<{ city: string; fee: number }>;
   active?: boolean;
+  ikeleListed?: boolean;
 }
 
 interface OrderDto {
@@ -74,6 +76,7 @@ export class StoreController {
     private whatsapp: WhatsAppService,
     private push: PushService,
     private logisticsService: LogisticsService,
+    private customers: CustomersService,
   ) {}
 
   // Each business owns its own store — scope every lookup by (userId, businessId)
@@ -147,6 +150,7 @@ export class StoreController {
           metaPixelId: dto.metaPixelId !== undefined ? (dto.metaPixelId.trim() || null) : existing.metaPixelId,
           deliveryZones: dto.deliveryZones !== undefined ? dto.deliveryZones : existing.deliveryZones ?? undefined,
           active: dto.active ?? existing.active,
+          ikeleListed: dto.ikeleListed ?? existing.ikeleListed,
         },
       });
     }
@@ -299,8 +303,16 @@ Règles :
       where: { storeId: store.id },
       orderBy: { createdAt: 'desc' },
       take: 100,
+      include: { manualOrder: { select: { status: true, isDraft: true, orderNumber: true } } },
     });
-    return { orders };
+    // The Logistics order is the source of truth: its status is the one shown.
+    return {
+      orders: orders.map(({ manualOrder, ...o }) => ({
+        ...o,
+        status: manualOrder ? (manualOrder.isDraft ? 'pending' : manualOrder.status) : o.status,
+        logisticsNumber: manualOrder?.orderNumber ?? null,
+      })),
+    };
   }
 
   // ── UPDATE order status (auth) ────────────────────────────────────────────
@@ -320,8 +332,11 @@ Règles :
     // The logistics order is the source of truth for stock and sales: every status set here
     // goes through it, under the same rules as in Logistics.
     if (order.manualOrderId) {
+      // Also writes this storefront order's status, once the change is accepted.
       await this.logisticsService.applyStoreStatus(order.manualOrderId, body.status);
-    } else if (body.status === 'delivered' || (order.status === 'cancelled' && body.status !== 'cancelled')) {
+      return { ok: true };
+    }
+    if (['delivered', 'returned', 'dispatched'].includes(body.status) || (order.status === 'cancelled' && body.status !== 'cancelled')) {
       // No logistics order (deleted, or too old to have one): delivering it here would move
       // no stock and record no sale.
       throw new BadRequestException("Cette commande n'est reliée à aucune commande Logistique : créez-la dans la Logistique pour la livrer.");
@@ -408,7 +423,7 @@ Règles:
   @Post('my/media')
   async addMedia(
     @CurrentUser() user: AuthUser,
-    @Body() body: { productId: string; url: string; type: string; caption?: string; audioUrl?: string },
+    @Body() body: { productId: string; url: string; type: string; caption?: string; audioUrl?: string; thumbnailUrl?: string },
   ) {
     const where = user.businessId ? { businessId: user.businessId } : { userId: user.ownerId };
     const product = await this.prisma.product.findFirst({ where: { id: body.productId, ...where } });
@@ -420,6 +435,7 @@ Règles:
         type: body.type ?? 'image',
         caption: body.caption ?? null,
         audioUrl: body.audioUrl ?? null,
+        thumbnailUrl: body.thumbnailUrl ?? null,
       },
     });
   }
@@ -430,7 +446,7 @@ Règles:
   async updateMedia(
     @CurrentUser() user: AuthUser,
     @Param('id') id: string,
-    @Body() body: { audioUrl?: string | null; caption?: string },
+    @Body() body: { audioUrl?: string | null; caption?: string; thumbnailUrl?: string | null },
   ) {
     const media = await this.prisma.productMedia.findUnique({
       where: { id },
@@ -445,6 +461,7 @@ Règles:
       data: {
         ...(body.audioUrl !== undefined && { audioUrl: body.audioUrl }),
         ...(body.caption !== undefined && { caption: body.caption }),
+        ...(body.thumbnailUrl !== undefined && { thumbnailUrl: body.thumbnailUrl }),
       },
     });
   }
@@ -484,7 +501,7 @@ Règles:
                 quantity: true,
                 imageUrl: true,
                 trackStock: true,
-                media: { orderBy: { sortOrder: 'asc' }, select: { id: true, url: true, type: true } },
+                media: { orderBy: { sortOrder: 'asc' }, select: { id: true, url: true, type: true, thumbnailUrl: true } },
               },
             },
           },
@@ -515,7 +532,7 @@ Règles:
             bundleQty: sp.bundleQty ?? null,
             bundlePrice: sp.bundlePrice ? Number(sp.bundlePrice) : null,
             description: sp.storeDescription ?? null,
-            media: (media ?? []).map((m: any) => ({ id: m.id, url: m.url, type: m.type })),
+            media: (media ?? []).map((m: any) => ({ id: m.id, url: m.url, type: m.type, thumbnailUrl: m.thumbnailUrl })),
           };
         }),
     };
@@ -565,6 +582,7 @@ Règles:
         type: m.type,
         caption: m.caption,
         audioUrl: m.audioUrl,
+        thumbnailUrl: m.thumbnailUrl,
         sortOrder: m.sortOrder,
         viewCount: m.viewCount,
         likeCount: m.likeCount,
@@ -623,6 +641,59 @@ Règles:
     return { liked: body.liked !== false, likeCount: media.likeCount };
   }
 
+  // ── Store profile shown in the reels feed, and following (no auth) ────────
+
+  @Public()
+  @Get(':slug/profile')
+  async getStoreProfile(@Param('slug') slug: string, @Query('visitor') visitor?: string) {
+    const store = await this.prisma.onlineStore.findUnique({ where: { slug } });
+    if (!store || !store.active) throw new NotFoundException('Boutique introuvable');
+    const visitorId = visitor && UUID.test(visitor) ? visitor : null;
+
+    const [followers, following, likes, storeProducts] = await Promise.all([
+      this.prisma.storeFollower.count({ where: { storeId: store.id } }),
+      visitorId ? this.prisma.storeFollower.count({ where: { storeId: store.id, visitorId } }) : 0,
+      this.prisma.productMedia.aggregate({
+        where: { product: { storeItems: { some: { storeId: store.id } } } },
+        _sum: { likeCount: true },
+      }),
+      this.prisma.storeProduct.findMany({
+        where: { storeId: store.id },
+        select: { product: { select: { trackStock: true, quantity: true } } },
+      }),
+    ]);
+
+    return {
+      name: store.name,
+      slug: store.slug,
+      description: store.description,
+      logoUrl: store.logoUrl,
+      primaryColor: store.primaryColor,
+      followers,
+      following: following > 0,
+      likes: likes._sum.likeCount ?? 0,
+      // The products a visitor can see: the same rule as the catalogue.
+      products: storeProducts.filter(sp => !(sp.product.trackStock && sp.product.quantity <= 0)).length,
+    };
+  }
+
+  @Public()
+  @Post(':slug/follow')
+  async followStore(@Param('slug') slug: string, @Body() body: { visitorId?: string; following?: boolean }) {
+    if (!body.visitorId || !UUID.test(body.visitorId)) throw new BadRequestException('Visiteur invalide');
+    const store = await this.prisma.onlineStore.findUnique({ where: { slug } });
+    if (!store || !store.active) throw new NotFoundException('Boutique introuvable');
+
+    const key = { storeId: store.id, visitorId: body.visitorId };
+    if (body.following !== false) {
+      await this.prisma.storeFollower.createMany({ data: [key], skipDuplicates: true });
+    } else {
+      await this.prisma.storeFollower.deleteMany({ where: key });
+    }
+    const followers = await this.prisma.storeFollower.count({ where: { storeId: store.id } });
+    return { following: body.following !== false, followers };
+  }
+
   /** The reel, only if it belongs to an active store's product. */
   private async findStoreMedia(slug: string, mediaId: string) {
     if (!UUID.test(mediaId)) throw new NotFoundException('Reel introuvable');
@@ -638,9 +709,11 @@ Règles:
 
   @Public()
   @Post(':slug/order')
-  async submitOrder(@Param('slug') slug: string, @Body() dto: OrderDto) {
+  async submitOrder(@Param('slug') slug: string, @Body() dto: OrderDto, @Headers('authorization') auth?: string) {
     const store = await this.prisma.onlineStore.findUnique({ where: { slug } });
     if (!store || !store.active) throw new NotFoundException('Boutique introuvable');
+    // Optional: an order placed while signed in shows in the customer's history.
+    const customer = await this.customers.optionalCustomer(auth);
 
     if (!dto.customerName?.trim()) throw new BadRequestException('Nom requis');
     if (!dto.customerPhone?.trim()) throw new BadRequestException('Téléphone requis');
@@ -707,6 +780,7 @@ Règles:
         where: { userId: store.userId, businessId: orderBusinessId },
         _max: { orderNumber: true },
       });
+      // A real order straight away, not a draft: it shows in Logistics as "En attente".
       const draft = await tx.manualOrder.create({
         data: {
           userId: store.userId,
@@ -718,7 +792,8 @@ Règles:
           address,
           deliveryFee,
           totalAmount: total,
-          isDraft: true,
+          isDraft: false,
+          status: 'pending',
           notes: dto.notes ?? null,
           items: {
             create: items.map(i => ({ productId: i.productId, quantity: i.qty, unitPrice: i.unitPrice })),
@@ -730,6 +805,7 @@ Règles:
         data: {
           storeId: store.id,
           manualOrderId: draft.id,
+          customerId: customer?.id ?? null,
           customerName: dto.customerName.trim(),
           customerPhone: dto.customerPhone.trim(),
           deliveryZone: dto.deliveryZone,
