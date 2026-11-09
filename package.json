@@ -10,12 +10,15 @@
   "dev": "turbo run dev",
   "dev:web": "turbo run dev --filter=kza-ecommerce-manager",
   "dev:api": "turbo run start:dev --filter=kza-api",
+  "dev:ikele": "turbo run dev --filter=ikele",
   "build": "turbo run build",
   "build:web": "turbo run build --filter=kza-ecommerce-manager",
   "build:api": "turbo run build --filter=kza-api",
+  "build:ikele": "turbo run build --filter=ikele",
   "start": "turbo run start:prod --filter=kza-api --filter=kza-ecommerce-manager",
   "start:api": "turbo run start:prod --filter=kza-api",
   "start:web": "turbo run start:prod --filter=kza-ecommerce-manager",
+  "start:ikele": "turbo run start:prod --filter=ikele",
   "migrate": "node scripts/migrate.mjs"
 },
   "devDependencies": {
