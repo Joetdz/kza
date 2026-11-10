@@ -693,6 +693,8 @@ model StoreOrder {
   utmMedium     String?  @map("utm_medium")
   utmCampaign   String?  @map("utm_campaign")
   utmContent    String?  @map("utm_content")
+  /// Where it was placed: 'ikele' (the Ikele app), null (the Kzion storefront).
+  source        String?
   status        String   @default("pending")
   createdAt     DateTime @default(now()) @map("created_at")
 
@@ -720,7 +722,11 @@ model Customer {
   phoneKey            String   @unique @map("phone_key")
   phone               String
   name                String
-  passwordHash        String   @map("password_hash")
+  /// Null for an account created by a first order, until the customer picks a password.
+  passwordHash        String?  @map("password_hash")
+  /// Confirmed by a WhatsApp code: only then do orders placed with this number without the
+  /// account show in it.
+  phoneVerified       Boolean  @default(false) @map("phone_verified")
   /// Stands for the customer on reel likes and store follows, on every device.
   visitorId           String   @unique @default(dbgenerated("gen_random_uuid()")) @map("visitor_id") @db.Uuid
   preferredCategories String[] @default([]) @map("preferred_categories")

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ArrowLeft, Loader2, LogOut, MapPin, Package, Settings, Star, Store, Trash2, User } from 'lucide-react';
 import {
-  cachedCustomer, customerApi, customerToken, LAST_STORE_KEY,
+  cachedCustomer, customerApi, customerToken, LAST_STORE_KEY, SESSION_EVENT,
   type Customer, type CustomerAddress, type CustomerOrder, type FollowedStore,
 } from '../api/customer';
 import { CITY_COMMUNES } from './PublicStore';
@@ -51,6 +51,9 @@ function AuthView({ storeSlug, onSignedIn }: { storeSlug: string | null; onSigne
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
 
+  // Only a forgotten password goes through a WhatsApp code; sign-up takes none for now.
+  const passwordStep = mode !== 'reset' || codeSent;
+
   const switchMode = (m: AuthMode) => {
     setMode(m); setCodeSent(false); setCode(''); setPassword(''); setConfirm(''); setError(null); setInfo(null);
   };
@@ -61,17 +64,17 @@ function AuthView({ storeSlug, onSignedIn }: { storeSlug: string | null; onSigne
   };
 
   const sendCode = () => run(async () => {
-    if (mode === 'signup' && name.trim().length < 2) throw new Error('Indique ton nom.');
-    await customerApi.requestCode(phone, mode === 'signup' ? 'signup' : 'reset', storeSlug);
+    await customerApi.requestCode(phone, 'reset', storeSlug);
     setCodeSent(true);
     setInfo('Code envoyé sur ton WhatsApp. Il expire dans 10 minutes.');
   });
 
   const submit = () => run(async () => {
     if (mode === 'login') return onSignedIn(await customerApi.login(phone, password));
+    if (mode === 'signup' && name.trim().length < 2) throw new Error('Indique ton nom.');
     if (password !== confirm) throw new Error('Les deux mots de passe ne sont pas identiques.');
     onSignedIn(mode === 'signup'
-      ? await customerApi.signup({ phone, code, name, password })
+      ? await customerApi.signup({ phone, name, password })
       : await customerApi.resetPassword({ phone, code, password }));
   });
 
@@ -85,31 +88,30 @@ function AuthView({ storeSlug, onSignedIn }: { storeSlug: string | null; onSigne
         </div>
         <h1 className="text-xl font-black text-gray-900">{title}</h1>
         <p className="text-sm text-gray-500 mt-1">
-          {mode === 'login'
-            ? 'Retrouve tes commandes, tes adresses et les boutiques que tu suis.'
-            : 'On t\'envoie un code sur WhatsApp pour vérifier ton numéro.'}
+          {mode === 'reset'
+            ? 'On t\'envoie un code sur WhatsApp pour vérifier ton numéro.'
+            : 'Retrouve tes commandes, tes adresses et les boutiques que tu suis.'}
         </p>
       </div>
 
-      <form className="space-y-3" onSubmit={e => { e.preventDefault(); (mode === 'login' || codeSent) ? submit() : sendCode(); }}>
+      <form className="space-y-3" onSubmit={e => { e.preventDefault(); passwordStep ? submit() : sendCode(); }}>
         {mode === 'signup' && (
-          <input value={name} onChange={e => setName(e.target.value)} placeholder="Ton nom" autoComplete="name"
-            disabled={codeSent} className={input} />
+          <input value={name} onChange={e => setName(e.target.value)} placeholder="Ton nom" autoComplete="name" className={input} />
         )}
         <input value={phone} onChange={e => setPhone(e.target.value)} placeholder="Numéro WhatsApp (ex. 0812345678)"
-          inputMode="tel" autoComplete="tel" disabled={mode !== 'login' && codeSent} className={input} />
+          inputMode="tel" autoComplete="tel" disabled={mode === 'reset' && codeSent} className={input} />
 
-        {mode !== 'login' && codeSent && (
+        {mode === 'reset' && codeSent && (
           <input value={code} onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
             placeholder="Code à 6 chiffres reçu sur WhatsApp" inputMode="numeric" autoComplete="one-time-code"
             className={`${input} tracking-[0.4em] text-center font-bold`} />
         )}
-        {(mode === 'login' || codeSent) && (
+        {passwordStep && (
           <input type="password" value={password} onChange={e => setPassword(e.target.value)}
-            placeholder={mode === 'login' ? 'Mot de passe' : 'Nouveau mot de passe (6 caractères min.)'}
+            placeholder={mode === 'login' ? 'Mot de passe' : mode === 'signup' ? 'Mot de passe (6 caractères min.)' : 'Nouveau mot de passe (6 caractères min.)'}
             autoComplete={mode === 'login' ? 'current-password' : 'new-password'} className={input} />
         )}
-        {mode !== 'login' && codeSent && (
+        {mode !== 'login' && passwordStep && (
           <input type="password" value={confirm} onChange={e => setConfirm(e.target.value)}
             placeholder="Confirme le mot de passe" autoComplete="new-password" className={input} />
         )}
@@ -119,9 +121,9 @@ function AuthView({ storeSlug, onSignedIn }: { storeSlug: string | null; onSigne
 
         <button type="submit" disabled={busy} className={primaryBtn}>
           {busy && <Loader2 size={16} className="animate-spin" />}
-          {mode === 'login' ? 'Se connecter' : codeSent ? (mode === 'signup' ? 'Créer mon compte' : 'Changer le mot de passe') : 'Recevoir le code'}
+          {mode === 'login' ? 'Se connecter' : mode === 'signup' ? 'Créer mon compte' : codeSent ? 'Changer le mot de passe' : 'Recevoir le code'}
         </button>
-        {mode !== 'login' && codeSent && (
+        {mode === 'reset' && codeSent && (
           <button type="button" onClick={sendCode} disabled={busy} className="w-full text-xs text-indigo-600 font-semibold py-1">
             Renvoyer un code
           </button>
@@ -353,10 +355,18 @@ function SettingsTab({ customer, onChange }: { customer: Customer; onChange: (c:
 
       <form className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-3"
         onSubmit={e => { e.preventDefault(); act(async () => { const c = await customerApi.changePassword(current, next); setCurrent(''); setNext(''); return c; }, 'Mot de passe changé. Tes autres appareils sont déconnectés.'); }}>
-        <p className="text-sm font-bold text-gray-900">Changer le mot de passe</p>
-        <input type="password" value={current} onChange={e => setCurrent(e.target.value)} placeholder="Mot de passe actuel" autoComplete="current-password" className={input} />
-        <input type="password" value={next} onChange={e => setNext(e.target.value)} placeholder="Nouveau mot de passe" autoComplete="new-password" className={input} />
-        <button type="submit" disabled={busy || !current || !next} className={primaryBtn}>Changer</button>
+        {/* An account opened by an order has no password yet: the first one needs no current one. */}
+        <p className="text-sm font-bold text-gray-900">{customer.hasPassword ? 'Changer le mot de passe' : 'Choisis ton mot de passe'}</p>
+        {!customer.hasPassword && (
+          <p className="text-xs text-gray-500">Pour te reconnecter avec ton numéro sur un autre téléphone.</p>
+        )}
+        {customer.hasPassword && (
+          <input type="password" value={current} onChange={e => setCurrent(e.target.value)} placeholder="Mot de passe actuel" autoComplete="current-password" className={input} />
+        )}
+        <input type="password" value={next} onChange={e => setNext(e.target.value)} placeholder="Nouveau mot de passe (6 caractères min.)" autoComplete="new-password" className={input} />
+        <button type="submit" disabled={busy || (customer.hasPassword && !current) || !next} className={primaryBtn}>
+          {customer.hasPassword ? 'Changer' : 'Enregistrer'}
+        </button>
       </form>
 
       {message && (
@@ -413,6 +423,13 @@ export function CustomerAccount() {
   const storeSlug = hashParams().get('boutique') ?? readStoredSlug();
   const [customer, setCustomer] = useState<Customer | null>(() => (customerToken() ? cachedCustomer() : null));
   const [checking, setChecking] = useState(() => !!customerToken());
+
+  // Signed in or out by another screen of the page (an order opens an account).
+  useEffect(() => {
+    const sync = () => setCustomer(customerToken() ? cachedCustomer() : null);
+    window.addEventListener(SESSION_EVENT, sync);
+    return () => window.removeEventListener(SESSION_EVENT, sync);
+  }, []);
 
   // The session may have ended elsewhere (password changed): /me says so.
   useEffect(() => {

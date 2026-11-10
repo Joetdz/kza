@@ -32,8 +32,9 @@ export interface AddressInput {
 }
 
 /**
- * Customer accounts of the online stores: sign-up and password reset by a code sent on
- * WhatsApp, password login, sessions. One account per number, valid on every store.
+ * Customer accounts of the online stores: sign-up (no code for now), an account opened by
+ * a first order, password reset by a code sent on WhatsApp, password login, sessions. One
+ * account per number, valid on every store.
  */
 @Injectable()
 export class CustomersService {
@@ -56,7 +57,8 @@ export class CustomersService {
   // ── Codes ──────────────────────────────────────────────────────────────────
 
   async requestOtp(rawPhone: string | undefined, purpose: OtpPurpose, storeSlug: string | undefined) {
-    if (purpose !== 'signup' && purpose !== 'reset') throw new BadRequestException('Demande inconnue.');
+    // Sign-up takes no code for now: only a forgotten password sends one.
+    if (purpose !== 'reset') throw new BadRequestException('Demande inconnue.');
     const { key, international } = this.normalizePhone(rawPhone);
 
     const store = storeSlug
@@ -67,9 +69,6 @@ export class CustomersService {
     }
 
     const existing = await this.prisma.customer.findUnique({ where: { phoneKey: key }, select: { id: true } });
-    if (purpose === 'signup' && existing) {
-      throw new BadRequestException('Ce numéro a déjà un compte : connecte-toi.');
-    }
     // Nothing to reset: answer as if sent, so nobody can test which numbers have an account.
     if (purpose === 'reset' && !existing) return { sent: true };
 
@@ -137,12 +136,13 @@ export class CustomersService {
 
   // ── Accounts ───────────────────────────────────────────────────────────────
 
-  async signup(body: { phone?: string; code?: string; name?: string; password?: string; deviceVisitorId?: string }) {
+  // The number is not confirmed by a code for now: the account starts unverified and only
+  // shows the orders placed from it (see orders).
+  async signup(body: { phone?: string; name?: string; password?: string; deviceVisitorId?: string }) {
     const { key, international } = this.normalizePhone(body.phone);
     const name = body.name?.trim() ?? '';
     if (name.length < 2) throw new BadRequestException('Indique ton nom.');
     this.assertPassword(body.password);
-    await this.consumeOtp(key, 'signup', body.code);
 
     let customer: Customer;
     try {
@@ -167,6 +167,9 @@ export class CustomersService {
     if (customer.lockedUntil && customer.lockedUntil > new Date()) {
       const minutes = Math.ceil((customer.lockedUntil.getTime() - Date.now()) / 60_000);
       throw new BadRequestException(`Trop d'essais : réessaie dans ${minutes} min, ou utilise « Mot de passe oublié ».`);
+    }
+    if (!customer.passwordHash) {
+      throw new BadRequestException("Ce compte n'a pas encore de mot de passe : utilise « Mot de passe oublié » pour en choisir un.");
     }
     if (!body.password || !(await bcrypt.compare(body.password, customer.passwordHash))) {
       const failures = customer.failedLogins + 1;
@@ -195,14 +198,16 @@ export class CustomersService {
       await tx.customerSession.deleteMany({ where: { customerId: customer.id } });
       return tx.customer.update({
         where: { id: customer.id },
-        data: { passwordHash: await bcrypt.hash(body.password!, 10), failedLogins: 0, lockedUntil: null },
+        // The code reached this number: it is the customer's.
+        data: { passwordHash: await bcrypt.hash(body.password!, 10), failedLogins: 0, lockedUntil: null, phoneVerified: true },
       });
     });
     return this.openSession(updated, body.deviceVisitorId);
   }
 
   async changePassword(customer: Customer, current: string | undefined, next: string | undefined) {
-    if (!current || !(await bcrypt.compare(current, customer.passwordHash))) {
+    // An account opened by an order has none yet: the first one is chosen without it.
+    if (customer.passwordHash && (!current || !(await bcrypt.compare(current, customer.passwordHash)))) {
       throw new BadRequestException('Mot de passe actuel incorrect.');
     }
     this.assertPassword(next);
@@ -218,6 +223,28 @@ export class CustomersService {
     const token = this.bearer(authorization);
     if (token) await this.prisma.customerSession.deleteMany({ where: { tokenHash: sha256(token) } });
     return { ok: true };
+  }
+
+  /**
+   * After an order placed without an account: a number seen for the first time gets one,
+   * signed in on this device, to follow the order. A number that already has an account
+   * gets no session, as anyone can type any number; a verified account still finds the
+   * order by its number.
+   */
+  async accountForOrder(orderId: string, rawPhone: string, rawName: string, deviceVisitorId?: string) {
+    const { key, international } = this.normalizePhone(rawPhone);
+    const name = rawName.trim().slice(0, 100) || 'Client';
+    let customer: Customer;
+    try {
+      customer = await this.prisma.customer.create({
+        data: { phoneKey: key, phone: `+${international}`, name, passwordHash: null },
+      });
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') return null;
+      throw err;
+    }
+    await this.prisma.storeOrder.update({ where: { id: orderId }, data: { customerId: customer.id } });
+    return this.openSession(customer, deviceVisitorId);
   }
 
   private assertPassword(password: string | undefined) {
@@ -284,7 +311,10 @@ export class CustomersService {
   }
 
   publicCustomer(c: Customer) {
-    return { id: c.id, name: c.name, phone: c.phone, visitorId: c.visitorId, preferredCategories: c.preferredCategories };
+    return {
+      id: c.id, name: c.name, phone: c.phone, visitorId: c.visitorId, preferredCategories: c.preferredCategories,
+      hasPassword: !!c.passwordHash,
+    };
   }
 
   // ── Profile ────────────────────────────────────────────────────────────────
@@ -319,13 +349,16 @@ export class CustomersService {
   // ── Orders, follows ────────────────────────────────────────────────────────
 
   /**
-   * Every store order of this customer: placed while signed in, or earlier with this
-   * number (the number was verified by a code). Only the customer's own orders.
+   * Every store order of this customer: placed from the account and, once the number is
+   * verified by a code, placed earlier with this number. An unverified account never sees
+   * what others typed this number for.
    */
   async orders(customer: Customer) {
     const tail = customer.phoneKey.slice(-8);
     const rows = await this.prisma.storeOrder.findMany({
-      where: { OR: [{ customerId: customer.id }, { customerPhone: { endsWith: tail } }] },
+      where: customer.phoneVerified
+        ? { OR: [{ customerId: customer.id }, { customerPhone: { endsWith: tail } }] }
+        : { customerId: customer.id },
       orderBy: { createdAt: 'desc' },
       take: 100,
       include: {
@@ -334,7 +367,7 @@ export class CustomersService {
       },
     });
     return rows
-      .filter(o => o.customerId === customer.id || phoneKey(o.customerPhone) === customer.phoneKey)
+      .filter(o => o.customerId === customer.id || (customer.phoneVerified && phoneKey(o.customerPhone) === customer.phoneKey))
       .map(o => ({
         id: o.id,
         ref: o.id.slice(0, 8).toUpperCase(),
@@ -403,6 +436,18 @@ export class CustomersService {
       if (next) await this.prisma.customerAddress.update({ where: { id: next.id }, data: { isDefault: true } });
     }
     return { id };
+  }
+
+  /** An address used for an order, kept unless the account already has it (or is full). */
+  async rememberAddress(customerId: string, body: AddressInput) {
+    const data = this.cleanAddress(body);
+    const same = (a?: string | null, b?: string | null) => (a ?? '').toLowerCase() === (b ?? '').toLowerCase();
+    const existing = await this.prisma.customerAddress.findMany({ where: { customerId } });
+    if (existing.length >= MAX_ADDRESSES) return;
+    if (existing.some(a => same(a.city, data.city) && same(a.commune, data.commune) && same(a.avenue, data.avenue))) return;
+    await this.prisma.customerAddress.create({
+      data: { ...data, city: data.city!, customerId, isDefault: existing.length === 0 },
+    });
   }
 
   private async findAddress(customer: Customer, id: string) {

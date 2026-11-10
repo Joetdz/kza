@@ -1,4 +1,4 @@
-import { Controller, Get, Put, Post, Patch, Delete, Body, Param, Query, Headers, NotFoundException, BadRequestException, Res } from '@nestjs/common';
+import { Controller, Get, Put, Post, Patch, Delete, Body, Param, Query, Headers, NotFoundException, BadRequestException, Res, Logger } from '@nestjs/common';
 import { Response } from 'express';
 import { PrismaService } from '../prisma/prisma.service';
 import { WhatsAppService } from '../whatsapp/whatsapp.service';
@@ -7,6 +7,7 @@ import { CurrentUser, AuthUser } from '../auth/current-user.decorator';
 import { Public } from '../auth/public.decorator';
 import { LogisticsService } from '../logistics/logistics.service';
 import { CustomersService } from '../customers/customers.service';
+import { VideoCompressorService } from './video-compressor.service';
 import { assertStockAvailable, lockProducts } from '../movements/stock-rules';
 import OpenAI from 'openai';
 
@@ -36,6 +37,35 @@ interface OrderDto {
   utmMedium?: string;
   utmCampaign?: string;
   utmContent?: string;
+  /** 'ikele' when placed from the Ikele app. */
+  source?: string;
+  /** The device's visitor id: its likes and follows join the account the order opens. */
+  deviceVisitorId?: string;
+  /** Where the customer stood when ordering (« Ma position »), for the delivery person. */
+  location?: { lat?: number; lng?: number };
+  /** The day the customer wants it: today, tomorrow, the day after. Absent: as soon as possible. */
+  deliveryDay?: 'today' | 'tomorrow' | 'after';
+}
+
+/** Kinshasa's clock (UTC+1, no daylight saving): « today » is the customer's today. */
+const KINSHASA_OFFSET_MS = 3600_000;
+/** The hour a wished day is filed at in Logistics, Kinshasa time. */
+const WISHED_DAY_HOUR = 10;
+
+function wishedDeliveryDate(day: OrderDto['deliveryDay']): Date | null {
+  const offset = { today: 0, tomorrow: 1, after: 2 }[day ?? ''];
+  if (offset === undefined) return null;
+  const local = new Date(Date.now() + KINSHASA_OFFSET_MS);
+  local.setUTCDate(local.getUTCDate() + offset);
+  local.setUTCHours(WISHED_DAY_HOUR, 0, 0, 0);
+  return new Date(local.getTime() - KINSHASA_OFFSET_MS);
+}
+
+/** A map link to the customer's position, or null when none (or not a real one) was sent. */
+function positionLink(location: OrderDto['location']): string | null {
+  const lat = Number(location?.lat), lng = Number(location?.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+  return `https://maps.google.com/?q=${lat.toFixed(6)},${lng.toFixed(6)}`;
 }
 
 /** Same calculation as the cart on the public store (calcLineTotal in PublicStore.tsx). */
@@ -69,6 +99,7 @@ const VALID_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'] as co
 
 @Controller('store')
 export class StoreController {
+  private readonly logger = new Logger(StoreController.name);
   private openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
   constructor(
@@ -77,6 +108,7 @@ export class StoreController {
     private push: PushService,
     private logisticsService: LogisticsService,
     private customers: CustomersService,
+    private videos: VideoCompressorService,
   ) {}
 
   // Each business owns its own store — scope every lookup by (userId, businessId)
@@ -428,7 +460,7 @@ Règles:
     const where = user.businessId ? { businessId: user.businessId } : { userId: user.ownerId };
     const product = await this.prisma.product.findFirst({ where: { id: body.productId, ...where } });
     if (!product) throw new NotFoundException('Produit introuvable');
-    return this.prisma.productMedia.create({
+    const media = await this.prisma.productMedia.create({
       data: {
         productId: body.productId,
         url: body.url,
@@ -438,6 +470,9 @@ Règles:
         thumbnailUrl: body.thumbnailUrl ?? null,
       },
     });
+    // Lighter for the feed, in the background: the reel shows at once, as uploaded.
+    if (media.type === 'video') this.videos.enqueue(media.id);
+    return media;
   }
 
   // ── PATCH media audio (auth) ───────────────────────────────────────────────
@@ -501,6 +536,8 @@ Règles:
                 quantity: true,
                 imageUrl: true,
                 trackStock: true,
+                variantGroup: true,
+                variantLabel: true,
                 media: { orderBy: { sortOrder: 'asc' }, select: { id: true, url: true, type: true, thumbnailUrl: true } },
               },
             },
@@ -715,9 +752,23 @@ Règles:
     // Optional: an order placed while signed in shows in the customer's history.
     const customer = await this.customers.optionalCustomer(auth);
 
-    if (!dto.customerName?.trim()) throw new BadRequestException('Nom requis');
-    if (!dto.customerPhone?.trim()) throw new BadRequestException('Téléphone requis');
-    if (!dto.deliveryZone?.trim()) throw new BadRequestException('Zone de livraison requise');
+    // One spelling for every order, whatever was typed: tidy text, and the number in the
+    // international form WhatsApp and the follow-ups use.
+    const line = (v: unknown, max: number) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, max) : '');
+    dto.customerName = line(dto.customerName, 100);
+    if (dto.customerName.length < 2) throw new BadRequestException('Indiquez votre nom.');
+    dto.customerPhone = `+${this.customers.normalizePhone(dto.customerPhone).international}`;
+    dto.deliveryZone = line(dto.deliveryZone, 100);
+    if (!dto.deliveryZone) throw new BadRequestException('Choisissez la ville de livraison.');
+    dto.commune = line(dto.commune, 100);
+    dto.avenue = line(dto.avenue, 200);
+    if (!dto.commune || !dto.avenue) throw new BadRequestException("Indiquez la commune et l'avenue de livraison.");
+    dto.reference = line(dto.reference, 200) || undefined;
+    dto.notes = typeof dto.notes === 'string' ? dto.notes.trim().slice(0, 500) || undefined : undefined;
+    // The position travels in the notes: the delivery partner's messages and portal show them.
+    const position = positionLink(dto.location);
+    const orderNotes = [dto.notes, position && `📍 Position GPS : ${position}`].filter(Boolean).join('\n') || null;
+    const scheduledAt = wishedDeliveryDate(dto.deliveryDay);
     if (!dto.items?.length) throw new BadRequestException('Panier vide');
 
     // Prices and delivery fee come from the store, never from the browser. Lines for the
@@ -794,7 +845,8 @@ Règles:
           totalAmount: total,
           isDraft: false,
           status: 'pending',
-          notes: dto.notes ?? null,
+          scheduledAt,
+          notes: orderNotes,
           items: {
             create: items.map(i => ({ productId: i.productId, quantity: i.qty, unitPrice: i.unitPrice })),
           },
@@ -812,11 +864,12 @@ Règles:
           items: items as any,
           totalAmount: total,
           deliveryFee,
-          notes: dto.notes ?? null,
+          notes: orderNotes,
           utmSource: dto.utmSource ?? null,
           utmMedium: dto.utmMedium ?? null,
           utmCampaign: dto.utmCampaign ?? null,
           utmContent: dto.utmContent ?? null,
+          source: dto.source === 'ikele' ? 'ikele' : null,
           status: 'pending',
         },
       });
@@ -833,6 +886,16 @@ Règles:
       }
     }
     const { order, draft } = created;
+
+    // Not signed in: the order opens an account for this number, signed in on this device.
+    const account = customer ? null : await this.customers.accountForOrder(order.id, dto.customerPhone, dto.customerName, dto.deviceVisitorId)
+      .catch(err => { this.logger.warn(`accountForOrder failed for order ${order.id}: ${err?.message}`); return null; });
+    // The delivery address joins the account's address book, ready for the next order.
+    const accountId = customer?.id ?? account?.customer.id;
+    if (accountId) {
+      this.customers.rememberAddress(accountId, { city: dto.deliveryZone, commune: dto.commune, avenue: dto.avenue, reference: dto.reference })
+        .catch(err => this.logger.warn(`rememberAddress failed for order ${order.id}: ${err?.message}`));
+    }
 
     // Notify logistics dashboard via socket + push — same businessId as the row above,
     // so the real-time event and the persisted order can no longer disagree.
@@ -864,6 +927,8 @@ Règles:
       ...(dto.commune ? [`*Commune :* ${dto.commune}`] : []),
       ...(dto.avenue ? [`*Avenue :* ${dto.avenue}`] : []),
       ...(dto.reference ? [`*Référence :* ${dto.reference}`] : []),
+      ...(scheduledAt ? [`*Livraison souhaitée :* ${scheduledAt.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Africa/Kinshasa' })}`] : []),
+      ...(position ? [`*Position GPS :* ${position}`] : []),
       ...(dto.notes ? [`*Notes :* ${dto.notes}`] : []),
       '',
       `Réf : ${ref}`,
@@ -877,6 +942,6 @@ Règles:
     this.whatsapp.notifyOrder(store.userId, store.businessId ?? null, destPhone, messageText).catch(() => {});
 
     // Always return waUrl so the client sends from their own number
-    return { orderId: order.id, ref, waUrl };
+    return { orderId: order.id, ref, waUrl, account };
   }
 }

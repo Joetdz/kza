@@ -283,7 +283,7 @@ export class LogisticsController {
     const orders = await this.prisma.manualOrder.findMany({
       where: this.where(user),
       // storeOrder: set when the order came from the online store.
-      include: { items: { include: { product: true } }, partner: true, location: true, storeOrder: { select: { id: true } } },
+      include: { items: { include: { product: true } }, partner: true, location: true, storeOrder: { select: { id: true, source: true } } },
       orderBy: { createdAt: 'desc' },
     });
 

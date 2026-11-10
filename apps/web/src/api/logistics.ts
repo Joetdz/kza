@@ -130,7 +130,8 @@ export interface ManualOrder {
   isDraft: boolean;
   sourceContactId: string | null;
   /** Set when the order came from the online store. */
-  storeOrder?: { id: string } | null;
+  /** source 'ikele': placed from the Ikele app, else from the Kzion storefront. */
+  storeOrder?: { id: string; source: string | null } | null;
   /** Position of this order in the customer's history (1 = first purchase). */
   customerOrderRank?: number | null;
   /** Confirmed orders this customer has placed in total. */

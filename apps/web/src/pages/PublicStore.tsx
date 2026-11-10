@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { ShoppingCart, Plus, Minus, Trash2, Loader2, ArrowLeft, Package, CheckCircle, Play, Pause, Film, LayoutGrid, ShoppingBag, Volume2, VolumeX, Share2, Flame, Clock, Heart, Eye, X, User } from 'lucide-react';
-import { cachedCustomer, customerApi, customerAuthHeader, customerToken, LAST_STORE_KEY, VISITOR_KEY } from '../api/customer';
+import { ShoppingCart, Plus, Minus, Trash2, Loader2, ArrowLeft, Package, CheckCircle, Play, Pause, Film, LayoutGrid, ShoppingBag, Volume2, VolumeX, Share2, Flame, Clock, Heart, Eye, X, User, MapPin } from 'lucide-react';
+import { cachedCustomer, customerApi, customerAuthHeader, customerToken, deviceVisitorId, LAST_STORE_KEY, saveSession, VISITOR_KEY, type CustomerAddress, type CustomerSession } from '../api/customer';
 import { links, shareUrl } from '../lib/links';
 
 // Meta Pixel helper — no-op if pixel not loaded
@@ -41,6 +41,10 @@ interface OrderForm {
   avenue: string;
   reference: string;
   notes: string;
+  /** '' : as soon as possible. */
+  deliveryDay: '' | 'today' | 'tomorrow' | 'after';
+  /** « Ma position » : for this order only, never kept in the browser. */
+  location: { lat: number; lng: number; accuracy: number } | null;
 }
 
 // ── CartItem ──────────────────────────────────────────────────────────────────
@@ -57,10 +61,26 @@ function calcLineTotal(product: Product, qty: number): number {
   return qty * sp;
 }
 
-const EMPTY_FORM: OrderForm = { customerName: '', customerPhone: '', deliveryZone: '', commune: '', avenue: '', reference: '', notes: '' };
+const EMPTY_FORM: OrderForm = {
+  customerName: '', customerPhone: '', deliveryZone: '', commune: '', avenue: '', reference: '', notes: '',
+  deliveryDay: '', location: null,
+};
 
-const orderFormComplete = (form: OrderForm) =>
-  !!(form.customerName.trim() && form.customerPhone.trim() && form.deliveryZone && form.commune.trim() && form.avenue.trim());
+/** Same rule as the server: at least a subscriber number once spaces and signs are gone. */
+const phoneLooksValid = (phone: string) => phone.replace(/\D/g, '').length >= 9;
+
+/** What the order still lacks, in the customer's words. */
+function missingFields(form: OrderForm): string[] {
+  const missing: string[] = [];
+  if (form.customerName.trim().length < 2) missing.push('ton nom');
+  if (!phoneLooksValid(form.customerPhone)) missing.push('un numéro WhatsApp valide');
+  if (!form.deliveryZone) missing.push('la ville');
+  if (!form.commune.trim()) missing.push('la commune');
+  if (!form.avenue.trim()) missing.push("l'avenue");
+  return missing;
+}
+
+const orderFormComplete = (form: OrderForm) => missingFields(form).length === 0;
 
 /**
  * The order form of a store, kept in this browser between visits. A signed-in customer's
@@ -69,19 +89,21 @@ const orderFormComplete = (form: OrderForm) =>
 function useOrderForm(slug: string) {
   const [form, setForm] = useState<OrderForm>(() => {
     try {
-      return { ...EMPTY_FORM, ...JSON.parse(localStorage.getItem(`form_${slug}`) ?? '{}') };
+      return { ...EMPTY_FORM, ...JSON.parse(localStorage.getItem(`form_${slug}`) ?? '{}'), location: null };
     } catch {
       return EMPTY_FORM;
     }
   });
 
   const [customer, setCustomer] = useState(() => (customerToken() ? cachedCustomer() : null));
+  const [addresses, setAddresses] = useState<CustomerAddress[]>([]);
   useEffect(() => {
     try { localStorage.setItem(LAST_STORE_KEY, slug); } catch { /* ignore */ }
     if (!customerToken()) return;
     Promise.all([customerApi.me(), customerApi.addresses().catch(() => [])])
       .then(([me, addresses]) => {
         setCustomer(me);
+        setAddresses(addresses);
         const address = addresses.find(a => a.isDefault) ?? addresses[0];
         // Only empty fields: what the visitor already typed stays.
         setForm(f => ({
@@ -100,10 +122,14 @@ function useOrderForm(slug: string) {
   }, [slug]);
 
   useEffect(() => {
-    localStorage.setItem(`form_${slug}`, JSON.stringify(form));
+    const { location: _, ...kept } = form;
+    localStorage.setItem(`form_${slug}`, JSON.stringify(kept));
   }, [form, slug]);
 
-  return { form, setForm, customer };
+  // The account a first order opens: signed in on this device from now on.
+  const signIn = (session: CustomerSession) => setCustomer(saveSession(session));
+
+  return { form, setForm, customer, signIn, addresses };
 }
 
 /** UTM params of the link that brought the visitor (FB Ads link tracking). */
@@ -116,10 +142,14 @@ function readUtm(): Record<string, string> {
   return utm;
 }
 
-/** Sends the order and returns the WhatsApp link that tells the seller. Throws the message to show. */
+/**
+ * Sends the order. Returns the WhatsApp link that tells the seller and, for a number seen
+ * for the first time, the session of the account the order opened. Throws the message to show.
+ */
 async function submitStoreOrder(
   slug: string, form: OrderForm, cart: CartItem[], deliveryFee: number, utm: Record<string, string>,
-): Promise<string> {
+  source?: 'ikele',
+): Promise<{ waUrl: string; account: CustomerSession | null }> {
   let res: Response;
   try {
     res = await fetch(`${BASE}/store/${slug}/order`, {
@@ -139,6 +169,10 @@ async function submitStoreOrder(
         utmMedium: utm.utm_medium,
         utmCampaign: utm.utm_campaign,
         utmContent: utm.utm_content,
+        source,
+        deviceVisitorId: deviceVisitorId(),
+        deliveryDay: form.deliveryDay || undefined,
+        location: form.location ? { lat: form.location.lat, lng: form.location.lng } : undefined,
         items: cart.map(i => ({
           productId: i.product.id,
           name: i.product.name,
@@ -152,12 +186,14 @@ async function submitStoreOrder(
   }
   const body = await res.json().catch(() => null);
   if (!res.ok) throw new Error(body?.message ?? "Votre commande n'a pas pu être enregistrée. Réessayez.");
-  return body.waUrl;
+  return { waUrl: body.waUrl, account: body.account ?? null };
 }
 
 interface CartDrawerProps {
   /** Replaces « Mon panier (n articles) ». */
   title?: string;
+  /** The signed-in customer's saved addresses: one tap fills the delivery fields. */
+  addresses?: CustomerAddress[];
   cart: CartItem[];
   store: StoreData | null;
   color: string;
@@ -167,17 +203,96 @@ interface CartDrawerProps {
   totalItems: number;
   onClose: () => void;
   onUpdateQty: (productId: string, delta: number) => void;
-  onFormChange: (field: keyof OrderForm, value: string) => void;
+  /** Puts another variant of the model in place of this line. */
+  onSwapProduct: (productId: string, variant: Product) => void;
+  onFormChange: <K extends keyof OrderForm>(field: K, value: OrderForm[K]) => void;
   onOrder: () => void;
 }
 
-function CartDrawer({ title, cart, store, color, form, ordering, total, totalItems, onClose, onUpdateQty, onFormChange, onOrder }: CartDrawerProps) {
+const DELIVERY_DAYS: [OrderForm['deliveryDay'], string][] = [
+  ['', 'Au plus vite'], ['today', "Aujourd'hui"], ['tomorrow', 'Demain'], ['after', 'Après-demain'],
+];
+
+/** The variants of this product's model that the store sells, this one included. */
+function variantsOf(product: Product, products: Product[]): Product[] {
+  if (!product.variantGroup) return [];
+  return products.filter(p => p.variantGroup === product.variantGroup && p.variantLabel);
+}
+
+/** The cart with `variant` in place of `productId`, joined to its line if already there. */
+function swapInCart(cart: CartItem[], productId: string, variant: Product): CartItem[] {
+  const line = cart.find(i => i.product.id === productId);
+  if (!line) return cart;
+  const rest = cart.filter(i => i.product.id !== productId);
+  const existing = rest.find(i => i.product.id === variant.id);
+  if (existing) return rest.map(i => i.product.id === variant.id ? { ...i, qty: i.qty + line.qty } : i);
+  return cart.map(i => i.product.id === productId ? { product: variant, qty: line.qty } : i);
+}
+
+// « Ma position » : the phone's GPS, joined to the order as a map link for the delivery
+// person — addresses are often vague, a pin is not.
+function PositionButton({ location, onChange }: { location: OrderForm['location']; onChange: (l: OrderForm['location']) => void }) {
+  const [state, setState] = useState<'idle' | 'locating' | 'error'>('idle');
+  const [error, setError] = useState('');
+
+  const locate = () => {
+    if (!navigator.geolocation) { setState('error'); setError("Ton téléphone ne donne pas sa position."); return; }
+    setState('locating');
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        onChange({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: Math.round(pos.coords.accuracy) });
+        setState('idle');
+      },
+      err => {
+        setState('error');
+        setError(err.code === err.PERMISSION_DENIED
+          ? 'Position refusée : autorise-la dans ton navigateur pour l\'ajouter.'
+          : 'Position introuvable pour le moment : réessaie dehors ou près d\'une fenêtre.');
+      },
+      { enableHighAccuracy: true, timeout: 15_000, maximumAge: 60_000 },
+    );
+  };
+
+  if (location) {
+    return (
+      <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl border border-green-200 bg-green-50 text-xs">
+        <MapPin size={16} className="text-green-600 shrink-0" />
+        <span className="flex-1 text-green-800">
+          <span className="font-semibold">Position ajoutée</span> (à {location.accuracy} m près) : le livreur la verra.
+        </span>
+        <button type="button" onClick={() => onChange(null)} className="text-gray-500 font-semibold">Retirer</button>
+      </div>
+    );
+  }
+  return (
+    <div>
+      <button type="button" onClick={locate} disabled={state === 'locating'}
+        className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-dashed border-gray-300 text-sm font-semibold text-gray-700 disabled:opacity-60">
+        {state === 'locating' ? <Loader2 size={16} className="animate-spin" /> : <MapPin size={16} />}
+        {state === 'locating' ? 'Recherche de ta position…' : 'Ajouter ma position (aide le livreur)'}
+      </button>
+      {state === 'error' && <p className="text-[11px] text-red-500 mt-1 px-1">{error}</p>}
+    </div>
+  );
+}
+
+function CartDrawer({ title, addresses = [], cart, store, color, form, ordering, total, totalItems, onClose, onUpdateQty, onSwapProduct, onFormChange, onOrder }: CartDrawerProps) {
   const cur = store?.currency ?? 'CDF';
   const zones = store?.deliveryZones ?? [];
   const selectedZone = zones.find(z => z.city === form.deliveryZone);
   const deliveryFee = selectedZone?.fee ?? 0;
 
-  const canOrder = !ordering && orderFormComplete(form);
+  const missing = missingFields(form);
+  const canOrder = !ordering && missing.length === 0;
+  // Only the addresses this store delivers to.
+  const usable = addresses.filter(a => zones.some(z => z.city === a.city));
+  const pickAddress = (a: CustomerAddress) => {
+    onFormChange('deliveryZone', a.city);
+    onFormChange('commune', a.commune);
+    onFormChange('avenue', a.avenue);
+    onFormChange('reference', a.reference);
+  };
+  const phoneWrong = form.customerPhone.trim() !== '' && !phoneLooksValid(form.customerPhone);
 
   return (
     <div className="fixed inset-0 z-50 flex">
@@ -205,10 +320,26 @@ function CartDrawer({ title, cart, store, color, form, ordering, total, totalIte
                     : <Package size={18} className="text-gray-200 m-auto mt-3" />}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-900 truncate">{product.name}</p>
+                  <p className="text-sm font-medium text-gray-900 truncate">{product.variantLabel ? product.variantGroup : product.name}</p>
                   <p className="text-xs font-semibold" style={{ color }}>
                     {calcLineTotal(product, qty).toLocaleString('fr-FR')} {cur}
                   </p>
+                  {/* Another size or colour of the same model, in one tap. */}
+                  {(() => {
+                    const variants = variantsOf(product, store?.products ?? []);
+                    return variants.length > 1 && (
+                      <div className="flex flex-wrap gap-1 mt-1.5">
+                        {variants.map(v => (
+                          <button key={v.id} type="button" onClick={() => v.id !== product.id && onSwapProduct(product.id, v)}
+                            aria-pressed={v.id === product.id}
+                            className={`px-2 py-0.5 rounded-lg border text-[11px] font-semibold ${v.id === product.id ? 'text-white border-transparent' : 'border-gray-200 text-gray-600 bg-white'}`}
+                            style={v.id === product.id ? { background: color } : undefined}>
+                            {v.variantLabel}
+                          </button>
+                        ))}
+                      </div>
+                    );
+                  })()}
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <button onClick={() => onUpdateQty(product.id, -1)}
@@ -228,36 +359,33 @@ function CartDrawer({ title, cart, store, color, form, ordering, total, totalIte
 
           {cart.length > 0 && (
             <div className="px-4 pb-4 space-y-3 border-t border-gray-100 pt-4">
-              {/* Récapitulatif */}
-              <div className="bg-gray-50 rounded-2xl p-3 space-y-1.5">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-500">Produits</span>
-                  <span className="font-semibold text-gray-800">{total.toLocaleString('fr-FR')} {cur}</span>
-                </div>
-                {form.deliveryZone && (
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-gray-500">Livraison — {form.deliveryZone}</span>
-                    <span className="font-semibold text-orange-600">{deliveryFee.toLocaleString('fr-FR')} FC</span>
-                  </div>
-                )}
-                <div className="border-t border-gray-200 pt-1.5 flex items-center justify-between">
-                  <span className="text-xs text-gray-400 font-medium">À PAYER</span>
-                  <div className="text-right">
-                    <span className="text-lg font-black text-gray-900">{total.toLocaleString('fr-FR')} {cur}</span>
-                    {form.deliveryZone && <span className="text-sm font-bold text-orange-600"> + {deliveryFee.toLocaleString('fr-FR')} FC</span>}
-                  </div>
-                </div>
-                <p className="text-[10px] text-gray-400 text-right">Paiement à la livraison</p>
-              </div>
-
               {/* Formulaire */}
               <p className="text-xs text-gray-500 font-medium pt-1">Vos coordonnées</p>
               <input value={form.customerName} onChange={e => onFormChange('customerName', e.target.value)}
-                placeholder="Votre nom complet *"
+                placeholder="Votre nom complet *" autoComplete="name" autoCapitalize="words"
                 className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-green-400" />
               <input value={form.customerPhone} onChange={e => onFormChange('customerPhone', e.target.value)}
-                placeholder="Votre numéro de téléphone *"
-                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-green-400" />
+                placeholder="Votre numéro WhatsApp * (ex. 0812345678)" type="tel" inputMode="tel" autoComplete="tel"
+                aria-invalid={phoneWrong}
+                className={`w-full border rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-green-400 ${phoneWrong ? 'border-red-300' : 'border-gray-200'}`} />
+              {phoneWrong && <p className="text-[11px] text-red-500 -mt-1.5 px-1">Ce numéro semble incomplet.</p>}
+              {usable.length > 0 && (
+                <div>
+                  <p className="text-xs text-gray-500 font-medium mb-1.5">Mes adresses</p>
+                  <div className="flex gap-2 overflow-x-auto scrollbar-hide -mx-1 px-1">
+                    {usable.map(a => {
+                      const chosen = form.deliveryZone === a.city && form.commune === a.commune && form.avenue === a.avenue;
+                      return (
+                        <button key={a.id} type="button" onClick={() => pickAddress(a)} aria-pressed={chosen}
+                          className={`shrink-0 max-w-[200px] text-left px-3 py-2 rounded-xl border text-xs ${chosen ? 'border-green-500 bg-green-50' : 'border-gray-200 bg-white'}`}>
+                          <span className="block font-semibold text-gray-800 truncate">{a.label || a.commune || a.city}</span>
+                          <span className="block text-gray-500 truncate">{[a.avenue, a.commune, a.city].filter(Boolean).join(', ')}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
               <select value={form.deliveryZone} onChange={e => { onFormChange('deliveryZone', e.target.value); onFormChange('commune', ''); }}
                 className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-green-400 bg-white">
                 <option value="">Ville de livraison *</option>
@@ -281,7 +409,7 @@ function CartDrawer({ title, cart, store, color, form, ordering, total, totalIte
                         className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-green-400" />
                     )}
                     <input value={form.avenue} onChange={e => onFormChange('avenue', e.target.value)}
-                      placeholder="Avenue / Rue *"
+                      placeholder="Avenue / Rue *" autoComplete="address-line1"
                       className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-green-400" />
                     <input value={form.reference} onChange={e => onFormChange('reference', e.target.value)}
                       placeholder="Référence (ex: près de l'église rouge)"
@@ -289,10 +417,51 @@ function CartDrawer({ title, cart, store, color, form, ordering, total, totalIte
                   </>
                 );
               })()}
+              {form.deliveryZone && <PositionButton location={form.location} onChange={l => onFormChange('location', l)} />}
+
+              <div>
+                <p className="text-xs text-gray-500 font-medium mb-1.5">Livraison souhaitée</p>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {DELIVERY_DAYS.map(([day, label]) => (
+                    <button key={day} type="button" onClick={() => onFormChange('deliveryDay', day)} aria-pressed={form.deliveryDay === day}
+                      className={`py-2 rounded-xl border text-xs font-semibold ${form.deliveryDay === day ? 'border-green-500 bg-green-50 text-green-700' : 'border-gray-200 text-gray-600'}`}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <textarea value={form.notes} onChange={e => onFormChange('notes', e.target.value)}
                 placeholder="Instructions supplémentaires (optionnel)"
                 rows={2}
                 className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-green-400 resize-none" />
+
+              {/* Récapitulatif : une ligne par produit, puis la livraison, puis le total. */}
+              <div className="bg-gray-50 rounded-2xl p-3 space-y-1.5">
+                <p className="text-xs text-gray-500 font-medium">Récapitulatif</p>
+                {cart.map(({ product, qty }) => (
+                  <div key={product.id} className="flex items-start justify-between gap-3 text-sm">
+                    <span className="text-gray-700 min-w-0">
+                      <span className="font-semibold">{qty} ×</span> {product.name}
+                    </span>
+                    <span className="font-semibold text-gray-800 whitespace-nowrap">{calcLineTotal(product, qty).toLocaleString('fr-FR')} {cur}</span>
+                  </div>
+                ))}
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-gray-500">Livraison{form.deliveryZone ? ` — ${form.deliveryZone}` : ''}</span>
+                  <span className="font-semibold text-orange-600 whitespace-nowrap">
+                    {form.deliveryZone ? `${deliveryFee.toLocaleString('fr-FR')} FC` : 'choisis la ville'}
+                  </span>
+                </div>
+                <div className="border-t border-gray-200 pt-2 flex items-baseline justify-between">
+                  <span className="text-sm font-black text-gray-900">Total</span>
+                  <span className="text-right">
+                    <span className="text-xl font-black text-gray-900">{total.toLocaleString('fr-FR')} {cur}</span>
+                    {form.deliveryZone && <span className="text-base font-black text-orange-600"> + {deliveryFee.toLocaleString('fr-FR')} FC</span>}
+                  </span>
+                </div>
+                <p className="text-[10px] text-gray-400 text-right">Paiement à la livraison</p>
+              </div>
             </div>
           )}
         </div>
@@ -320,6 +489,9 @@ function CartDrawer({ title, cart, store, color, form, ordering, total, totalIte
                 ? `Commander — ${total.toLocaleString('fr-FR')} ${cur} + ${deliveryFee.toLocaleString('fr-FR')} FC`
                 : `Commander — ${total.toLocaleString('fr-FR')} ${cur}`}
             </button>
+            {!ordering && missing.length > 0 && (
+              <p className="text-[11px] text-gray-500 text-center mt-2">À compléter : {missing.join(', ')}</p>
+            )}
           </div>
         )}
       </div>
@@ -365,6 +537,9 @@ interface Product {
   imageUrl: string | null;
   description: string | null;
   media: ProductMedia[];
+  /** Variants: the model's name, and this one's (« M », « Rouge »). */
+  variantGroup?: string | null;
+  variantLabel?: string | null;
 }
 
 interface DeliveryZone { city: string; fee: number }
@@ -426,6 +601,23 @@ export interface StoreProfile {
   following: boolean;
   likes: number;
   products: number;
+}
+
+// Sound is on for every reel, as on TikTok. The speaker button turns it off (or back on)
+// for all of them at once, for the rest of the visit.
+let soundOff = false;
+const soundListeners = new Set<(off: boolean) => void>();
+function setSoundOff(off: boolean) {
+  soundOff = off;
+  soundListeners.forEach(listener => listener(off));
+}
+function useSoundOff() {
+  const [off, setOff] = useState(soundOff);
+  useEffect(() => {
+    soundListeners.add(setOff);
+    return () => { soundListeners.delete(setOff); };
+  }, []);
+  return off;
 }
 
 /** Two taps closer than this are a double tap (like), not two pauses. */
@@ -490,8 +682,13 @@ export function FeedCard({
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
-  const [videoMuted, setVideoMuted] = useState(false);
-  const [audioMuted, setAudioMuted] = useState(false);
+  const muted = useSoundOff();
+  // The browser refused sound before the visitor's first touch: the reel plays silent
+  // until then, and the first touch turns the sound on.
+  const [blocked, setBlocked] = useState(false);
+  const unlockedAt = useRef(0);
+  const videoMuted = muted || blocked;
+  const audioMuted = muted;
   const [isPlaying, setIsPlaying] = useState(true);
   const [showPlayIcon, setShowPlayIcon] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -502,10 +699,10 @@ export function FeedCard({
     if (!v) return;
     if (isActive) {
       v.currentTime = 0;
-      v.muted = false;
-      v.play().catch(() => {
+      v.muted = soundOff;
+      v.play().then(() => setBlocked(false)).catch(() => {
         v.muted = true;
-        setVideoMuted(true);
+        setBlocked(true);
         v.play().catch(() => {});
       });
       setIsPlaying(true);
@@ -513,6 +710,29 @@ export function FeedCard({
       v.pause();
     }
   }, [isActive]);
+
+  // React does not keep the muted property in step with its attribute: set it here.
+  useEffect(() => {
+    if (videoRef.current) videoRef.current.muted = videoMuted;
+    if (audioRef.current) audioRef.current.muted = audioMuted;
+  }, [videoMuted, audioMuted]);
+
+  // The first touch anywhere (a tap, the end of a swipe) lets the sound in.
+  useEffect(() => {
+    if (!blocked || !isActive) return;
+    const unlock = () => {
+      unlockedAt.current = Date.now();
+      setBlocked(false);
+      const v = videoRef.current;
+      if (v) { v.muted = soundOff; v.play().catch(() => {}); }
+    };
+    window.addEventListener('touchend', unlock, { once: true, capture: true });
+    window.addEventListener('click', unlock, { once: true, capture: true });
+    return () => {
+      window.removeEventListener('touchend', unlock, { capture: true });
+      window.removeEventListener('click', unlock, { capture: true });
+    };
+  }, [blocked, isActive]);
 
   // Manage audio play/pause when slide becomes active
   useEffect(() => {
@@ -525,8 +745,14 @@ export function FeedCard({
     a.currentTime = 0;
     // The store now opens on this slide: browsers refuse sound until the visitor's first touch.
     const retry = () => { a.play().catch(() => {}); };
-    a.play().catch(() => window.addEventListener('pointerdown', retry, { once: true }));
-    return () => window.removeEventListener('pointerdown', retry);
+    a.play().catch(() => {
+      window.addEventListener('touchend', retry, { once: true, capture: true });
+      window.addEventListener('click', retry, { once: true, capture: true });
+    });
+    return () => {
+      window.removeEventListener('touchend', retry, { capture: true });
+      window.removeEventListener('click', retry, { capture: true });
+    };
   }, [isActive]);
 
   // Whether any sound control is relevant
@@ -535,11 +761,8 @@ export function FeedCard({
   const showSoundBtn = hasVideo || hasAudio;
 
   const toggleMute = () => {
-    if (hasVideo) setVideoMuted(m => !m);
-    if (hasAudio && audioRef.current) {
-      audioRef.current.muted = !audioMuted;
-      setAudioMuted(m => !m);
-    }
+    if (blocked) { setBlocked(false); return; }
+    setSoundOff(!muted);
   };
 
   const isMuted = hasVideo ? videoMuted : audioMuted;
@@ -575,6 +798,8 @@ export function FeedCard({
 
   const handleTap = (e: React.MouseEvent<HTMLDivElement>) => {
     const now = Date.now();
+    // The touch that just turned the sound on is not a pause.
+    if (now - unlockedAt.current < 400) return;
     if (now - lastTap.current < DOUBLE_TAP_MS) {
       clearTimeout(singleTapTimer.current);
       lastTap.current = 0;
@@ -627,6 +852,15 @@ export function FeedCard({
               ? <Pause size={44} className="text-white drop-shadow-lg" />
               : <Play  size={44} className="text-white drop-shadow-lg" />}
           </div>
+        </div>
+      )}
+
+      {/* Sound refused until the first touch: say so, as TikTok does. */}
+      {blocked && isActive && showSoundBtn && !muted && (
+        <div className="absolute top-16 inset-x-0 z-20 flex justify-center pointer-events-none">
+          <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/60 backdrop-blur-sm text-white text-xs font-semibold">
+            <VolumeX size={14} /> Touche l'écran pour activer le son
+          </span>
         </div>
       )}
 
@@ -746,13 +980,17 @@ export function FeedCard({
 
 // ── OrderConfirmed ─────────────────────────────────────────────────────────────
 
-function OrderConfirmed({ total, currency, color, signedIn, form, accountLink, onContinue, continueLabel = 'Continuer mes achats' }: {
+/**
+ * The customer's account after the order: 'created' by this order, already 'signed-in', or
+ * 'existing' for a number that has one this device is not signed in to.
+ */
+type OrderAccount = 'created' | 'signed-in' | 'existing';
+
+function OrderConfirmed({ total, currency, color, account, accountLink, onContinue, continueLabel = 'Continuer mes achats' }: {
   total: number;
   currency: string;
   color: string;
-  signedIn: boolean;
-  /** Its name and number start the account the visitor is invited to create. */
-  form: OrderForm;
+  account: OrderAccount;
   accountLink: string;
   onContinue: () => void;
   continueLabel?: string;
@@ -774,21 +1012,32 @@ function OrderConfirmed({ total, currency, color, signedIn, form, accountLink, o
         <p className="font-semibold text-gray-900 mb-1">Paiement à la livraison</p>
         <p className="font-bold text-lg mt-1" style={{ color: '#25d366' }}>{total.toLocaleString('fr-FR')} {currency}</p>
       </div>
-      {signedIn ? (
+      {account === 'signed-in' && (
         <a href={accountLink} className="text-sm font-semibold text-gray-700 underline">
           Suivre ma commande dans mon compte
         </a>
-      ) : (
-        // Invited after the order, never before: an account is never needed to buy.
+      )}
+      {account === 'created' && (
+        <div className="bg-white rounded-2xl px-5 py-4 shadow-sm border border-gray-100 max-w-xs w-full text-left">
+          <p className="font-bold text-gray-900 text-sm mb-1">Ton espace client est prêt</p>
+          <p className="text-xs text-gray-500 mb-3">
+            On t'a créé un compte avec ton numéro : suis ta livraison, retrouve tes commandes et tes adresses.
+          </p>
+          <a href={accountLink}
+            className="block text-center py-2.5 rounded-xl text-sm font-semibold text-white" style={{ background: color }}>
+            Voir mon espace client
+          </a>
+        </div>
+      )}
+      {account === 'existing' && (
         <div className="bg-white rounded-2xl px-5 py-4 shadow-sm border border-gray-100 max-w-xs w-full text-left">
           <p className="font-bold text-gray-900 text-sm mb-1">Suis ta livraison en direct</p>
           <p className="text-xs text-gray-500 mb-3">
-            Crée ton compte avec ton numéro WhatsApp : tu retrouves cette commande, tes adresses et les boutiques que tu suis.
+            Ce numéro a déjà un compte : connecte-toi pour retrouver cette commande.
           </p>
-          <a
-            href={`${accountLink}&mode=signup&retour=1&tel=${encodeURIComponent(form.customerPhone)}&nom=${encodeURIComponent(form.customerName)}`}
+          <a href={accountLink}
             className="block text-center py-2.5 rounded-xl text-sm font-semibold text-white" style={{ background: color }}>
-            Créer mon compte
+            Me connecter
           </a>
         </div>
       )}
@@ -812,8 +1061,8 @@ export function QuickOrder({ slug, productId, onClose }: { slug: string; product
   const [cart, setCart] = useState<CartItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [ordering, setOrdering] = useState(false);
-  const [confirmed, setConfirmed] = useState<number | null>(null);
-  const { form, setForm, customer } = useOrderForm(slug);
+  const [confirmed, setConfirmed] = useState<{ total: number; account: OrderAccount } | null>(null);
+  const { form, setForm, customer, signIn, addresses } = useOrderForm(slug);
 
   useEffect(() => {
     fetch(`${BASE}/store/${slug}`)
@@ -849,7 +1098,8 @@ export function QuickOrder({ slug, productId, onClose }: { slug: string; product
     if (!store || !orderFormComplete(form) || cart.length === 0) return;
     setOrdering(true);
     try {
-      const waUrl = await submitStoreOrder(slug, form, cart, deliveryFee, readUtm());
+      const { waUrl, account } = await submitStoreOrder(slug, form, cart, deliveryFee, readUtm(), 'ikele');
+      if (account) signIn(account);
       window.open(waUrl, '_blank');
       if (store.metaPixelId) {
         fbq('trackSingle', store.metaPixelId, 'Purchase', {
@@ -857,8 +1107,9 @@ export function QuickOrder({ slug, productId, onClose }: { slug: string; product
           content_type: 'product', num_items: totalItems,
         });
       }
-      setConfirmed(total);
+      setConfirmed({ total, account: account ? 'created' : customer ? 'signed-in' : 'existing' });
       localStorage.removeItem(`form_${slug}`);
+      setForm(f => ({ ...f, deliveryDay: '', location: null }));
     } catch (e) {
       window.alert((e as Error).message);
     } finally {
@@ -869,8 +1120,8 @@ export function QuickOrder({ slug, productId, onClose }: { slug: string; product
   if (confirmed !== null) {
     return (
       <div className="fixed inset-0 z-50 overflow-y-auto">
-        <OrderConfirmed total={confirmed} currency={store?.currency ?? 'CDF'} color={color} signedIn={!!customer}
-          form={form} accountLink={links.account(slug)} onContinue={onClose} continueLabel="Continuer" />
+        <OrderConfirmed total={confirmed.total} currency={store?.currency ?? 'CDF'} color={color} account={confirmed.account}
+          accountLink={links.account(slug)} onContinue={onClose} continueLabel="Continuer" />
       </div>
     );
   }
@@ -894,10 +1145,11 @@ export function QuickOrder({ slug, productId, onClose }: { slug: string; product
 
   return (
     <CartDrawer
-      title="Commander" cart={cart} store={store} color={color} form={form}
+      title="Commander" addresses={addresses} cart={cart} store={store} color={color} form={form}
       ordering={ordering} total={total} totalItems={totalItems}
       onClose={onClose}
       onUpdateQty={updateQty}
+      onSwapProduct={(id, variant) => setCart(c => swapInCart(c, id, variant))}
       onFormChange={(field, value) => setForm(f => ({ ...f, [field]: value }))}
       onOrder={order}
     />
@@ -918,8 +1170,8 @@ export function PublicStore({ slug, initialReelId, initialView, addProductId, on
   });
   const [showCart, setShowCart] = useState(false);
   const [ordering, setOrdering] = useState(false);
-  /** The total of the order just sent: the confirmation screen shows it. */
-  const [confirmed, setConfirmed] = useState<number | null>(null);
+  /** The order just sent: the confirmation screen shows its total and the account. */
+  const [confirmed, setConfirmed] = useState<{ total: number; account: OrderAccount } | null>(null);
   const accountLink = links.account(slug);
 
   // The store opens on its reels; a store without any opens on its catalogue instead.
@@ -931,7 +1183,7 @@ export function PublicStore({ slug, initialReelId, initialView, addProductId, on
   const feedRef = useRef<HTMLDivElement>(null);
   const [detailProduct, setDetailProduct] = useState<Product | null>(null);
 
-  const { form, setForm, customer } = useOrderForm(slug);
+  const { form, setForm, customer, signIn, addresses } = useOrderForm(slug);
 
   // Persist cart to localStorage
   useEffect(() => {
@@ -1098,7 +1350,8 @@ export function PublicStore({ slug, initialReelId, initialView, addProductId, on
     if (!orderFormComplete(form) || cart.length === 0) return;
     setOrdering(true);
     try {
-      const waUrl = await submitStoreOrder(slug, form, cart, deliveryFee, utmRef.current);
+      const { waUrl, account } = await submitStoreOrder(slug, form, cart, deliveryFee, utmRef.current);
+      if (account) signIn(account);
       // Client envoie depuis son propre numéro vers le business
       window.open(waUrl, '_blank');
       fbq('track', 'Purchase', {
@@ -1108,10 +1361,11 @@ export function PublicStore({ slug, initialReelId, initialView, addProductId, on
         content_type: 'product',
         num_items: totalItems,
       });
-      setConfirmed(total);
+      setConfirmed({ total, account: account ? 'created' : customer ? 'signed-in' : 'existing' });
       setCart([]);
       localStorage.removeItem(`cart_${slug}`);
       localStorage.removeItem(`form_${slug}`);
+      setForm(f => ({ ...f, deliveryDay: '', location: null }));
     } catch (e) {
       window.alert((e as Error).message);
     }
@@ -1119,7 +1373,7 @@ export function PublicStore({ slug, initialReelId, initialView, addProductId, on
   };
 
   const color = store?.primaryColor ?? '#6366f1';
-  const handleFormChange = (field: keyof OrderForm, value: string) => setForm(f => ({ ...f, [field]: value }));
+  const handleFormChange = <K extends keyof OrderForm>(field: K, value: OrderForm[K]) => setForm(f => ({ ...f, [field]: value }));
 
   if (loading) {
     return (
@@ -1141,8 +1395,8 @@ export function PublicStore({ slug, initialReelId, initialView, addProductId, on
 
   if (confirmed !== null) {
     return (
-      <OrderConfirmed total={confirmed} currency={store?.currency ?? 'CDF'} color={color} signedIn={!!customer}
-        form={form} accountLink={accountLink} onContinue={() => setConfirmed(null)} />
+      <OrderConfirmed total={confirmed.total} currency={store?.currency ?? 'CDF'} color={color} account={confirmed.account}
+        accountLink={accountLink} onContinue={() => setConfirmed(null)} />
     );
   }
 
@@ -1274,10 +1528,11 @@ export function PublicStore({ slug, initialReelId, initialView, addProductId, on
 
         {showCart && (
           <CartDrawer
-            cart={cart} store={store} color={color} form={form}
+            addresses={addresses} cart={cart} store={store} color={color} form={form}
             ordering={ordering} total={total} totalItems={totalItems}
             onClose={() => setShowCart(false)}
             onUpdateQty={updateQty}
+            onSwapProduct={(id, variant) => setCart(c => swapInCart(c, id, variant))}
             onFormChange={handleFormChange}
             onOrder={handleOrder}
           />
@@ -1435,10 +1690,11 @@ export function PublicStore({ slug, initialReelId, initialView, addProductId, on
 
       {showCart && (
         <CartDrawer
-          cart={cart} store={store} color={color} form={form}
+          addresses={addresses} cart={cart} store={store} color={color} form={form}
           ordering={ordering} total={total} totalItems={totalItems}
           onClose={() => setShowCart(false)}
           onUpdateQty={updateQty}
+          onSwapProduct={(id, variant) => setCart(c => swapInCart(c, id, variant))}
           onFormChange={handleFormChange}
           onOrder={handleOrder}
         />

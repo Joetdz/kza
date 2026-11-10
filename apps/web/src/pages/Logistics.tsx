@@ -46,6 +46,13 @@ function fmtDateTime(iso: string | null | undefined) {
   return new Date(iso).toLocaleString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
+/** Where an online order was placed: the Ikele app, or the Kzion storefront. */
+function StoreOrderBadge({ source }: { source: string | null }) {
+  return source === 'ikele'
+    ? <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gray-900 text-white" title="Commande passée sur l'app Ikele">📱 Ikele</span>
+    : <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-pink-100 text-pink-700" title="Commande passée sur la boutique en ligne">🛍️ Boutique</span>;
+}
+
 function orderNum(n: number) {
   return '#' + String(n).padStart(4, '0');
 }
@@ -926,7 +933,7 @@ export function Logistics() {
                         <div className="flex items-center gap-2 mb-2">
                           <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">{o.storeOrder ? 'Brouillon' : 'Brouillon IA'} — Édition</span>
                           <span className="font-black text-indigo-600 text-sm">{orderNum(o.orderNumber)}</span>
-                          {o.storeOrder && <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-pink-100 text-pink-700">🛍️ Boutique</span>}
+                          {o.storeOrder && <StoreOrderBadge source={o.storeOrder.source} />}
                         </div>
 
                         {/* Produits */}
@@ -1110,11 +1117,7 @@ export function Logistics() {
                             ? <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">{o.storeOrder ? 'Brouillon' : 'Brouillon IA'}</span>
                             : <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${st.color}`}>{st.label}</span>
                           }
-                          {o.storeOrder && (
-                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-pink-100 text-pink-700" title="Commande passée sur la boutique en ligne">
-                              🛍️ Boutique
-                            </span>
-                          )}
+                          {o.storeOrder && <StoreOrderBadge source={o.storeOrder.source} />}
                           {/* Rank in this customer's history — only worth showing past the first */}
                           {!!o.customerOrderRank && o.customerOrderRank > 1 && (
                             <span

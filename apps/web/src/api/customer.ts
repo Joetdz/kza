@@ -15,6 +15,8 @@ export interface Customer {
   phone: string;
   visitorId: string;
   preferredCategories: string[];
+  /** False for an account opened by an order: the customer has not picked one yet. */
+  hasPassword: boolean;
 }
 
 export interface CustomerAddress {
@@ -67,11 +69,19 @@ export function cachedCustomer(): Customer | null {
   try { return JSON.parse(read(CUSTOMER_KEY) ?? 'null'); } catch { return null; }
 }
 
-function saveSession(session: { token: string; customer: Customer }) {
+export interface CustomerSession { token: string; customer: Customer }
+
+/** Fired on this page when the customer signs in or out, for screens already open. */
+export const SESSION_EVENT = 'kza-customer-session';
+const announce = () => { try { window.dispatchEvent(new Event(SESSION_EVENT)); } catch { /* ignore */ } };
+
+/** Keeps a session opened elsewhere (the account an order opens) in this browser. */
+export function saveSession(session: CustomerSession) {
   write(TOKEN_KEY, session.token);
   write(CUSTOMER_KEY, JSON.stringify(session.customer));
   // From now on likes and follows count for the account, on this device too.
   write(VISITOR_KEY, session.customer.visitorId);
+  announce();
   return session.customer;
 }
 
@@ -80,6 +90,7 @@ function clearSession() {
   write(CUSTOMER_KEY, null);
   // A fresh anonymous id: what is liked after logging out no longer counts for the account.
   write(VISITOR_KEY, null);
+  announce();
 }
 
 /** Authorization header for the store's own calls (an order placed while signed in). */
@@ -100,13 +111,13 @@ async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 const post = <T>(path: string, data: unknown) => call<T>(path, { method: 'POST', body: JSON.stringify(data) });
-const deviceVisitorId = () => read(VISITOR_KEY) ?? undefined;
+export const deviceVisitorId = () => read(VISITOR_KEY) ?? undefined;
 
 export const customerApi = {
-  requestCode: (phone: string, purpose: 'signup' | 'reset', storeSlug: string | null) =>
+  requestCode: (phone: string, purpose: 'reset', storeSlug: string | null) =>
     post<{ sent: boolean }>('/otp', { phone, purpose, storeSlug }),
 
-  signup: async (data: { phone: string; code: string; name: string; password: string }) =>
+  signup: async (data: { phone: string; name: string; password: string }) =>
     saveSession(await post('/signup', { ...data, deviceVisitorId: deviceVisitorId() })),
 
   login: async (phone: string, password: string) =>
@@ -115,6 +126,7 @@ export const customerApi = {
   resetPassword: async (data: { phone: string; code: string; password: string }) =>
     saveSession(await post('/reset-password', { ...data, deviceVisitorId: deviceVisitorId() })),
 
+  /** currentPassword: empty when the account has none yet. */
   changePassword: async (currentPassword: string, newPassword: string) =>
     saveSession(await post('/me/password', { currentPassword, newPassword })),
 

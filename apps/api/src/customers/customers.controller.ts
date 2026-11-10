@@ -18,7 +18,7 @@ export class CustomersController {
 
   @Public()
   @Post('signup')
-  signup(@Body() body: { phone?: string; code?: string; name?: string; password?: string; deviceVisitorId?: string }) {
+  signup(@Body() body: { phone?: string; name?: string; password?: string; deviceVisitorId?: string }) {
     return this.customers.signup(body);
   }
 
