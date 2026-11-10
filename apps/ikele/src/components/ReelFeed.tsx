@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type Dispatch, type React
 import { Loader2 } from 'lucide-react';
 import { FeedCard, QuickOrder } from '@web/pages/PublicStore';
 import { LAST_STORE_KEY } from '@web/api/customer';
-import { ikeleApi, type GlobalReel } from '../api';
+import { ikeleApi, recordVisit, type GlobalReel } from '../api';
 
 /** A reel on screen this long counts as seen, as in each store's own feed. */
 const VIEW_AFTER_MS = 2000;
@@ -57,6 +57,8 @@ export function ReelFeed({ items, setItems, height, initialIndex = 0, hasMore = 
       seen.current.add(active.id);
       setItems(list => list.map(i => i.id === active.id ? { ...i, viewCount: i.viewCount + 1 } : i));
       ikeleApi.view(active.store.slug, active.id).catch(() => {});
+      // A reel watched counts as a visit of its store.
+      recordVisit(active.store.slug);
     }, VIEW_AFTER_MS);
     return () => clearTimeout(timer);
   }, [active?.id]);

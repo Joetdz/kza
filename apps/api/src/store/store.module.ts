@@ -6,9 +6,10 @@ import { WhatsAppModule } from '../whatsapp/whatsapp.module';
 import { PushModule } from '../push/push.module';
 import { LogisticsModule } from '../logistics/logistics.module';
 import { CustomersModule } from '../customers/customers.module';
+import { IkeleModule } from '../ikele/ikele.module';
 
 @Module({
-  imports: [PrismaModule, WhatsAppModule, PushModule, LogisticsModule, CustomersModule],
+  imports: [PrismaModule, WhatsAppModule, PushModule, LogisticsModule, CustomersModule, IkeleModule],
   controllers: [StoreController],
   providers: [VideoCompressorService],
 })

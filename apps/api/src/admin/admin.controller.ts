@@ -1,6 +1,7 @@
 import { BadRequestException, Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AdminGuard } from './admin.guard';
+import { IkeleStatsService } from '../ikele/ikele-stats.service';
 
 /** Date bounds of a "YYYY-MM" month [from, next[; without a month, the whole history. */
 function periodOf(month?: string) {
@@ -15,7 +16,13 @@ function periodOf(month?: string) {
 @Controller('admin')
 @UseGuards(AdminGuard)
 export class AdminController {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private ikeleStats: IkeleStatsService) {}
+
+  /** Ikele's visitors: today, 7 and 30 days, day by day, and the stores most visited. */
+  @Get('ikele')
+  ikele() {
+    return this.ikeleStats.platform();
+  }
 
   // ── Business overview (CA, ventes, dépenses, utilisateurs, produits) ─────────
 

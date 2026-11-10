@@ -8,6 +8,7 @@ import { Public } from '../auth/public.decorator';
 import { LogisticsService } from '../logistics/logistics.service';
 import { CustomersService } from '../customers/customers.service';
 import { VideoCompressorService } from './video-compressor.service';
+import { IkeleStatsService } from '../ikele/ikele-stats.service';
 import { assertStockAvailable, lockProducts } from '../movements/stock-rules';
 import OpenAI from 'openai';
 
@@ -109,6 +110,7 @@ export class StoreController {
     private logisticsService: LogisticsService,
     private customers: CustomersService,
     private videos: VideoCompressorService,
+    private ikeleStats: IkeleStatsService,
   ) {}
 
   // Each business owns its own store — scope every lookup by (userId, businessId)
@@ -345,6 +347,53 @@ Règles :
         logisticsNumber: manualOrder?.orderNumber ?? null,
       })),
     };
+  }
+
+  // ── GET store visitors on Ikele (auth) ───────────────────────────────────
+
+  @Get('my/visits')
+  async getVisits(@CurrentUser() user: AuthUser) {
+    const store = await this.prisma.onlineStore.findFirst({ where: this.storeWhere(user) });
+    if (!store) throw new NotFoundException('Boutique introuvable');
+    return this.ikeleStats.store(store.id);
+  }
+
+  // ── GET store followers (auth) ────────────────────────────────────────────
+
+  /**
+   * Who follows the store. A follow is kept per device: only followers with a customer
+   * account have a name, the others are counted. The number shows only for those who have
+   * already ordered here — the store has it from the order; following alone does not share it.
+   */
+  @Get('my/followers')
+  async getFollowers(@CurrentUser() user: AuthUser) {
+    const store = await this.prisma.onlineStore.findFirst({ where: this.storeWhere(user) });
+    if (!store) return { total: 0, anonymous: 0, followers: [] };
+
+    const follows = await this.prisma.storeFollower.findMany({
+      where: { storeId: store.id },
+      orderBy: { createdAt: 'desc' },
+      select: { visitorId: true, createdAt: true },
+    });
+    const customers = await this.prisma.customer.findMany({
+      where: { visitorId: { in: follows.map(f => f.visitorId) } },
+      select: { id: true, name: true, phone: true, visitorId: true },
+    });
+    const orderCounts = await this.prisma.storeOrder.groupBy({
+      by: ['customerId'],
+      where: { storeId: store.id, customerId: { in: customers.map(c => c.id) } },
+      _count: { _all: true },
+    });
+    const ordersOf = new Map(orderCounts.map(o => [o.customerId, o._count._all]));
+    const byVisitor = new Map(customers.map(c => [c.visitorId, c]));
+
+    const followers = follows.flatMap(f => {
+      const c = byVisitor.get(f.visitorId);
+      if (!c) return [];
+      const orders = ordersOf.get(c.id) ?? 0;
+      return [{ id: c.id, name: c.name, since: f.createdAt, orders, phone: orders > 0 ? c.phone : null }];
+    });
+    return { total: follows.length, anonymous: follows.length - followers.length, followers };
   }
 
   // ── UPDATE order status (auth) ────────────────────────────────────────────

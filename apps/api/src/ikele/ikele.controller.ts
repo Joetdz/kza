@@ -1,7 +1,8 @@
-import { Controller, Get, Headers, Query } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Post, Query } from '@nestjs/common';
 import { Public } from '../auth/public.decorator';
 import { PrismaService } from '../prisma/prisma.service';
 import { CustomersService } from '../customers/customers.service';
+import { IkeleStatsService } from './ikele-stats.service';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const NIL_UUID = '00000000-0000-0000-0000-000000000000';
@@ -19,7 +20,14 @@ const inStock = (p: { trackStock: boolean; quantity: number }) => !p.trackStock 
 // feed and ordering stay on the store routes, which also serve unlisted stores by link.
 @Controller('ikele')
 export class IkeleController {
-  constructor(private prisma: PrismaService, private customers: CustomersService) {}
+  constructor(private prisma: PrismaService, private customers: CustomersService, private stats: IkeleStatsService) {}
+
+  /** A visit, for the visitor counter: the app opened, or a store seen (storeSlug). */
+  @Public()
+  @Post('visit')
+  visit(@Body() body: { visitorId?: string; storeSlug?: string }) {
+    return this.stats.recordVisit(body?.visitorId, body?.storeSlug);
+  }
 
   /**
    * "Pour toi": reels drawn at random, weighted by how well they do (likes and views),

@@ -173,7 +173,15 @@ export type UserDetail = {
 
 const monthQuery = (month?: string) => (month ? `?month=${month}` : '');
 
+/** Ikele's visitor counter (GET /admin/ikele). */
+export interface IkeleStats {
+  totals: { today: number; week: number; month: number; allTime: number };
+  days: { day: string; visitors: number; newVisitors: number; orders: number }[];
+  topStores: { name: string; slug: string; visitors: number; orders: number }[];
+}
+
 export const adminApi = {
+  getIkele: () => req<IkeleStats>('/admin/ikele'),
   getOverview: (month?: string) => req<AdminOverview>(`/admin/overview${monthQuery(month)}`),
   getRevenueDetail: (month?: string) => req<RevenueDetail>(`/admin/detail/revenue${monthQuery(month)}`),
   getSalesDetail: (month?: string) => req<SalesDetail>(`/admin/detail/sales${monthQuery(month)}`),

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Grid3x3, Loader2, Play, Share2, ShoppingBag } from 'lucide-react';
 import { compactCount, QuickOrder } from '@web/pages/PublicStore';
 import { links, shareUrl } from '@web/lib/links';
-import { cachedStorePages, ikeleApi, loadStorePages, updateCachedProfile, type StoreCatalog, type StoreProfileData, type StoreReel } from '../api';
+import { cachedStorePages, ikeleApi, loadStorePages, recordVisit, updateCachedProfile, type StoreCatalog, type StoreProfileData, type StoreReel } from '../api';
 import { MediaThumb, StoreAvatar } from '../components/MediaThumb';
 
 type Tab = 'reels' | 'products';
@@ -30,6 +30,7 @@ export function StoreProfile({ slug, orderProductId }: {
   };
 
   useEffect(() => {
+    recordVisit(slug);
     loadStorePages(slug)
       .then(({ profile: p, reels: r, catalog: c }) => { setProfile(p); setReels(r); setCatalog(c); })
       // Already on screen from the cache: an outdated page beats an error.

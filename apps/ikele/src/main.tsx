@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { configureLinks } from '@web/lib/links';
 import { setPlatformPixel } from '@web/pages/PublicStore';
+import { recordVisit } from './api';
 import { App } from './App';
 import './index.css';
 
@@ -18,6 +19,9 @@ setPlatformPixel(IKELE_PIXEL_ID);
 window.addEventListener('hashchange', () => {
   (window as any).fbq?.('trackSingle', IKELE_PIXEL_ID, 'PageView');
 });
+
+// One visit counted per device and day (see the visitor counter in Kzion's admin).
+recordVisit();
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

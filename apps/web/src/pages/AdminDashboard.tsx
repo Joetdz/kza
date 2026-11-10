@@ -17,7 +17,9 @@ import {
   AdminOverview, AdminStats, AdminClient, AdminBusiness,
   RevenueDetail, SalesDetail, ExpensesDetail, ProductsDetail, UserDetail,
   GrowthPoint, FunnelStep, AdminAudienceContact, AdminLead, PagedResult,
+  type IkeleStats,
 } from '../api/admin';
+import { StatTile, VisitorsChart } from '../components/VisitorsChart';
 import { categoriesApi, ProductCategory } from '../api';
 
 // ── Palette ───────────────────────────────────────────────────────────────────
@@ -1486,7 +1488,65 @@ function TabBusinesses() {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
-type Tab = 'overview' | 'audience' | 'leads' | 'categories' | 'businesses';
+type Tab = 'overview' | 'audience' | 'leads' | 'categories' | 'businesses' | 'ikele';
+
+// ── Ikele : le compteur de visiteurs de la place de marché ───────────────────
+
+function TabIkele() {
+  const [data, setData] = useState<IkeleStats | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => { adminApi.getIkele().then(setData).catch(e => setError(e.message)); }, []);
+
+  if (error) return <p className="text-sm text-red-600">{error}</p>;
+  if (!data) return <div className="flex justify-center py-12"><span className="w-6 h-6 border-2 border-indigo-300 border-t-indigo-600 rounded-full animate-spin" /></div>;
+
+  const orders30 = data.days.reduce((n, d) => n + d.orders, 0);
+  const newVisitors30 = data.days.reduce((n, d) => n + d.newVisitors, 0);
+  const conversion = data.totals.month ? `${((orders30 / data.totals.month) * 100).toFixed(1)} %` : '—';
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+        <StatTile value={data.totals.today} label="Visiteurs aujourd'hui" />
+        <StatTile value={data.totals.week} label="Visiteurs (7 jours)" />
+        <StatTile value={data.totals.month} label="Visiteurs (30 jours)" hint={`dont ${newVisitors30.toLocaleString('fr-FR')} nouveaux`} />
+        <StatTile value={orders30} label="Commandes Ikele (30 j)" />
+        <StatTile value={conversion} label="Taux de commande" hint="commandes ÷ visiteurs, 30 j" />
+      </div>
+
+      <VisitorsChart days={data.days} title="Visiteurs d'Ikele par jour (30 jours)" />
+
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        <p className="text-sm font-bold text-gray-900 px-4 pt-4 pb-2">Boutiques les plus visitées (7 jours)</p>
+        {data.topStores.length === 0 ? (
+          <p className="text-sm text-gray-400 px-4 pb-4">Aucune visite de boutique pour l'instant.</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-xs text-gray-500 border-b border-gray-100">
+                <th className="text-left font-medium px-4 py-2">Boutique</th>
+                <th className="text-right font-medium px-4 py-2">Visiteurs</th>
+                <th className="text-right font-medium px-4 py-2">Commandes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.topStores.map(s => (
+                <tr key={s.slug} className="border-b border-gray-50 last:border-0">
+                  <td className="px-4 py-2 font-medium text-gray-900">{s.name} <span className="text-xs text-gray-400">@{s.slug}</span></td>
+                  <td className="px-4 py-2 text-right tabular-nums">{s.visitors.toLocaleString('fr-FR')}</td>
+                  <td className="px-4 py-2 text-right tabular-nums">{s.orders.toLocaleString('fr-FR')}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+      <p className="text-xs text-gray-400">
+        Un visiteur = un appareil, compté une fois par jour (heure de Kinshasa). Total depuis le début : {data.totals.allTime.toLocaleString('fr-FR')} appareils.
+      </p>
+    </div>
+  );
+}
 
 export function AdminDashboard() {
   const [overview, setOverview] = useState<AdminOverview | null>(null);
@@ -1548,6 +1608,7 @@ export function AdminDashboard() {
     { id: 'leads',       label: '💬 Leads CRM',  count: stats?.totalCrmContacts },
     { id: 'businesses',  label: '🏢 Businesses', count: overview?.totalBusinesses },
     { id: 'categories',  label: '🏷 Catégories' },
+    { id: 'ikele',       label: '📱 Ikele' },
   ];
 
   return (
@@ -1597,6 +1658,7 @@ export function AdminDashboard() {
       {tab === 'leads' && <TabLeads clients={clients} />}
       {tab === 'businesses' && <TabBusinesses />}
       {tab === 'categories' && <TabCategories />}
+      {tab === 'ikele' && <TabIkele />}
     </div>
   );
 }

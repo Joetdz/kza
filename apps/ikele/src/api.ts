@@ -97,6 +97,17 @@ export interface SearchResults {
 
 const v = () => encodeURIComponent(visitorId());
 
+// The visitor counter: the app opened, a store seen (its profile, its reels, one of its
+// reels watched in the feed). The server keeps one per device and day; this only spares
+// sending the same one twice in a visit.
+const visitsSent = new Set<string>();
+export function recordVisit(storeSlug?: string) {
+  const key = `${new Date().toDateString()}|${storeSlug ?? ''}`;
+  if (visitsSent.has(key)) return;
+  visitsSent.add(key);
+  postJson('/ikele/visit', { visitorId: visitorId(), storeSlug }).catch(() => visitsSent.delete(key));
+}
+
 /** Everything a store's pages show: its profile, its reels, its products. */
 export interface StorePages {
   profile: StoreProfileData;

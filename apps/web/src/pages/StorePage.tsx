@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
+import { StatTile, VisitorsChart, type VisitDay } from '../components/VisitorsChart';
 import {
   Store, Copy, ExternalLink, Check, Package,
   ToggleLeft, ToggleRight, Loader2, ShoppingBag, Clock, CheckCircle,
   XCircle, Truck, Plus, X, Film, Mic, MicOff, Play, Square, Trash2,
-  Sparkles, RefreshCw, Music, Scissors, Image as ImageIcon, ArrowDown, ArrowUp, Eye, Heart,
+  Sparkles, RefreshCw, Music, Scissors, Image as ImageIcon, ArrowDown, ArrowUp, Eye, Heart, Users, MessageCircle,
 } from 'lucide-react';
 import { mediaApi, uploadApi, type ProductMedia } from '../api';
 import { useSegment } from '../hooks/useSegment';
@@ -51,6 +52,19 @@ const THUMBNAILS_PER_VISIT = 6;
 
 // Ikele, the marketplace: where the store is shared from once it is set (VITE_IKELE_URL).
 const IKELE_URL = (import.meta.env.VITE_IKELE_URL as string | undefined)?.replace(/\/$/, '');
+
+/** The store's visitors on Ikele (GET /store/my/visits). */
+interface StoreVisits {
+  totals: { today: number; week: number; month: number };
+  days: VisitDay[];
+}
+
+/** The store's followers: named when they have a customer account, the others counted. */
+interface Followers {
+  total: number;
+  anonymous: number;
+  followers: { id: string; name: string; since: string; orders: number; phone: string | null }[];
+}
 
 // The Logistics statuses: an order shows the same word on both sides.
 const STATUS_LABELS: Record<string, { label: string; color: string; Icon: any }> = {
@@ -1106,11 +1120,13 @@ function PhotoToVideoStudio({
 export function StorePage() {
   const { terms, words } = useSegment();
   const { currentBusinessId } = useStore();
-  const [tab, setTab] = useState<'config' | 'products' | 'creations' | 'share' | 'orders'>('config');
+  const [tab, setTab] = useState<'config' | 'products' | 'creations' | 'share' | 'orders' | 'followers' | 'stats'>('config');
   const [store, setStore] = useState<any>(null);
   const [products, setProducts] = useState<any[]>([]);
   const [visibleIds, setVisibleIds] = useState<Set<string>>(new Set());
   const [orders, setOrders] = useState<any[]>([]);
+  const [followers, setFollowers] = useState<Followers | null>(null);
+  const [visits, setVisits] = useState<StoreVisits | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -1237,6 +1253,12 @@ export function StorePage() {
     }
     if (tab === 'creations' && store) {
       mediaApi.getAll().then(setMedia).catch(() => {});
+    }
+    if (tab === 'stats' && store) {
+      api<StoreVisits>('/store/my/visits').then(setVisits).catch(() => {});
+    }
+    if (tab === 'followers' && store) {
+      api<Followers>('/store/my/followers').then(setFollowers).catch(() => {});
     }
   }, [tab, store]);
 
@@ -1459,6 +1481,8 @@ export function StorePage() {
     { key: 'creations', label: 'Créations' },
     { key: 'share',     label: 'Lien & Partage' },
     { key: 'orders',    label: 'Commandes' },
+    { key: 'followers', label: 'Abonnés' },
+    { key: 'stats',     label: 'Statistiques' },
   ] as const;
 
   const storeProducts = products.filter(p => visibleIds.has(p.id));
@@ -1988,6 +2012,95 @@ export function StorePage() {
                 <p className="font-medium">Comment partager ?</p>
                 <p className="text-xs text-indigo-600">Copiez ce lien et envoyez-le à vos clients par WhatsApp, Instagram, Facebook ou SMS.</p>
               </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ── STATS: visitors on Ikele ── */}
+      {tab === 'stats' && (
+        <div className="space-y-3">
+          {!visits ? (
+            <div className="flex justify-center py-10"><Loader2 size={24} className="animate-spin text-gray-300" /></div>
+          ) : (() => {
+            const orders30 = visits.days.reduce((n, d) => n + d.orders, 0);
+            return (
+              <>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <StatTile value={visits.totals.today} label="Visiteurs aujourd'hui" />
+                  <StatTile value={visits.totals.week} label="Visiteurs (7 jours)" />
+                  <StatTile value={visits.totals.month} label="Visiteurs (30 jours)" />
+                  <StatTile value={orders30} label="Commandes Ikele (30 j)"
+                    hint={visits.totals.month ? `${((orders30 / visits.totals.month) * 100).toFixed(1)} % des visiteurs` : undefined} />
+                </div>
+                <VisitorsChart days={visits.days} title="Visiteurs de ta boutique sur Ikele (30 jours)" />
+                <p className="text-[11px] text-gray-400 px-1">
+                  Un visiteur est une personne (un téléphone) qui a vu ton profil ou regardé une de tes vidéos sur Ikele, comptée une fois par jour.
+                </p>
+              </>
+            );
+          })()}
+        </div>
+      )}
+
+      {/* ── FOLLOWERS ── */}
+      {tab === 'followers' && (
+        <div className="space-y-3">
+          {!followers ? (
+            <div className="flex justify-center py-10"><Loader2 size={24} className="animate-spin text-gray-300" /></div>
+          ) : (
+            <>
+              <div className="grid grid-cols-3 gap-2">
+                {([
+                  [followers.total, 'Abonnés'],
+                  [followers.followers.length, 'Avec un compte'],
+                  [followers.followers.filter(f => f.orders > 0).length, 'Déjà clients'],
+                ] as const).map(([n, label]) => (
+                  <div key={label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 text-center">
+                    <p className="text-xl font-black text-gray-900">{n.toLocaleString('fr-FR')}</p>
+                    <p className="text-[11px] text-gray-500">{label}</p>
+                  </div>
+                ))}
+              </div>
+
+              {followers.total === 0 ? (
+                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-8 text-center">
+                  <Users size={32} className="text-gray-200 mx-auto mb-2" />
+                  <p className="text-sm text-gray-400">Pas encore d'abonnés. Partage tes vidéos pour en gagner.</p>
+                </div>
+              ) : (
+                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm divide-y divide-gray-50">
+                  {followers.followers.map(f => (
+                    <div key={f.id} className="flex items-center gap-3 p-3">
+                      <div className="w-10 h-10 rounded-full bg-indigo-100 text-indigo-700 font-bold flex items-center justify-center shrink-0">
+                        {f.name.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-gray-900 truncate">{f.name}</p>
+                        <p className="text-xs text-gray-500">
+                          Abonné depuis le {new Date(f.since).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })}
+                          {f.orders > 0 && ` · ${f.orders} commande${f.orders > 1 ? 's' : ''}`}
+                        </p>
+                      </div>
+                      {f.phone && (
+                        <a href={`https://wa.me/${f.phone.replace(/\D/g, '')}`} target="_blank" rel="noreferrer"
+                          aria-label={`Écrire à ${f.name} sur WhatsApp`}
+                          className="w-9 h-9 rounded-xl bg-green-50 text-green-600 flex items-center justify-center shrink-0">
+                          <MessageCircle size={16} />
+                        </a>
+                      )}
+                    </div>
+                  ))}
+                  {followers.anonymous > 0 && (
+                    <p className="p-3 text-xs text-gray-500 text-center">
+                      + {followers.anonymous.toLocaleString('fr-FR')} abonné{followers.anonymous > 1 ? 's' : ''} sans compte client (anonymes)
+                    </p>
+                  )}
+                </div>
+              )}
+              <p className="text-[11px] text-gray-400 px-1">
+                Le numéro WhatsApp d'un abonné n'apparaît que s'il a déjà commandé dans ta boutique.
+              </p>
             </>
           )}
         </div>
