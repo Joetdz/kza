@@ -9,6 +9,20 @@ const fbq = (...args: any[]) => { (window as any).fbq?.(...args); };
 // On Ikele one visit crosses many stores: each pixel is set up once, beside the others.
 const pixelsInited = new Set<string>();
 
+// The app's own pixel (Ikele's), beside each store's: it sees every order of the app.
+let platformPixelId: string | null = null;
+export function setPlatformPixel(pixelId: string) {
+  platformPixelId = pixelId;
+  pixelsInited.add(pixelId);
+}
+
+/** One event to the store's pixel and to the app's, each on its own. */
+function trackOrderEvent(storePixelId: string | null, event: string, data: Record<string, unknown>) {
+  for (const id of new Set([storePixelId, platformPixelId])) {
+    if (id) fbq('trackSingle', id, event, data);
+  }
+}
+
 function injectMetaPixel(pixelId: string) {
   const f = window as any, b = document, e = 'script';
   if (!f.fbqLoaded && !f.fbq) {
@@ -1072,12 +1086,10 @@ export function QuickOrder({ slug, productId, onClose }: { slug: string; product
         if (!product) { setError("Ce produit n'est plus disponible."); return; }
         setStore(data);
         setCart([{ product, qty: 1 }]);
-        if (data.metaPixelId) {
-          injectMetaPixel(data.metaPixelId);
-          fbq('trackSingle', data.metaPixelId, 'InitiateCheckout', {
-            content_ids: [product.id], content_type: 'product', value: product.sellingPrice, currency: data.currency,
-          });
-        }
+        if (data.metaPixelId) injectMetaPixel(data.metaPixelId);
+        trackOrderEvent(data.metaPixelId, 'InitiateCheckout', {
+          content_ids: [product.id], content_type: 'product', value: product.sellingPrice, currency: data.currency,
+        });
       })
       .catch(() => setError('Connexion impossible, réessayez.'));
   }, [slug, productId]);
@@ -1101,12 +1113,10 @@ export function QuickOrder({ slug, productId, onClose }: { slug: string; product
       const { waUrl, account } = await submitStoreOrder(slug, form, cart, deliveryFee, readUtm(), 'ikele');
       if (account) signIn(account);
       window.open(waUrl, '_blank');
-      if (store.metaPixelId) {
-        fbq('trackSingle', store.metaPixelId, 'Purchase', {
-          value: total + deliveryFee, currency: store.currency, content_ids: cart.map(i => i.product.id),
-          content_type: 'product', num_items: totalItems,
-        });
-      }
+      trackOrderEvent(store.metaPixelId, 'Purchase', {
+        value: total + deliveryFee, currency: store.currency, content_ids: cart.map(i => i.product.id),
+        content_type: 'product', num_items: totalItems,
+      });
       setConfirmed({ total, account: account ? 'created' : customer ? 'signed-in' : 'existing' });
       localStorage.removeItem(`form_${slug}`);
       setForm(f => ({ ...f, deliveryDay: '', location: null }));
