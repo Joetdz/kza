@@ -251,42 +251,13 @@ export class PartnerPortalController {
     const partner = await this.prisma.deliveryPartner.findUnique({ where: { token } });
     if (!partner) return null;
 
-    // Amounts collected from customers by the partner
-    const deliveredOrders = await this.prisma.manualOrder.findMany({
-      where: { partnerId: partner.id, status: 'delivered' },
-      select: { id: true, orderNumber: true, customerName: true, totalAmount: true, deliveryFee: true, collectedUsd: true, collectedCdf: true, createdAt: true },
-    });
-    // USD = produits encaissés en $
-    // FC  = montant FC encaissé MOINS frais de livraison (frais restent au partenaire)
-    const owedUsd = deliveredOrders.reduce((s, o) => s + Number((o as any).collectedUsd ?? o.totalAmount), 0);
-    const owedCdf = deliveredOrders.reduce((s, o) => s + Number((o as any).collectedCdf ?? 0) - Number(o.deliveryFee ?? 0), 0);
-
-    // Confirmed payments, strictly split by currency stored in DB
-    const payments = await this.prisma.partnerPayment.findMany({
-      where: { partnerId: partner.id },
-      orderBy: { createdAt: 'desc' },
-    });
-    const confirmed = payments.filter(p => p.status === 'confirmed');
-    const paidUsd = confirmed
-      .filter(p => (p.currency ?? '').toUpperCase() === 'USD')
-      .reduce((s, p) => s + Number(p.amount), 0);
-    const paidCdf = confirmed
-      .filter(p => (p.currency ?? '').toUpperCase() !== 'USD')
-      .reduce((s, p) => s + Number(p.amount), 0);
-
+    const f = await this.logisticsService.partnerFinances(partner.id);
     return {
-      owedUsd,
-      owedCdf,
-      paidUsd,
-      paidCdf,
-      balanceUsd: owedUsd - paidUsd,
-      balanceCdf: owedCdf - paidCdf,
+      ...f,
       // legacy
-      totalOwed: owedUsd,
-      totalPaid: paidUsd,
-      balance: owedUsd - paidUsd,
-      deliveredOrders,
-      payments,
+      totalOwed: f.owedUsd,
+      totalPaid: f.paidUsd,
+      balance: f.balanceUsd,
     };
   }
 

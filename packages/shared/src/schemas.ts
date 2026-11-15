@@ -123,6 +123,8 @@ export const CreateExpenseSchema = z.object({
   amount: z.number().min(0),
   description: z.string().default(''),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  /** Paid from this treasury account (optional). */
+  treasuryAccountId: z.string().uuid().nullable().optional(),
 });
 
 export const UpdateExpenseSchema = CreateExpenseSchema.partial();
@@ -147,6 +149,8 @@ export const CreateRecurringExpenseSchema = z.object({
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   active: z.boolean().default(true),
+  /** Each generated expense is paid from this treasury account. */
+  treasuryAccountId: z.string().uuid().nullable().optional(),
 });
 
 export const UpdateRecurringExpenseSchema = CreateRecurringExpenseSchema.partial();

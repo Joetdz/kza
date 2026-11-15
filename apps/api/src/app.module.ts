@@ -27,6 +27,7 @@ import { CreditModule } from './credit/credit.module';
 import { DocumentsModule } from './documents/documents.module';
 import { CustomersModule } from './customers/customers.module';
 import { IkeleModule } from './ikele/ikele.module';
+import { TreasuryModule } from './treasury/treasury.module';
 
 @Module({
   imports: [
@@ -60,6 +61,7 @@ import { IkeleModule } from './ikele/ikele.module';
     DocumentsModule,
     CustomersModule,
     IkeleModule,
+    TreasuryModule,
   ],
   providers: [
     {

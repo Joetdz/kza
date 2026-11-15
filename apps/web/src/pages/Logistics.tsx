@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Plus, Trash2, MapPin, Truck, ShoppingBag, ChevronRight, X, Package, MessageCircle, BarChart2, Link, Printer, Edit2, Check, Calendar, DollarSign, FileText, Bell, RefreshCw, Phone, Search, History } from 'lucide-react';
 import { CustomerHistoryPanel } from '../components/CustomerHistoryPanel';
+import { PartnerPaymentsPanel } from '../components/PartnerPaymentsPanel';
 import { useStore } from '../store/useStore';
 import { toast } from '../hooks/useToast';
 import { logisticsApi, type StockLocation, type DeliveryPartner, type ManualOrder, type RelanceOrder, type PartnerReport, type PartnerPayment, type FollowUpConfig, type FollowUpEntry, type CustomerLookup } from '../api/logistics';
@@ -623,23 +624,6 @@ export function Logistics() {
     } catch { /* ignore */ }
     finally { setRelanceToggling(null); }
   }
-
-  // ── Payments ─────────────────────────────────────────────────────
-
-  async function handleConfirmPayment(id: string) {
-    try {
-      const updated = await logisticsApi.confirmPayment(id);
-      setPayments(prev => prev.map(p => p.id === id ? updated : p));
-    } catch { /* ignore */ }
-  }
-
-  async function handleRejectPayment(id: string) {
-    try {
-      const updated = await logisticsApi.rejectPayment(id);
-      setPayments(prev => prev.map(p => p.id === id ? updated : p));
-    } catch { /* ignore */ }
-  }
-
 
   const pendingPaymentsCount = payments.filter(p => p.status === 'pending').length;
 
@@ -1302,67 +1286,7 @@ export function Logistics() {
         )}
         {/* ── VERSEMENTS ── */}
         {!loading && tab === 'payments' && (
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <p className="text-sm text-gray-500">
-                {pendingPaymentsCount} en attente · {payments.length} au total
-              </p>
-            </div>
-            {payments.length === 0 ? (
-              <p className="text-center py-8 text-gray-400 text-sm">Aucun versement déclaré.</p>
-            ) : (
-              <div className="space-y-3">
-                {payments.map(pay => {
-                  const badgeClass = pay.status === 'confirmed'
-                    ? 'bg-green-100 text-green-700'
-                    : pay.status === 'rejected'
-                    ? 'bg-red-100 text-red-600'
-                    : 'bg-amber-100 text-amber-700';
-                  const badgeLabel = pay.status === 'confirmed' ? 'Confirmé' : pay.status === 'rejected' ? 'Rejeté' : 'En attente';
-
-                  return (
-                    <div key={pay.id} className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap mb-1">
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${badgeClass}`}>{badgeLabel}</span>
-                            <span className="font-black text-gray-900 text-sm">
-                              {Number(pay.amount).toLocaleString('fr-FR')} {pay.currency}
-                            </span>
-                          </div>
-                          {pay.partner && (
-                            <p className="text-sm text-gray-600 font-medium">{pay.partner.name}{pay.partner.city ? ` · ${pay.partner.city}` : ''}</p>
-                          )}
-                          <p className="text-xs text-gray-400 mt-0.5">
-                            {new Date(pay.createdAt).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })}
-                          </p>
-                          {pay.notes && <p className="text-xs text-gray-500 mt-1">{pay.notes}</p>}
-                          {pay.proofUrl && (
-                            <a href={pay.proofUrl} target="_blank" rel="noopener noreferrer"
-                              className="text-xs text-indigo-600 hover:underline mt-1 inline-block">
-                              Voir la preuve
-                            </a>
-                          )}
-                        </div>
-                        {pay.status === 'pending' && (
-                          <div className="flex flex-col gap-1.5 shrink-0">
-                            <button onClick={() => handleConfirmPayment(pay.id)}
-                              className="flex items-center gap-1 px-3 py-1.5 bg-green-50 text-green-700 rounded-lg text-xs font-semibold hover:bg-green-100">
-                              <Check size={12} /> Confirmer
-                            </button>
-                            <button onClick={() => handleRejectPayment(pay.id)}
-                              className="px-3 py-1.5 bg-red-50 text-red-600 rounded-lg text-xs font-semibold hover:bg-red-100">
-                              Rejeter
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+          <PartnerPaymentsPanel payments={payments} onPaymentsChange={setPayments} />
         )}
         {/* ── RELANCE ── */}
         {tab === 'relance' && (() => {

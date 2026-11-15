@@ -105,6 +105,8 @@ exports.CreateExpenseSchema = zod_1.z.object({
     amount: zod_1.z.number().min(0),
     description: zod_1.z.string().default(''),
     date: zod_1.z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    /** Paid from this treasury account (optional). */
+    treasuryAccountId: zod_1.z.string().uuid().nullable().optional(),
 });
 exports.UpdateExpenseSchema = exports.CreateExpenseSchema.partial();
 exports.ExpenseSchema = exports.CreateExpenseSchema.extend({
@@ -124,6 +126,8 @@ exports.CreateRecurringExpenseSchema = zod_1.z.object({
     startDate: zod_1.z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
     endDate: zod_1.z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     active: zod_1.z.boolean().default(true),
+    /** Each generated expense is paid from this treasury account. */
+    treasuryAccountId: zod_1.z.string().uuid().nullable().optional(),
 });
 exports.UpdateRecurringExpenseSchema = exports.CreateRecurringExpenseSchema.partial();
 exports.RecurringExpenseSchema = exports.CreateRecurringExpenseSchema.extend({

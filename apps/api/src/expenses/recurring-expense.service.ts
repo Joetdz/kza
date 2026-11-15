@@ -2,19 +2,21 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateRecurringExpenseDto } from './dto/create-recurring-expense.dto';
+import { TreasuryService } from '../treasury/treasury.service';
 
 @Injectable()
 export class RecurringExpenseService {
   private readonly logger = new Logger(RecurringExpenseService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private treasury: TreasuryService) {}
 
   findAll(userId: string, businessId?: string) {
     const where = businessId ? { businessId } : { userId };
     return this.prisma.recurringExpense.findMany({ where, orderBy: { createdAt: 'desc' } });
   }
 
-  create(dto: CreateRecurringExpenseDto, userId: string, businessId?: string) {
+  async create(dto: CreateRecurringExpenseDto, userId: string, businessId?: string) {
+    await this.treasury.assertExpenseAccount(dto.treasuryAccountId, userId, businessId);
     return this.prisma.recurringExpense.create({
       data: {
         category: dto.category,
@@ -27,6 +29,7 @@ export class RecurringExpenseService {
         startDate: new Date(dto.startDate),
         endDate: dto.endDate ? new Date(dto.endDate) : null,
         active: dto.active ?? true,
+        treasuryAccountId: dto.treasuryAccountId || null,
         userId,
         ...(businessId ? { businessId } : {}),
       },
@@ -37,6 +40,7 @@ export class RecurringExpenseService {
     const r = await this.prisma.recurringExpense.findUnique({ where: { id } });
     if (!r) throw new NotFoundException('Dépense récurrente introuvable');
     if (businessId ? r.businessId !== businessId : r.userId !== userId) throw new NotFoundException('Dépense récurrente introuvable');
+    if (dto.treasuryAccountId) await this.treasury.assertExpenseAccount(dto.treasuryAccountId, userId, businessId);
 
     return this.prisma.recurringExpense.update({
       where: { id },
@@ -51,6 +55,7 @@ export class RecurringExpenseService {
         ...(dto.startDate !== undefined && { startDate: new Date(dto.startDate) }),
         ...(dto.endDate !== undefined && { endDate: dto.endDate ? new Date(dto.endDate) : null }),
         ...(dto.active !== undefined && { active: dto.active }),
+        ...(dto.treasuryAccountId !== undefined && { treasuryAccountId: dto.treasuryAccountId || null }),
       },
     });
   }
@@ -124,7 +129,7 @@ export class RecurringExpenseService {
       if (!isDue || r.lastGeneratedPeriod === periodKey) continue;
 
       try {
-        await this.prisma.expense.create({
+        const expense = await this.prisma.expense.create({
           data: {
             category: r.category,
             amount: r.amount,
@@ -132,8 +137,11 @@ export class RecurringExpenseService {
             date: today,
             userId: r.userId,
             businessId: r.businessId ?? null,
+            treasuryAccountId: r.treasuryAccountId ?? null,
           },
         });
+        // Out of its account, as an expense entered by hand.
+        if (expense.treasuryAccountId) await this.treasury.syncExpense(expense.id);
         await this.prisma.recurringExpense.update({
           where: { id: r.id },
           data: { lastGeneratedPeriod: periodKey },

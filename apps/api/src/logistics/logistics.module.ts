@@ -6,9 +6,10 @@ import { WhatsAppModule } from '../whatsapp/whatsapp.module';
 import { FollowUpService } from './followup.service';
 import { CustomerHistoryService } from '../common/customer-history.service';
 import { LogisticsService } from './logistics.service';
+import { TreasuryModule } from '../treasury/treasury.module';
 
 @Module({
-  imports: [ScheduleModule.forRoot(), forwardRef(() => WhatsAppModule)],
+  imports: [ScheduleModule.forRoot(), forwardRef(() => WhatsAppModule), TreasuryModule],
   controllers: [LogisticsController, PartnerPortalController],
   providers: [FollowUpService, CustomerHistoryService, LogisticsService],
   exports: [CustomerHistoryService, LogisticsService],

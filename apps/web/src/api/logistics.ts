@@ -203,6 +203,40 @@ export interface DailyReport {
   stock: { productName: string; stockStart: number; delivered: number; entries: number; stockCurrent: number }[];
 }
 
+/** What a partner owes and has paid (same rule as the partner's portal). */
+export interface PartnerBalance {
+  partner: { id: string; name: string; city: string | null; phone: string | null };
+  deliveredCount: number;
+  /** Counted from this day (YYYY-MM-DD); null: the whole history. */
+  trackingStart: string | null;
+  owedUsd: number;
+  owedCdf: number;
+  paidUsd: number;
+  paidCdf: number;
+  balanceUsd: number;
+  balanceCdf: number;
+  pendingUsd: number;
+  pendingCdf: number;
+  lastPaymentAt: string | null;
+}
+
+/** What a partner must hand over for one delivered order, and how much is covered. */
+export interface Remittance {
+  orderId: string;
+  orderNumber: number;
+  customerName: string;
+  city: string;
+  deliveredOn: string;
+  partner: { id: string; name: string };
+  dueUsd: number;
+  dueCdf: number;
+  paidUsd: number;
+  paidCdf: number;
+  restUsd: number;
+  restCdf: number;
+  status: 'due' | 'partial' | 'paid';
+}
+
 export interface PartnerPayment {
   id: string;
   partnerId: string;
@@ -388,8 +422,18 @@ export const logisticsApi = {
   // Admin — versements
   getPayments: (status?: string) =>
     req<PartnerPayment[]>(`/my/logistics/payments${status ? `?status=${status}` : ''}`),
-  confirmPayment: (id: string, notes?: string) =>
-    req<PartnerPayment>(`/my/logistics/payments/${id}/confirm`, { method: 'PATCH', body: JSON.stringify({ notes }) }),
+  /** accountId: the treasury account it was received on. */
+  confirmPayment: (id: string, notes?: string, accountId?: string) =>
+    req<PartnerPayment>(`/my/logistics/payments/${id}/confirm`, { method: 'PATCH', body: JSON.stringify({ notes, accountId }) }),
+  getPartnerBalances: () => req<PartnerBalance[]>('/my/logistics/partners/balances'),
+  /** Every partner of the business counted from this day (today when none): before is settled. */
+  startTracking: (date?: string) =>
+    req<{ trackingStart: string; partners: number }>('/my/logistics/partners/start-tracking', { method: 'POST', body: JSON.stringify({ date }) }),
+  /** One line per delivered order: what each partner must remit for it. */
+  getRemittances: () => req<Remittance[]>('/my/logistics/remittances'),
+  /** A payment received in hand from the partner, recorded as confirmed. */
+  recordPartnerPayment: (partnerId: string, data: { amount: number; currency: 'USD' | 'FC'; notes?: string; accountId?: string }) =>
+    req<PartnerPayment>(`/my/logistics/partners/${partnerId}/payments`, { method: 'POST', body: JSON.stringify(data) }),
   rejectPayment: (id: string, notes?: string) =>
     req<PartnerPayment>(`/my/logistics/payments/${id}/reject`, { method: 'PATCH', body: JSON.stringify({ notes }) }),
 

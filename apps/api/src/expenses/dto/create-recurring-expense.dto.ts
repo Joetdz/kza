@@ -56,4 +56,9 @@ export class CreateRecurringExpenseDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  /** Each generated expense is paid from this treasury account. */
+  @IsOptional()
+  @IsString()
+  treasuryAccountId?: string | null;
 }

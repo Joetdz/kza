@@ -28,4 +28,9 @@ export class CreateExpenseDto implements ICreateExpenseDto {
 
   @IsDateString()
   date: string;
+
+  /** Paid from this treasury account (optional); null takes it off. */
+  @IsString()
+  @IsOptional()
+  treasuryAccountId?: string | null;
 }

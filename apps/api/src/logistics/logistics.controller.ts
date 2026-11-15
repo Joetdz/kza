@@ -5,6 +5,7 @@ import { WhatsAppService } from '../whatsapp/whatsapp.service';
 import { FollowUpService } from './followup.service';
 import { CustomerHistoryService } from '../common/customer-history.service';
 import { detachStoreOrders, LogisticsService } from './logistics.service';
+import { TreasuryService, normalizeCurrency } from '../treasury/treasury.service';
 import { phoneKey } from '../common/phone';
 import { join } from 'path';
 
@@ -28,6 +29,7 @@ export class LogisticsController {
     private followUp: FollowUpService,
     private history: CustomerHistoryService,
     private logisticsService: LogisticsService,
+    private treasury: TreasuryService,
   ) {}
 
   private where(user: AuthUser) {
@@ -720,6 +722,77 @@ export class LogisticsController {
 
   // ── Versements (admin) ────────────────────────────────────────────
 
+  /** What each partner owes, has paid, and has declared but not confirmed yet. */
+  @Get('my/logistics/partners/balances')
+  async getPartnerBalances(@CurrentUser() user: AuthUser) {
+    const partners = await this.prisma.deliveryPartner.findMany({
+      where: this.where(user),
+      orderBy: { name: 'asc' },
+      select: { id: true, name: true, city: true, phone: true },
+    });
+    return Promise.all(partners.map(async p => {
+      const { deliveredOrders, payments, ...f } = await this.logisticsService.partnerFinances(p.id);
+      return { partner: p, deliveredCount: deliveredOrders.length, ...f };
+    }));
+  }
+
+  /**
+   * Remittances counted from this day on, for every partner of the business: orders
+   * delivered and payments made before are settled. Today when no date is given.
+   */
+  @Post('my/logistics/partners/start-tracking')
+  async startTracking(@CurrentUser() user: AuthUser, @Body() body: { date?: string }) {
+    const day = body.date ? new Date(body.date) : new Date();
+    if (Number.isNaN(day.getTime())) throw new BadRequestException('Date invalide');
+    const trackingStart = new Date(day.toISOString().slice(0, 10));
+    const { count } = await this.prisma.deliveryPartner.updateMany({ where: this.where(user), data: { trackingStart } });
+    return { trackingStart: trackingStart.toISOString().slice(0, 10), partners: count };
+  }
+
+  /**
+   * Everything the partners must hand over, one line per delivered order, made from the
+   * sales: due, already covered by confirmed payments, and what is left.
+   */
+  @Get('my/logistics/remittances')
+  async getRemittances(@CurrentUser() user: AuthUser) {
+    const partners = await this.prisma.deliveryPartner.findMany({
+      where: this.where(user),
+      select: { id: true, name: true },
+    });
+    const perPartner = await Promise.all(partners.map(async p =>
+      (await this.logisticsService.partnerRemittances(p.id)).map(line => ({ ...line, partner: p }))));
+    return perPartner.flat().sort((a, b) => b.deliveredOn.localeCompare(a.deliveredOn) || b.orderNumber - a.orderNumber);
+  }
+
+  /** A payment the merchant received in hand: recorded confirmed, into an account if given. */
+  @Post('my/logistics/partners/:id/payments')
+  async recordPartnerPayment(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() body: { amount?: number; currency?: string; notes?: string; accountId?: string },
+  ) {
+    const partner = await this.prisma.deliveryPartner.findFirst({ where: { id, ...this.where(user) } });
+    if (!partner) throw new NotFoundException('Partenaire introuvable');
+    const amount = Number(body.amount);
+    if (!Number.isFinite(amount) || amount <= 0) throw new BadRequestException('Montant invalide');
+    const currency = (body.currency ?? '').toUpperCase() === 'USD' ? 'USD' : 'FC';
+    // The account first: a wrong currency refuses before anything is written.
+    if (body.accountId) {
+      const account = await this.treasury.findAccount(user, body.accountId);
+      if (normalizeCurrency(currency) !== account.currency) {
+        throw new BadRequestException(`Ce versement est en ${currency} : choisis un compte en ${currency}.`);
+      }
+    }
+    const payment = await this.prisma.partnerPayment.create({
+      data: {
+        partnerId: partner.id, amount, currency, status: 'confirmed',
+        confirmedAt: new Date(), confirmedBy: user.id, notes: body.notes?.trim() || 'Reçu directement',
+      },
+    });
+    if (body.accountId) await this.treasury.recordPartnerPayment(user, payment.id, body.accountId);
+    return payment;
+  }
+
   @Get('my/logistics/payments')
   async getPayments(@CurrentUser() user: AuthUser, @Query('status') status?: string) {
     return this.prisma.partnerPayment.findMany({
@@ -736,16 +809,25 @@ export class LogisticsController {
   async confirmPayment(
     @CurrentUser() user: AuthUser,
     @Param('id') id: string,
-    @Body() body: { notes?: string },
+    @Body() body: { notes?: string; accountId?: string },
   ) {
     const payment = await this.prisma.partnerPayment.findFirst({
       where: { id, partner: { userId: user.ownerId } },
     });
     if (!payment) return null;
-    return this.prisma.partnerPayment.update({
+    if (body.accountId) {
+      const account = await this.treasury.findAccount(user, body.accountId);
+      if (normalizeCurrency(payment.currency) !== account.currency) {
+        throw new BadRequestException(`Ce versement est en ${payment.currency} : choisis un compte en ${payment.currency}.`);
+      }
+    }
+    const confirmed = await this.prisma.partnerPayment.update({
       where: { id },
-      data: { status: 'confirmed', confirmedAt: new Date(), notes: body.notes ?? payment.notes },
+      data: { status: 'confirmed', confirmedAt: new Date(), confirmedBy: user.id, notes: body.notes ?? payment.notes },
     });
+    // Into the treasury account it was received on.
+    if (body.accountId) await this.treasury.recordPartnerPayment(user, confirmed.id, body.accountId);
+    return confirmed;
   }
 
   @Patch('my/logistics/payments/:id/reject')

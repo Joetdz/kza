@@ -233,7 +233,12 @@ model Expense {
   userId      String?  @map("user_id")
   businessId  String?  @map("business_id") @db.Uuid
 
-  product Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  /// Paid from this treasury account (optional): the expense is then one of its outflows.
+  treasuryAccountId String? @map("treasury_account_id") @db.Uuid
+
+  product         Product?           @relation(fields: [productId], references: [id], onDelete: SetNull)
+  treasuryAccount TreasuryAccount?   @relation(fields: [treasuryAccountId], references: [id], onDelete: SetNull)
+  treasuryMovement TreasuryMovement?
 
   @@index([userId])
   @@index([businessId])
@@ -258,6 +263,8 @@ model RecurringExpense {
   endDate             DateTime? @map("end_date") @db.Date
   active              Boolean   @default(true)
   lastGeneratedPeriod String?   @map("last_generated_period")
+  /// Each expense it generates is paid from this treasury account.
+  treasuryAccountId   String?   @map("treasury_account_id") @db.Uuid
   createdAt           DateTime  @default(now()) @map("created_at")
   updatedAt           DateTime  @updatedAt @map("updated_at")
   userId              String    @map("user_id")
@@ -944,6 +951,9 @@ model DeliveryPartner {
   token      String          @unique @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   pin              String?
   whatsappGroupId  String?  @map("whatsapp_group_id")
+  /// Remittances count from this day: orders delivered and payments made before are
+  /// settled. Null: the whole history counts.
+  trackingStart    DateTime? @map("tracking_start") @db.Date
   location         StockLocation?
   orders     ManualOrder[]
   agents     DeliveryAgent[]
@@ -968,6 +978,8 @@ model PartnerPayment {
   confirmedBy String?         @map("confirmed_by")
   createdAt   DateTime        @default(now()) @map("created_at")
   updatedAt   DateTime        @updatedAt @map("updated_at")
+  /// The treasury entry it made once confirmed into an account.
+  treasuryMovement TreasuryMovement?
 
   @@index([partnerId])
   @@map("partner_payments")
@@ -1287,4 +1299,56 @@ model IkeleStoreVisit {
 
   @@id([storeId, day, visitorId])
   @@map("ikele_store_visits")
+}
+
+/// A place the business's money sits: a till, a mobile money wallet, a bank account.
+/// Balance = openingBalance + the sum of its movements.
+model TreasuryAccount {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId         String   @map("user_id")
+  businessId     String?  @map("business_id") @db.Uuid
+  name           String
+  /// cash | mobile_money | bank
+  kind           String   @default("cash")
+  /// The bank account number (or IBAN), the mobile money number; optional for cash.
+  accountNumber  String?  @map("account_number")
+  /// USD | CDF
+  currency       String   @default("USD")
+  openingBalance Decimal  @default(0) @map("opening_balance") @db.Decimal(14, 2)
+  openingDate    DateTime @default(dbgenerated("CURRENT_DATE")) @map("opening_date") @db.Date
+  archived       Boolean  @default(false)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  movements TreasuryMovement[]
+  expenses  Expense[]
+
+  @@index([businessId], map: "treasury_accounts_business_idx")
+  @@index([userId], map: "treasury_accounts_user_idx")
+  @@map("treasury_accounts")
+}
+
+/// Money in (amount > 0) or out (amount < 0) of an account. Made by hand, by a transfer
+/// (two movements sharing transferId), by a confirmed partner payment or by an expense.
+model TreasuryMovement {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId           String   @map("user_id")
+  businessId       String?  @map("business_id") @db.Uuid
+  accountId        String   @map("account_id") @db.Uuid
+  date             DateTime @db.Date
+  amount           Decimal  @db.Decimal(14, 2)
+  /// manual | transfer | partner_payment | expense
+  kind             String   @default("manual")
+  label            String   @default("")
+  partnerPaymentId String?  @unique @map("partner_payment_id") @db.Uuid
+  expenseId        String?  @unique @map("expense_id") @db.Uuid
+  transferId       String?  @map("transfer_id") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  account        TreasuryAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  partnerPayment PartnerPayment? @relation(fields: [partnerPaymentId], references: [id], onDelete: Cascade)
+  expense        Expense?        @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, date], map: "treasury_movements_account_idx")
+  @@index([businessId, date], map: "treasury_movements_business_idx")
+  @@map("treasury_movements")
 }

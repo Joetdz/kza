@@ -415,6 +415,8 @@ export declare const CreateExpenseSchema: z.ZodObject<{
     amount: z.ZodNumber;
     description: z.ZodDefault<z.ZodString>;
     date: z.ZodString;
+    /** Paid from this treasury account (optional). */
+    treasuryAccountId: z.ZodOptional<z.ZodNullable<z.ZodString>>;
 }, "strip", z.ZodTypeAny, {
     category: string;
     date: string;
@@ -422,6 +424,7 @@ export declare const CreateExpenseSchema: z.ZodObject<{
     description: string;
     productId?: string | undefined;
     channel?: "Autre" | "WhatsApp" | "Meta Ads" | "TikTok" | "Instagram" | "Boutique" | undefined;
+    treasuryAccountId?: string | null | undefined;
 }, {
     category: string;
     date: string;
@@ -429,6 +432,7 @@ export declare const CreateExpenseSchema: z.ZodObject<{
     productId?: string | undefined;
     channel?: "Autre" | "WhatsApp" | "Meta Ads" | "TikTok" | "Instagram" | "Boutique" | undefined;
     description?: string | undefined;
+    treasuryAccountId?: string | null | undefined;
 }>;
 export declare const UpdateExpenseSchema: z.ZodObject<{
     category: z.ZodOptional<z.ZodString>;
@@ -437,6 +441,7 @@ export declare const UpdateExpenseSchema: z.ZodObject<{
     amount: z.ZodOptional<z.ZodNumber>;
     description: z.ZodOptional<z.ZodDefault<z.ZodString>>;
     date: z.ZodOptional<z.ZodString>;
+    treasuryAccountId: z.ZodOptional<z.ZodOptional<z.ZodNullable<z.ZodString>>>;
 }, "strip", z.ZodTypeAny, {
     category?: string | undefined;
     date?: string | undefined;
@@ -444,6 +449,7 @@ export declare const UpdateExpenseSchema: z.ZodObject<{
     channel?: "Autre" | "WhatsApp" | "Meta Ads" | "TikTok" | "Instagram" | "Boutique" | undefined;
     amount?: number | undefined;
     description?: string | undefined;
+    treasuryAccountId?: string | null | undefined;
 }, {
     category?: string | undefined;
     date?: string | undefined;
@@ -451,6 +457,7 @@ export declare const UpdateExpenseSchema: z.ZodObject<{
     channel?: "Autre" | "WhatsApp" | "Meta Ads" | "TikTok" | "Instagram" | "Boutique" | undefined;
     amount?: number | undefined;
     description?: string | undefined;
+    treasuryAccountId?: string | null | undefined;
 }>;
 export declare const ExpenseSchema: z.ZodObject<{
     category: z.ZodString;
@@ -459,6 +466,8 @@ export declare const ExpenseSchema: z.ZodObject<{
     amount: z.ZodNumber;
     description: z.ZodDefault<z.ZodString>;
     date: z.ZodString;
+    /** Paid from this treasury account (optional). */
+    treasuryAccountId: z.ZodOptional<z.ZodNullable<z.ZodString>>;
 } & {
     id: z.ZodString;
     createdAt: z.ZodString;
@@ -471,6 +480,7 @@ export declare const ExpenseSchema: z.ZodObject<{
     description: string;
     productId?: string | undefined;
     channel?: "Autre" | "WhatsApp" | "Meta Ads" | "TikTok" | "Instagram" | "Boutique" | undefined;
+    treasuryAccountId?: string | null | undefined;
 }, {
     category: string;
     date: string;
@@ -480,6 +490,7 @@ export declare const ExpenseSchema: z.ZodObject<{
     productId?: string | undefined;
     channel?: "Autre" | "WhatsApp" | "Meta Ads" | "TikTok" | "Instagram" | "Boutique" | undefined;
     description?: string | undefined;
+    treasuryAccountId?: string | null | undefined;
 }>;
 export declare const RECURRING_FREQUENCIES: readonly ["daily", "weekly", "monthly", "annual"];
 export declare const CreateRecurringExpenseSchema: z.ZodObject<{
@@ -493,6 +504,8 @@ export declare const CreateRecurringExpenseSchema: z.ZodObject<{
     startDate: z.ZodString;
     endDate: z.ZodOptional<z.ZodString>;
     active: z.ZodDefault<z.ZodBoolean>;
+    /** Each generated expense is paid from this treasury account. */
+    treasuryAccountId: z.ZodOptional<z.ZodNullable<z.ZodString>>;
 }, "strip", z.ZodTypeAny, {
     category: string;
     amount: number;
@@ -500,6 +513,7 @@ export declare const CreateRecurringExpenseSchema: z.ZodObject<{
     frequency: "daily" | "weekly" | "monthly" | "annual";
     startDate: string;
     active: boolean;
+    treasuryAccountId?: string | null | undefined;
     dayOfWeek?: number | undefined;
     dayOfMonth?: number | undefined;
     month?: number | undefined;
@@ -509,6 +523,7 @@ export declare const CreateRecurringExpenseSchema: z.ZodObject<{
     amount: number;
     startDate: string;
     description?: string | undefined;
+    treasuryAccountId?: string | null | undefined;
     frequency?: "daily" | "weekly" | "monthly" | "annual" | undefined;
     dayOfWeek?: number | undefined;
     dayOfMonth?: number | undefined;
@@ -527,10 +542,12 @@ export declare const UpdateRecurringExpenseSchema: z.ZodObject<{
     startDate: z.ZodOptional<z.ZodString>;
     endDate: z.ZodOptional<z.ZodOptional<z.ZodString>>;
     active: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+    treasuryAccountId: z.ZodOptional<z.ZodOptional<z.ZodNullable<z.ZodString>>>;
 }, "strip", z.ZodTypeAny, {
     category?: string | undefined;
     amount?: number | undefined;
     description?: string | undefined;
+    treasuryAccountId?: string | null | undefined;
     frequency?: "daily" | "weekly" | "monthly" | "annual" | undefined;
     dayOfWeek?: number | undefined;
     dayOfMonth?: number | undefined;
@@ -542,6 +559,7 @@ export declare const UpdateRecurringExpenseSchema: z.ZodObject<{
     category?: string | undefined;
     amount?: number | undefined;
     description?: string | undefined;
+    treasuryAccountId?: string | null | undefined;
     frequency?: "daily" | "weekly" | "monthly" | "annual" | undefined;
     dayOfWeek?: number | undefined;
     dayOfMonth?: number | undefined;
@@ -561,6 +579,8 @@ export declare const RecurringExpenseSchema: z.ZodObject<{
     startDate: z.ZodString;
     endDate: z.ZodOptional<z.ZodString>;
     active: z.ZodDefault<z.ZodBoolean>;
+    /** Each generated expense is paid from this treasury account. */
+    treasuryAccountId: z.ZodOptional<z.ZodNullable<z.ZodString>>;
 } & {
     id: z.ZodString;
     lastGeneratedPeriod: z.ZodNullable<z.ZodString>;
@@ -577,6 +597,7 @@ export declare const RecurringExpenseSchema: z.ZodObject<{
     startDate: string;
     active: boolean;
     lastGeneratedPeriod: string | null;
+    treasuryAccountId?: string | null | undefined;
     dayOfWeek?: number | undefined;
     dayOfMonth?: number | undefined;
     month?: number | undefined;
@@ -590,6 +611,7 @@ export declare const RecurringExpenseSchema: z.ZodObject<{
     startDate: string;
     lastGeneratedPeriod: string | null;
     description?: string | undefined;
+    treasuryAccountId?: string | null | undefined;
     frequency?: "daily" | "weekly" | "monthly" | "annual" | undefined;
     dayOfWeek?: number | undefined;
     dayOfMonth?: number | undefined;

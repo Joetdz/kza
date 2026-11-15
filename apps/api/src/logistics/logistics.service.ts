@@ -41,6 +41,125 @@ export class LogisticsService {
   constructor(private prisma: PrismaService) {}
 
   /**
+   * The ledger of a partner since it is tracked (trackingStart; the whole history when
+   * unset): its delivered orders with their delivery day, and its payments. Before that
+   * day, everything is settled.
+   */
+  private async partnerLedger(partnerId: string) {
+    const partner = await this.prisma.deliveryPartner.findUnique({ where: { id: partnerId }, select: { trackingStart: true } });
+    const since = partner?.trackingStart ? partner.trackingStart.toISOString().slice(0, 10) : null;
+    const day = (d: Date) => d.toISOString().slice(0, 10);
+
+    const orders = (await this.prisma.manualOrder.findMany({
+      where: { partnerId, status: 'delivered' },
+      select: {
+        id: true, orderNumber: true, customerName: true, city: true, totalAmount: true, deliveryFee: true,
+        collectedUsd: true, collectedCdf: true, createdAt: true, updatedAt: true,
+        // The sale is recorded the moment the order is delivered: its date is the delivery's.
+        sales: { select: { date: true }, orderBy: { createdAt: 'asc' }, take: 1 },
+      },
+    }))
+      .map(({ sales, ...o }) => ({ ...o, deliveredOn: day(sales[0]?.date ?? o.updatedAt) }))
+      .filter(o => !since || o.deliveredOn >= since);
+
+    const payments = (await this.prisma.partnerPayment.findMany({
+      where: { partnerId },
+      orderBy: { createdAt: 'desc' },
+    })).filter(p => !since || day(p.confirmedAt ?? p.createdAt) >= since);
+
+    return { since, orders, payments };
+  }
+
+  /**
+   * What a delivery partner owes and has paid — one rule for the partner's portal and the
+   * merchant's screen, so both see the same figure. Owed, from orders delivered since the
+   * tracking start: the dollars collected (the order's total when nothing was entered),
+   * plus the francs collected minus the delivery fee, which stays with the partner. Paid:
+   * its confirmed payments since then, by currency.
+   */
+  async partnerFinances(partnerId: string) {
+    const { since, orders: deliveredOrders, payments } = await this.partnerLedger(partnerId);
+    const owedUsd = deliveredOrders.reduce((s, o) => s + Number(o.collectedUsd ?? o.totalAmount), 0);
+    const owedCdf = deliveredOrders.reduce((s, o) => s + Number(o.collectedCdf ?? 0) - Number(o.deliveryFee ?? 0), 0);
+
+    const isUsd = (c: string | null) => (c ?? '').toUpperCase() === 'USD';
+    const sum = (list: typeof payments) => list.reduce((s, p) => s + Number(p.amount), 0);
+    const confirmed = payments.filter(p => p.status === 'confirmed');
+    const pending = payments.filter(p => p.status === 'pending');
+    const paidUsd = sum(confirmed.filter(p => isUsd(p.currency)));
+    const paidCdf = sum(confirmed.filter(p => !isUsd(p.currency)));
+
+    return {
+      trackingStart: since,
+      owedUsd,
+      owedCdf,
+      paidUsd,
+      paidCdf,
+      balanceUsd: owedUsd - paidUsd,
+      balanceCdf: owedCdf - paidCdf,
+      // Declared by the partner, not confirmed yet: not counted as paid.
+      pendingUsd: sum(pending.filter(p => isUsd(p.currency))),
+      pendingCdf: sum(pending.filter(p => !isUsd(p.currency))),
+      lastPaymentAt: confirmed[0]?.confirmedAt ?? confirmed[0]?.createdAt ?? null,
+      deliveredOrders,
+      payments,
+    };
+  }
+
+  /**
+   * The remittances a partner owes, one per order delivered since the tracking start, made
+   * from the sale itself: what it must hand over for that order (same rule as
+   * partnerFinances), and how much of it its confirmed payments already cover — the oldest
+   * deliveries first.
+   */
+  async partnerRemittances(partnerId: string) {
+    const { orders, payments } = await this.partnerLedger(partnerId);
+    const confirmed = payments.filter(p => p.status === 'confirmed');
+    const isUsd = (c: string | null) => (c ?? '').toUpperCase() === 'USD';
+    const round = (n: number) => Math.round(n * 100) / 100;
+
+    const lines = orders
+      .map(o => ({
+        orderId: o.id,
+        orderNumber: o.orderNumber,
+        customerName: o.customerName,
+        city: o.city,
+        deliveredOn: o.deliveredOn,
+        dueUsd: round(Number(o.collectedUsd ?? o.totalAmount)),
+        // Negative when the delivery fee is more than the francs collected: the partner
+        // keeps it out of another order's francs.
+        dueCdf: round(Number(o.collectedCdf ?? 0) - Number(o.deliveryFee ?? 0)),
+        paidUsd: 0,
+        paidCdf: 0,
+      }))
+      .sort((a, b) => a.deliveredOn.localeCompare(b.deliveredOn) || a.orderNumber - b.orderNumber);
+
+    // Payments, plus the francs a negative line leaves with the partner, cover the lines
+    // in delivery order, currency by currency.
+    const cover = (currency: 'Usd' | 'Cdf', paid: number) => {
+      const credit = lines.reduce((s, l) => s + Math.max(0, -l[`due${currency}`]), 0);
+      let pool = paid + credit;
+      for (const l of lines) {
+        const due = l[`due${currency}`];
+        if (due <= 0) continue;
+        const part = Math.min(due, Math.max(0, pool));
+        l[`paid${currency}`] = round(part);
+        pool -= part;
+      }
+    };
+    cover('Usd', confirmed.filter(p => isUsd(p.currency)).reduce((s, p) => s + Number(p.amount), 0));
+    cover('Cdf', confirmed.filter(p => !isUsd(p.currency)).reduce((s, p) => s + Number(p.amount), 0));
+
+    return lines.map(l => {
+      const restUsd = round(Math.max(0, l.dueUsd - l.paidUsd));
+      const restCdf = round(Math.max(0, l.dueCdf - l.paidCdf));
+      const due = Math.max(0, l.dueUsd) + Math.max(0, l.dueCdf);
+      const status = restUsd === 0 && restCdf === 0 ? 'paid' : l.paidUsd + l.paidCdf > 0 ? 'partial' : 'due';
+      return { ...l, restUsd, restCdf, status: due === 0 ? 'paid' : status } as const;
+    });
+  }
+
+  /**
    * Every business has exactly one default location — its main warehouse. Created lazily
    * on first use rather than at business-creation time, so existing businesses pick one up
    * automatically too. Name is editable afterward like any other location.

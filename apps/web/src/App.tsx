@@ -7,6 +7,7 @@ import { Dashboard } from './pages/Dashboard';
 import { Stock } from './pages/Stock';
 import { Sales } from './pages/Sales';
 import { Expenses } from './pages/Expenses';
+import { Treasury } from './pages/Treasury';
 import { Analytics } from './pages/Analytics';
 import { Goals } from './pages/Goals';
 import { Fundraising } from './pages/Fundraising';
@@ -209,6 +210,7 @@ function AppInner() {
           <Route path="/stock" element={<Stock />} />
           <Route path="/ventes" element={<Sales />} />
           <Route path="/depenses" element={<Expenses />} />
+          <Route path="/tresorerie" element={<Treasury />} />
           <Route path="/analytique" element={<Analytics />} />
           <Route path="/objectifs" element={<RequireModule module="goals"><Goals /></RequireModule>} />
           <Route path="/financement" element={<RequireModule module="fundraising"><Fundraising /></RequireModule>} />
