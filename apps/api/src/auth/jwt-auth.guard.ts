@@ -1,5 +1,5 @@
 import {
-  Injectable, CanActivate, ExecutionContext, UnauthorizedException,
+  Injectable, CanActivate, ExecutionContext, UnauthorizedException, ForbiddenException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Reflector } from '@nestjs/core';
@@ -7,7 +7,15 @@ import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { PrismaService } from '../prisma/prisma.service';
 
 // Cache business resolution to avoid 1-2 DB queries per request (pool limit is 5)
-type Resolved = { businessId: string; ownerId: string; role: 'owner' | 'manager' | 'operator' };
+type Resolved = {
+  businessId: string; ownerId: string; role: 'owner' | 'manager' | 'operator';
+  /** Set when the platform admin suspended this business. */
+  suspended?: { reason: string | null } | null;
+};
+
+/** Still open on a suspended business: its list (to switch to another one, and read
+ *  why), the profile, and the admin's own routes. */
+const OPEN_WHEN_SUSPENDED = ['/api/businesses', '/api/auth', '/api/admin'];
 const bizCache = new Map<string, { value: Resolved; ts: number }>();
 const BIZ_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
@@ -63,10 +71,17 @@ export class JwtAuthGuard implements CanActivate {
       const userId = payload.sub;
       const r = await this.resolveAccess(userId, headers['x-business-id']);
       request.user = { id: userId, email: payload['email'] as string ?? '', ...r };
-      return true;
     } catch {
       throw new UnauthorizedException();
     }
+    const resolved = request.user as Resolved;
+    const path = ((request as any).originalUrl ?? (request as any).url ?? '') as string;
+    if (resolved.suspended && !OPEN_WHEN_SUSPENDED.some(p => path.startsWith(p))) {
+      throw new ForbiddenException(
+        `Ce business est suspendu par l'administration de Kzion${resolved.suspended.reason ? ` : ${resolved.suspended.reason}` : ''}.`,
+      );
+    }
+    return true;
   }
 
   /**
@@ -141,6 +156,13 @@ export class JwtAuthGuard implements CanActivate {
     }
 
     const value = result ?? empty;
+    if (value.businessId) {
+      const biz = await this.prisma.business.findUnique({
+        where: { id: value.businessId },
+        select: { suspendedAt: true, suspendedReason: true },
+      });
+      value.suspended = biz?.suspendedAt ? { reason: biz.suspendedReason } : null;
+    }
     bizCache.set(cacheKey, { value, ts: Date.now() });
     return value;
   }

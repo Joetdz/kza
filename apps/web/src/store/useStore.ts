@@ -27,6 +27,9 @@ export interface BusinessRecord {
   /** 'owner' on your own businesses; 'manager' / 'operator' on ones you were invited to. */
   role?: BusinessRole;
   isOwner?: boolean;
+  /** Set when the platform admin suspended it (moderation). */
+  suspendedAt?: string | null;
+  suspendedReason?: string | null;
 }
 
 interface AppStore {

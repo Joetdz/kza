@@ -558,6 +558,8 @@ export class AdminController {
       productCount: productMap.get(b.id) ?? 0,
       saleCount: saleMap.get(b.id) ?? 0,
       createdAt: b.createdAt,
+      suspendedAt: b.suspendedAt,
+      suspendedReason: b.suspendedReason,
     }));
   }
 

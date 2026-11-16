@@ -442,6 +442,9 @@ export interface BusinessRecord {
   isDefault: boolean;
   createdAt: string;
   updatedAt: string;
+  /** Set when the platform admin suspended it (moderation). */
+  suspendedAt?: string | null;
+  suspendedReason?: string | null;
 }
 
 export const businessApi = {

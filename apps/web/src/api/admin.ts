@@ -141,6 +141,55 @@ export interface AdminBusiness {
   productCount: number;
   saleCount: number;
   createdAt: string;
+  /** Set when the admin suspended it. */
+  suspendedAt: string | null;
+  suspendedReason: string | null;
+}
+
+/** An online store as the admin moderates it (GET /admin/stores). */
+export interface AdminStore {
+  id: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  logoUrl: string | null;
+  primaryColor: string;
+  active: boolean;
+  ikeleListed: boolean;
+  businessId: string | null;
+  createdAt: string;
+  business: { id: string; name: string; suspendedAt: string | null } | null;
+  ownerEmail: string | null;
+  products: number;
+  followers: number;
+  orders: number;
+  media: number;
+}
+
+export interface AdminMedia {
+  id: string;
+  url: string;
+  type: string;
+  thumbnailUrl: string | null;
+  caption: string | null;
+  viewCount: number;
+  likeCount: number;
+  createdAt: string;
+  product: { id: string; name: string };
+}
+
+/** A change made by the admin: the refusal's own message on failure. */
+async function send<T>(path: string, method: 'POST' | 'PATCH' | 'DELETE', body?: unknown): Promise<T> {
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token;
+  const res = await fetch(`${BASE}${path}`, {
+    method,
+    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(data?.message ?? `Erreur ${res.status}`);
+  return data as T;
 }
 
 export interface RevenueDetail {
@@ -191,6 +240,16 @@ export const adminApi = {
   getStats: () => req<AdminStats>('/admin/stats'),
   getClients: () => req<AdminClient[]>('/admin/clients'),
   getBusinesses: () => req<AdminBusiness[]>('/admin/businesses'),
+  updateBusiness: (id: string, data: Partial<Pick<AdminBusiness, 'name' | 'sector' | 'city' | 'phone' | 'whatsappPhone' | 'logoUrl'>>) =>
+    send<AdminBusiness>(`/admin/businesses/${id}`, 'PATCH', data),
+  suspendBusiness: (id: string, reason: string) => send(`/admin/businesses/${id}/suspend`, 'POST', { reason }),
+  reactivateBusiness: (id: string) => send(`/admin/businesses/${id}/reactivate`, 'POST'),
+
+  getStores: (q = '') => req<AdminStore[]>(`/admin/stores${q ? `?q=${encodeURIComponent(q)}` : ''}`),
+  updateStore: (id: string, data: Partial<Pick<AdminStore, 'name' | 'description' | 'logoUrl' | 'active' | 'ikeleListed'>>) =>
+    send<AdminStore>(`/admin/stores/${id}`, 'PATCH', data),
+  getStoreMedia: (id: string) => req<AdminMedia[]>(`/admin/stores/${id}/media`),
+  deleteMedia: (id: string) => send(`/admin/media/${id}`, 'DELETE'),
   getAudienceGrowth: () => req<GrowthPoint[]>('/admin/audience-growth'),
   getLeadFunnel: () => req<FunnelStep[]>('/admin/lead-funnel'),
 

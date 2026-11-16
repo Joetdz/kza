@@ -20,6 +20,7 @@ import {
   type IkeleStats,
 } from '../api/admin';
 import { StatTile, VisitorsChart } from '../components/VisitorsChart';
+import { BusinessActions, TabStores } from '../components/admin/AdminModeration';
 import { categoriesApi, ProductCategory } from '../api';
 
 // ── Palette ───────────────────────────────────────────────────────────────────
@@ -1438,7 +1439,7 @@ function TabBusinesses() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-100">
-                  {['Business', 'Propriétaire', 'Secteur', 'Ville', 'Devise', 'WA Phone', 'WhatsApp', 'Produits', 'Ventes', 'Créé le'].map(h => (
+                  {['Business', 'Propriétaire', 'Secteur', 'Ville', 'Devise', 'WA Phone', 'WhatsApp', 'Produits', 'Ventes', 'Créé le', 'Actions'].map(h => (
                     <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -1457,6 +1458,9 @@ function TabBusinesses() {
                         <div>
                           <p className="font-medium text-gray-800 whitespace-nowrap">{b.name}</p>
                           {b.isDefault && <span className="text-[10px] text-indigo-500 font-semibold">Par défaut</span>}
+                          {b.suspendedAt && (
+                            <span className="ml-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-red-50 text-red-700" title={b.suspendedReason ?? ''}>Suspendu</span>
+                          )}
                         </div>
                       </div>
                     </td>
@@ -1475,6 +1479,9 @@ function TabBusinesses() {
                     <td className="px-4 py-3 font-semibold text-gray-700 text-center">{b.productCount}</td>
                     <td className="px-4 py-3 font-semibold text-gray-700 text-center">{b.saleCount}</td>
                     <td className="px-4 py-3 text-xs text-gray-400 whitespace-nowrap">{formatDate(b.createdAt)}</td>
+                    <td className="px-4 py-3">
+                      <BusinessActions business={b} onChange={next => setBusinesses(list => list.map(x => x.id === next.id ? next : x))} />
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -1488,7 +1495,7 @@ function TabBusinesses() {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
-type Tab = 'overview' | 'audience' | 'leads' | 'categories' | 'businesses' | 'ikele';
+type Tab = 'overview' | 'audience' | 'leads' | 'categories' | 'businesses' | 'stores' | 'ikele';
 
 // ── Ikele : le compteur de visiteurs de la place de marché ───────────────────
 
@@ -1608,6 +1615,7 @@ export function AdminDashboard() {
     { id: 'leads',       label: '💬 Leads CRM',  count: stats?.totalCrmContacts },
     { id: 'businesses',  label: '🏢 Businesses', count: overview?.totalBusinesses },
     { id: 'categories',  label: '🏷 Catégories' },
+    { id: 'stores',      label: '🛍 Boutiques Ikele' },
     { id: 'ikele',       label: '📱 Ikele' },
   ];
 
@@ -1658,6 +1666,7 @@ export function AdminDashboard() {
       {tab === 'leads' && <TabLeads clients={clients} />}
       {tab === 'businesses' && <TabBusinesses />}
       {tab === 'categories' && <TabCategories />}
+      {tab === 'stores' && <TabStores />}
       {tab === 'ikele' && <TabIkele />}
     </div>
   );

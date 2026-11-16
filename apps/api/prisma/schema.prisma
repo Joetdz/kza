@@ -27,6 +27,9 @@ model Business {
   isDefault     Boolean  @default(false) @map("is_default")
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
+  /// Suspended by the platform admin (moderation): nobody works on it, its store is off.
+  suspendedAt     DateTime? @map("suspended_at") @db.Timestamptz(6)
+  suspendedReason String?   @map("suspended_reason")
 
   members BusinessMember[]
   invites BusinessInvite[]

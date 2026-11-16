@@ -1,6 +1,6 @@
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Suspense, useEffect, useState } from 'react';
-import { AlertTriangle, RefreshCw } from 'lucide-react';
+import { AlertTriangle, RefreshCw, Ban, LogOut } from 'lucide-react';
 import { DashboardSkeleton } from './components/ui/Skeleton';
 import { AppShell } from './components/layout/AppShell';
 import { OnboardingTour } from './components/OnboardingTour';
@@ -54,8 +54,8 @@ const Spinner = () => (
 );
 
 function AppInner() {
-  const { session, loading: authLoading } = useAuth();
-  const { businesses, currentBusinessId, loadBusinesses, hydrate, loading, error, clearError } = useStore();
+  const { session, loading: authLoading, signOut } = useAuth();
+  const { businesses, currentBusinessId, loadBusinesses, hydrate, loading, error, clearError, setCurrentBusiness } = useStore();
 
   const userId = session?.user?.id;
 
@@ -143,6 +143,48 @@ function AppInner() {
         isFirstBusiness
         onClose={() => { /* ne peut pas fermer sans créer un business */ }}
       />
+    );
+  }
+
+  // Business suspendu par l'administration : rien n'y est accessible, on peut passer à un autre.
+  const currentBusiness = businesses.find(b => b.id === currentBusinessId);
+  if (currentBusiness?.suspendedAt) {
+    const others = businesses.filter(b => b.id !== currentBusiness.id && !b.suspendedAt);
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6">
+        <div className="card p-8 max-w-md w-full text-center animate-scale-in">
+          <div className="w-14 h-14 bg-red-100 text-red-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <Ban size={26} />
+          </div>
+          <h2 className="font-bold text-fg text-lg mb-1">{currentBusiness.name} est suspendu</h2>
+          <p className="text-sm text-fg-3">
+            L'administration de Kzion a suspendu ce business
+            {currentBusiness.suspendedAt ? ` le ${new Date(currentBusiness.suspendedAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}` : ''}.
+            Tes données sont conservées.
+          </p>
+          {currentBusiness.suspendedReason && (
+            <p className="mt-3 text-sm text-fg-2 bg-surface-2 border border-line rounded-xl px-4 py-3 text-left">
+              <span className="block text-[11px] font-semibold uppercase tracking-wider text-fg-4 mb-1">Motif</span>
+              {currentBusiness.suspendedReason}
+            </p>
+          )}
+          {others.length > 0 && (
+            <div className="mt-5 space-y-2 text-left">
+              <p className="text-xs font-semibold text-fg-3">Continuer avec un autre business</p>
+              {others.map(b => (
+                <button key={b.id} onClick={() => setCurrentBusiness(b.id)}
+                  className="w-full flex items-center justify-between px-4 py-3 rounded-xl border border-line hover:border-indigo-500 hover:bg-indigo-600/[0.05] text-sm font-medium text-fg transition-colors">
+                  {b.name} <span className="text-xs text-fg-3">{b.currency}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          <p className="mt-5 text-xs text-fg-4">Pour toute question, contacte le support Kzion.</p>
+          <button onClick={signOut} className="mt-4 inline-flex items-center gap-1.5 text-sm text-fg-3 hover:text-red-600">
+            <LogOut size={14} /> Se déconnecter
+          </button>
+        </div>
+      </div>
     );
   }
 
