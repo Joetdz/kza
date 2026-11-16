@@ -41,7 +41,7 @@ function LoginForm({ onSuccess }: { onSuccess: (token: string, investor: Investo
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
-      <form onSubmit={submit} className="bg-surface rounded-2xl shadow-sm border border-gray-100 p-8 max-w-sm w-full">
+      <form onSubmit={submit} className="card p-8 max-w-sm w-full">
         <div className="flex items-center gap-2 mb-1">
           <PiggyBank className="text-indigo-600" size={28} />
           <span className="text-xl font-black text-gray-900">KZA</span>
@@ -49,15 +49,15 @@ function LoginForm({ onSuccess }: { onSuccess: (token: string, investor: Investo
         <h1 className="text-lg font-semibold text-gray-900 mb-1">Portail investisseur</h1>
         <p className="text-sm text-gray-500 mb-6">Connecte-toi pour voir tes investissements.</p>
 
-        <label className="text-xs font-medium text-gray-600 mb-1 block">Email</label>
+        <label className="label">Email</label>
         <input
           type="email" required value={email} onChange={e => setEmail(e.target.value)}
-          className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300 mb-4"
+          className="input mb-4"
         />
-        <label className="text-xs font-medium text-gray-600 mb-1 block">Mot de passe</label>
+        <label className="label">Mot de passe</label>
         <input
           type="password" required value={password} onChange={e => setPassword(e.target.value)}
-          className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300 mb-4"
+          className="input mb-4"
         />
         {error && <p className="text-xs text-red-500 mb-4">{error}</p>}
         <button type="submit" disabled={loading}
@@ -115,14 +115,14 @@ function ChangePasswordModal({ token, onClose }: { token: string; onClose: () =>
         ) : (
           <form onSubmit={submit} className="space-y-3">
             <div>
-              <label className="text-xs font-medium text-gray-600 mb-1 block">Mot de passe actuel</label>
+              <label className="label">Mot de passe actuel</label>
               <input type="password" required value={currentPassword} onChange={e => setCurrentPassword(e.target.value)}
-                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300" />
+                className="input" />
             </div>
             <div>
-              <label className="text-xs font-medium text-gray-600 mb-1 block">Nouveau mot de passe</label>
+              <label className="label">Nouveau mot de passe</label>
               <input type="password" required minLength={6} value={newPassword} onChange={e => setNewPassword(e.target.value)}
-                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300" />
+                className="input" />
             </div>
             {error && <p className="text-xs text-red-500">{error}</p>}
             <div className="flex gap-3 pt-2">
@@ -143,7 +143,7 @@ function InvestmentCard({ inv }: { inv: InvestorInvestment }) {
   const pct = inv.repaymentAmount > 0 ? Math.min(100, (inv.repaidAmount / inv.repaymentAmount) * 100) : 0;
 
   return (
-    <div className="bg-surface rounded-2xl p-5 shadow-sm border border-gray-100">
+    <div className="card p-5">
       <div className="flex items-start justify-between gap-2 mb-1">
         <div>
           <div className="font-semibold text-gray-900">{inv.campaign.name}</div>
@@ -263,15 +263,15 @@ export function InvestorPortal() {
 
       <main className="max-w-3xl mx-auto p-5 space-y-5">
         <div className="grid grid-cols-3 gap-3">
-          <div className="bg-surface rounded-2xl p-4 shadow-sm border border-gray-100 text-center">
+          <div className="card p-4 text-center">
             <div className="text-xs text-gray-400 mb-1">Investi</div>
             <div className="font-bold text-gray-900">{fmt(totals.invested)}</div>
           </div>
-          <div className="bg-surface rounded-2xl p-4 shadow-sm border border-gray-100 text-center">
+          <div className="card p-4 text-center">
             <div className="text-xs text-gray-400 mb-1">À recevoir</div>
             <div className="font-bold text-gray-900">{fmt(totals.toReceive)}</div>
           </div>
-          <div className="bg-surface rounded-2xl p-4 shadow-sm border border-gray-100 text-center">
+          <div className="card p-4 text-center">
             <div className="text-xs text-gray-400 mb-1">Reçu</div>
             <div className="font-bold text-emerald-600">{fmt(totals.received)}</div>
           </div>

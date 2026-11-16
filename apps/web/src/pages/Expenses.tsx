@@ -12,6 +12,7 @@ import { useCurrency } from '../hooks/useCurrency';
 import { formatDate, EXPENSE_LABELS, EXPENSE_COLORS, SALE_CHANNELS } from '../utils/formatters';
 import { recurringExpensesApi } from '../api';
 import { treasuryApi, fmtMoney, accountLabel, type TreasuryAccount } from '../api/treasury';
+import { PageHeader, Fab } from '../components/ui/Page';
 import { useSegment } from '../hooks/useSegment';
 import type { Expense, ExpenseCategory, SaleChannel, RecurringExpense } from '../types';
 
@@ -433,7 +434,7 @@ export function Expenses() {
       .filter((n): n is string => !!n);
     const split = e.parts.length > 1;
     return (
-      <div key={e.key} className="bg-surface rounded-2xl p-4 shadow-sm border border-gray-100 flex items-center gap-3">
+      <div key={e.key} className="card p-4 flex items-center gap-3">
         <div
           className="w-2 rounded-full self-stretch"
           style={{ backgroundColor: catColor(e.category) }}
@@ -475,21 +476,15 @@ export function Expenses() {
 
   return (
     <div className="space-y-5 overflow-x-hidden">
-      <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 truncate">Suivi des Dépenses</h1>
-          <p className="text-xs sm:text-sm text-gray-500 truncate">{inPeriod.length} dépenses · {MAD(total)} sur la période</p>
-        </div>
-        <button
-          onClick={openAdd}
-          className="shrink-0 flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-3 sm:px-4 py-2.5 rounded-xl text-sm font-medium transition-colors"
-        >
-          <Plus size={16} /><span className="hidden sm:inline">Ajouter</span>
-        </button>
-      </div>
+      <PageHeader
+        title="Dépenses"
+        subtitle={`${inPeriod.length} dépenses · ${MAD(total)} sur la période`}
+        actions={<Button onClick={openAdd} className="hidden lg:inline-flex"><Plus size={16} /> Nouvelle dépense</Button>}
+      />
+      <Fab icon={Plus} label="Dépense" onClick={openAdd} />
 
       {/* Recurring expenses — salaires, loyers, créances... auto-posted monthly */}
-      <div className="bg-surface rounded-2xl shadow-sm border border-gray-100 p-4">
+      <div className="card p-4">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <Repeat size={16} className="text-indigo-500" />
@@ -544,7 +539,7 @@ export function Expenses() {
       </div>
 
       {/* Period: quick choices, or any two dates */}
-      <div className="bg-surface rounded-2xl shadow-sm border border-gray-100 p-3 space-y-2.5">
+      <div className="card p-3 space-y-2.5">
         <div className="flex gap-1.5 overflow-x-auto scrollbar-hide">
           {PERIODS.map(p => (
             <button key={p.key} onClick={() => setDateRange(...p.range())} aria-pressed={activePeriod === p.key}
@@ -608,7 +603,7 @@ export function Expenses() {
           const open = openGroups.has(g.cat);
           const share = filteredTotal > 0 ? (g.total / filteredTotal) * 100 : 0;
           return (
-            <div key={g.cat} className="bg-surface rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            <div key={g.cat} className="card overflow-hidden">
               <button onClick={() => toggleGroup(g.cat)} aria-expanded={open}
                 className="w-full flex items-center gap-3 p-4 text-left hover:bg-gray-50 transition-colors">
                 <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: catColor(g.cat) }} />
@@ -654,7 +649,7 @@ export function Expenses() {
         <div className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="text-xs font-medium text-gray-600 mb-1 block">Catégorie *</label>
+              <label className="label">Catégorie *</label>
               <select
                 value={addingCategory ? NEW_CATEGORY : form.category}
                 onChange={e => {
@@ -668,7 +663,7 @@ export function Expenses() {
                     setForm(f => ({ ...f, category: v }));
                   }
                 }}
-                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300"
+                className="input"
               >
                 {allCategories.map(c => <option key={c} value={c}>{catLabel(c)}</option>)}
                 <option value={NEW_CATEGORY}>+ Nouvelle catégorie...</option>
@@ -689,25 +684,25 @@ export function Expenses() {
               )}
             </div>
             <div>
-              <label className="text-xs font-medium text-gray-600 mb-1 block">Montant total ({currency}) *</label>
+              <label className="label">Montant total ({currency}) *</label>
               <NumberInput
                 value={form.amount}
                 onChange={val => setForm(f => ({ ...f, amount: val }))}
-                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300"
+                className="input"
               />
             </div>
             <div>
-              <label className="text-xs font-medium text-gray-600 mb-1 block">Date *</label>
+              <label className="label">Date *</label>
               <input
                 type="date"
                 value={form.date}
                 onChange={e => setForm(f => ({ ...f, date: e.target.value }))}
-                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300"
+                className="input"
               />
             </div>
             {/* Every expense comes out of a treasury account. */}
             <div className="sm:col-span-2">
-              <label className="text-xs font-medium text-gray-600 mb-1 block">Payé depuis *</label>
+              <label className="label">Payé depuis *</label>
               {accounts === null ? (
                 <p className="text-xs text-gray-400 py-2.5">Chargement des comptes…</p>
               ) : accounts.length === 0 ? (
@@ -728,11 +723,11 @@ export function Expenses() {
             </div>
                         {form.category === 'pub' && (
               <div>
-                <label className="text-xs font-medium text-gray-600 mb-1 block">Canal pub</label>
+                <label className="label">Canal pub</label>
                 <select
                   value={form.channel ?? ''}
                   onChange={e => setForm(f => ({ ...f, channel: e.target.value || undefined }))}
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300"
+                  className="input"
                 >
                   <option value="">—</option>
                   {SALE_CHANNELS.map(c => <option key={c} value={c}>{c}</option>)}
@@ -742,13 +737,13 @@ export function Expenses() {
           </div>
 
           <div>
-            <label className="text-xs font-medium text-gray-600 mb-1 block">Description *</label>
+            <label className="label">Description *</label>
             <input
               type="text"
               value={form.description}
               onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
               placeholder="Ex: Campagne Meta Ads Nike AF1..."
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300"
+              className="input"
             />
           </div>
 
@@ -833,29 +828,29 @@ export function Expenses() {
         <div className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="text-xs font-medium text-gray-600 mb-1 block">Catégorie *</label>
+              <label className="label">Catégorie *</label>
               <select
                 value={recurringForm.category}
                 onChange={e => setRecurringForm(f => ({ ...f, category: e.target.value }))}
-                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300"
+                className="input"
               >
                 {allCategories.map(c => <option key={c} value={c}>{catLabel(c)}</option>)}
               </select>
             </div>
             <div>
-              <label className="text-xs font-medium text-gray-600 mb-1 block">Montant ({currency}) *</label>
+              <label className="label">Montant ({currency}) *</label>
               <NumberInput
                 value={recurringForm.amount}
                 onChange={val => setRecurringForm(f => ({ ...f, amount: val }))}
-                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300"
+                className="input"
               />
             </div>
             <div>
-              <label className="text-xs font-medium text-gray-600 mb-1 block">Échéance *</label>
+              <label className="label">Échéance *</label>
               <select
                 value={recurringForm.frequency}
                 onChange={e => setRecurringForm(f => ({ ...f, frequency: e.target.value }))}
-                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300"
+                className="input"
               >
                 <option value="daily">Journalière</option>
                 <option value="weekly">Hebdomadaire</option>
@@ -866,11 +861,11 @@ export function Expenses() {
 
             {recurringForm.frequency === 'weekly' && (
               <div>
-                <label className="text-xs font-medium text-gray-600 mb-1 block">Jour de la semaine *</label>
+                <label className="label">Jour de la semaine *</label>
                 <select
                   value={recurringForm.dayOfWeek}
                   onChange={e => setRecurringForm(f => ({ ...f, dayOfWeek: +e.target.value }))}
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300"
+                  className="input"
                 >
                   {WEEKDAY_LABELS.map((d, i) => <option key={i} value={i}>{d.charAt(0).toUpperCase() + d.slice(1)}</option>)}
                 </select>
@@ -879,11 +874,11 @@ export function Expenses() {
 
             {recurringForm.frequency === 'annual' && (
               <div>
-                <label className="text-xs font-medium text-gray-600 mb-1 block">Mois *</label>
+                <label className="label">Mois *</label>
                 <select
                   value={recurringForm.month}
                   onChange={e => setRecurringForm(f => ({ ...f, month: +e.target.value }))}
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300"
+                  className="input"
                 >
                   {MONTH_NAMES.map((m, i) => <option key={i} value={i + 1}>{m.charAt(0).toUpperCase() + m.slice(1)}</option>)}
                 </select>
@@ -892,33 +887,33 @@ export function Expenses() {
 
             {(recurringForm.frequency === 'monthly' || recurringForm.frequency === 'annual') && (
               <div>
-                <label className="text-xs font-medium text-gray-600 mb-1 block">Jour du mois *</label>
+                <label className="label">Jour du mois *</label>
                 <input
                   type="number" min={1} max={28}
                   value={recurringForm.dayOfMonth}
                   onChange={e => setRecurringForm(f => ({ ...f, dayOfMonth: Math.min(28, Math.max(1, +e.target.value)) }))}
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300"
+                  className="input"
                 />
                 <div className="text-xs text-gray-400 mt-1">1 à 28 — pour tomber dans tous les mois</div>
               </div>
             )}
 
             <div>
-              <label className="text-xs font-medium text-gray-600 mb-1 block">Début *</label>
+              <label className="label">Début *</label>
               <input
                 type="date"
                 value={recurringForm.startDate}
                 onChange={e => setRecurringForm(f => ({ ...f, startDate: e.target.value }))}
-                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300"
+                className="input"
               />
             </div>
             <div>
-              <label className="text-xs font-medium text-gray-600 mb-1 block">Fin (optionnel)</label>
+              <label className="label">Fin (optionnel)</label>
               <input
                 type="date"
                 value={recurringForm.endDate}
                 onChange={e => setRecurringForm(f => ({ ...f, endDate: e.target.value }))}
-                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300"
+                className="input"
               />
               <div className="text-xs text-gray-400 mt-1">Ex: fin d'un remboursement de créance</div>
             </div>
@@ -927,7 +922,7 @@ export function Expenses() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {/* Every expense comes out of a treasury account. */}
             <div className="sm:col-span-2">
-              <label className="text-xs font-medium text-gray-600 mb-1 block">Payé depuis *</label>
+              <label className="label">Payé depuis *</label>
               {accounts === null ? (
                 <p className="text-xs text-gray-400 py-2.5">Chargement des comptes…</p>
               ) : accounts.length === 0 ? (
@@ -949,13 +944,13 @@ export function Expenses() {
             </div>
 
           <div>
-            <label className="text-xs font-medium text-gray-600 mb-1 block">Description</label>
+            <label className="label">Description</label>
             <input
               type="text"
               value={recurringForm.description}
               onChange={e => setRecurringForm(f => ({ ...f, description: e.target.value }))}
               placeholder="Ex: Salaire — Jean Mbuyi"
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300"
+              className="input"
             />
           </div>
 

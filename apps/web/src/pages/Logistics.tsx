@@ -639,7 +639,7 @@ export function Logistics() {
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-5xl mx-auto px-4 py-8">
         <div className="flex items-center gap-3 mb-6">
-          <h1 className="text-2xl font-black text-gray-900">Logistique</h1>
+          <h1 className="text-[22px] sm:text-[26px] font-bold tracking-tight text-fg leading-tight">Logistique</h1>
         </div>
 
         <div className="flex gap-1 bg-gray-100 p-1 rounded-2xl mb-6 w-fit flex-wrap">
@@ -671,7 +671,7 @@ export function Logistics() {
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               {locations.map(loc => (
-                <div key={loc.id} className="bg-surface rounded-2xl p-4 border border-gray-100 shadow-sm">
+                <div key={loc.id} className="card p-4">
                   <div className="flex items-start justify-between">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1 flex-wrap">
@@ -725,7 +725,7 @@ export function Logistics() {
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               {partners.map(p => (
-                <div key={p.id} className="bg-surface rounded-2xl p-4 border border-gray-100 shadow-sm">
+                <div key={p.id} className="card p-4">
                   <div className="flex items-start justify-between">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1 flex-wrap">
@@ -1307,7 +1307,7 @@ export function Logistics() {
               </div>
 
               {/* ── Relance non-livrées ── */}
-              <div className="bg-surface rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
+              <div className="card p-5 space-y-4">
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="font-bold text-gray-900">Relance commandes non livrées</h3>
@@ -1423,7 +1423,7 @@ export function Logistics() {
               </div>
 
               {/* ── Fidélisation livrées ── */}
-              <div className="bg-surface rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
+              <div className="card p-5 space-y-4">
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="font-bold text-gray-900">Message de fidélisation (après livraison)</h3>
@@ -1517,7 +1517,7 @@ export function Logistics() {
               </div>
 
               {/* ── Historique ── */}
-              <div className="bg-surface rounded-2xl border border-gray-100 shadow-sm p-5">
+              <div className="card p-5">
                 <h3 className="font-bold text-gray-900 mb-3">Historique des envois ({followUpHistory.length})</h3>
                 {followUpHistory.length === 0 ? (
                   <p className="text-sm text-gray-400 text-center py-6">Aucun envoi pour l'instant.</p>

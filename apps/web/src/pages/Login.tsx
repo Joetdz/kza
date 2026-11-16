@@ -43,7 +43,7 @@ export function Login() {
         </div>
 
         {/* Card */}
-        <div className="bg-surface rounded-2xl shadow-sm border border-gray-100 p-6">
+        <div className="card p-6">
           {/* Tabs */}
           <div className="flex gap-1 bg-gray-100 p-1 rounded-xl mb-6">
             <button

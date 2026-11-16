@@ -511,7 +511,7 @@ function OrdersTab({ orders, agents, token, partnerName, businessName, updatingI
   return (
     <div className="space-y-3">
       {/* Filters */}
-      <div className="bg-surface rounded-2xl p-3 border border-gray-100 shadow-sm">
+      <div className="card p-3">
         <div className="flex gap-2 flex-wrap items-center">
           <div className="flex items-center gap-1.5 flex-1 min-w-[130px]">
             <Calendar size={13} className="text-gray-400 shrink-0" />
@@ -787,7 +787,7 @@ function TeamTab({ token, agents, onAgentsChange }: {
 
       <div className="space-y-2">
         {agents.map(agent => (
-          <div key={agent.id} className="bg-surface rounded-2xl px-4 py-3 border border-gray-100 shadow-sm flex items-center gap-3">
+          <div key={agent.id} className="card px-4 py-3 flex items-center gap-3">
             <div className="w-9 h-9 bg-indigo-100 rounded-full flex items-center justify-center shrink-0">
               <span className="text-indigo-600 font-bold text-sm">{agent.name[0].toUpperCase()}</span>
             </div>
@@ -1322,11 +1322,11 @@ function FinancesTab({ token }: { token: string }) {
       <div>
         <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2">Montants encaissés — USD</p>
         <div className="grid grid-cols-3 gap-2">
-          <div className="bg-surface rounded-2xl p-4 border border-gray-100 shadow-sm text-center">
+          <div className="card p-4 text-center">
             <p className="text-[10px] font-semibold text-gray-400 mb-1">Collecté</p>
             <p className="text-base font-black text-gray-900">${Number(owedUsd).toLocaleString('fr-FR')}</p>
           </div>
-          <div className="bg-surface rounded-2xl p-4 border border-gray-100 shadow-sm text-center">
+          <div className="card p-4 text-center">
             <p className="text-[10px] font-semibold text-gray-400 mb-1">Versé</p>
             <p className="text-base font-black text-green-700">${Number(paidUsd).toLocaleString('fr-FR')}</p>
           </div>
@@ -1342,11 +1342,11 @@ function FinancesTab({ token }: { token: string }) {
       <div>
         <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2">Montants encaissés — FC</p>
         <div className="grid grid-cols-3 gap-2">
-          <div className="bg-surface rounded-2xl p-4 border border-gray-100 shadow-sm text-center">
+          <div className="card p-4 text-center">
             <p className="text-[10px] font-semibold text-gray-400 mb-1">Collecté</p>
             <p className="text-base font-black text-gray-900">{Number(owedCdf).toLocaleString('fr-FR')} FC</p>
           </div>
-          <div className="bg-surface rounded-2xl p-4 border border-gray-100 shadow-sm text-center">
+          <div className="card p-4 text-center">
             <p className="text-[10px] font-semibold text-gray-400 mb-1">Versé</p>
             <p className="text-base font-black text-green-700">{Number(paidCdf).toLocaleString('fr-FR')} FC</p>
           </div>

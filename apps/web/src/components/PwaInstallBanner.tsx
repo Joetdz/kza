@@ -58,7 +58,7 @@ export default function PwaInstallBanner() {
   // Android / Chrome — bouton natif
   if (promptEvent) return (
     <div className="fixed bottom-0 left-0 right-0 z-50 p-4 flex justify-center pointer-events-none">
-      <div className="pointer-events-auto w-full max-w-sm bg-surface rounded-2xl shadow-2xl border border-gray-100 overflow-hidden animate-slide-up">
+      <div className="card pointer-events-auto w-full max-w-sm shadow-2xl overflow-hidden animate-slide-up">
         <div className="h-1 bg-gradient-to-r from-indigo-500 to-purple-500" />
         <div className="p-4 flex items-center gap-3">
           <div className="w-12 h-12 rounded-2xl bg-indigo-600 flex items-center justify-center shrink-0">
@@ -93,7 +93,7 @@ export default function PwaInstallBanner() {
   // iOS — guide manuel
   if (showIosGuide) return (
     <div className="fixed bottom-0 left-0 right-0 z-50 p-4 flex justify-center pointer-events-none">
-      <div className="pointer-events-auto w-full max-w-sm bg-surface rounded-2xl shadow-2xl border border-gray-100 overflow-hidden animate-slide-up">
+      <div className="card pointer-events-auto w-full max-w-sm shadow-2xl overflow-hidden animate-slide-up">
         <div className="h-1 bg-gradient-to-r from-indigo-500 to-purple-500" />
         <div className="p-4">
           <div className="flex items-center justify-between mb-3">

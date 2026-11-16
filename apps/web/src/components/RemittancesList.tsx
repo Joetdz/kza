@@ -71,7 +71,7 @@ export function RemittancesList({ lines }: { lines: Remittance[] | null }) {
             <span className="text-gray-600">{visible.length} commande{visible.length > 1 ? 's' : ''}</span>
             <span className="font-black text-gray-900">Reste : {both(restUsd, restCdf)}</span>
           </div>
-          <div className="bg-surface rounded-2xl border border-gray-100 shadow-sm divide-y divide-gray-50">
+          <div className="card divide-y divide-gray-50">
             {visible.slice(0, shown).map(l => (
               <div key={l.orderId} className="flex items-center gap-3 p-3">
                 <div className="flex-1 min-w-0">

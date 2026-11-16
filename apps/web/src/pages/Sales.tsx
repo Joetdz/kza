@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { Plus, Trash2, Search, Filter, ChevronLeft, ChevronRight, Download, Send, User, Phone } from 'lucide-react';
+import { Plus, Trash2, Search, X, Download, Send, User, Phone, MapPin, ShoppingCart, Package } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { Modal } from '../components/ui/Modal';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
@@ -7,6 +7,7 @@ import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { NumberInput } from '../components/ui/NumberInput';
 import { ListSkeleton } from '../components/ui/Skeleton';
+import { PageHeader, Stat, EmptyState, Pagination, Fab, FormSection } from '../components/ui/Page';
 import { useCurrency } from '../hooks/useCurrency';
 import { formatDate, CHANNEL_COLORS, SALE_CHANNELS } from '../utils/formatters';
 import { downloadInvoice, getInvoiceBase64 } from '../utils/invoicePdf';
@@ -25,13 +26,12 @@ const STATUS_BADGE: Record<SaleStatus, { color: 'green' | 'amber' | 'red' | 'ind
   credit: { color: 'indigo', label: 'À crédit' },
 };
 
-const CHANNEL_BADGE: Record<SaleChannel, 'green' | 'blue' | 'gray' | 'amber' | 'purple' | 'indigo'> = {
-  WhatsApp: 'green',
-  'Meta Ads': 'blue',
-  TikTok: 'gray',
-  Instagram: 'purple',
-  Boutique: 'amber',
-  Autre: 'gray',
+/** The colour a status takes once chosen, in the segmented control. */
+const STATUS_ACTIVE: Record<SaleStatus, string> = {
+  paid: '!bg-emerald-600 !text-white',
+  pending: '!bg-amber-500 !text-white',
+  cancelled: '!bg-red-600 !text-white',
+  credit: '!bg-indigo-600 !text-white',
 };
 
 export function Sales() {
@@ -228,388 +228,330 @@ export function Sales() {
     return Object.entries(map).sort(([, a], [, b]) => b.revenue - a.revenue);
   }, [sales]);
 
+  const allRevenue = sales.reduce((s, sale) => s + saleTotal(sale), 0);
+  const paidRevenue = filtered.filter(s => s.status === 'paid').reduce((s, sale) => s + saleTotal(sale), 0);
+  const pendingCount = filtered.filter(s => s.status === 'pending').length;
+  const formTotal = items.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
+  const filtering = !!(search || channelFilter);
+
   return (
     <div className="space-y-5 overflow-x-hidden">
-      <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 truncate">Suivi des Ventes</h1>
-          <p className="text-xs sm:text-sm text-gray-500 truncate">{sales.length} ventes · {MAD(sales.reduce((s, sale) => s + saleTotal(sale), 0))} total</p>
-        </div>
-        <button
-          onClick={openModal}
-          className="shrink-0 flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-3 sm:px-4 py-2.5 rounded-xl text-sm font-medium transition-colors"
-        >
-          <Plus size={16} /><span className="hidden sm:inline">Enregistrer</span>
-        </button>
+      <PageHeader
+        title="Ventes"
+        subtitle={`${sales.length} ventes · ${MAD(allRevenue)} au total`}
+        actions={
+          <Button onClick={openModal} className="hidden lg:inline-flex">
+            <Plus size={16} /> Nouvelle vente
+          </Button>
+        }
+      />
+
+      {/* What the list below adds up to */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 stagger">
+        <Stat label={filtering ? "Chiffre d'affaires (filtre)" : "Chiffre d'affaires"} value={MAD(totalRev)} hint={`${filtered.length} vente${filtered.length > 1 ? 's' : ''}`} />
+        <Stat label="Encaissé" value={MAD(paidRevenue)} tone="positive" hint="ventes au statut Payé" />
+        <Stat label="Panier moyen" value={MAD(filtered.length ? totalRev / filtered.length : 0)} />
+        <Stat label="En attente" value={String(pendingCount)} tone={pendingCount > 0 ? 'warning' : 'default'} hint="à confirmer" />
       </div>
 
-      {/* Channel cards */}
-      <div className="flex gap-3 overflow-x-auto pb-1 scrollbar-hide">
-        {channelStats.map(([ch, stats]) => (
-          <button
-            key={ch}
-            onClick={() => { setChannelFilter(channelFilter === ch ? '' : ch); setPage(1); }}
-            className={`flex-none flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-medium transition-all ${
-              channelFilter === ch ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-surface border-gray-200 text-gray-700 hover:border-indigo-300'
-            }`}
-          >
-            <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: CHANNEL_COLORS[ch] ?? '#6b7280' }} />
-            {ch}
-            <span className="font-bold">{MAD(stats.revenue)}</span>
-            <span className="text-xs opacity-70">({stats.count})</span>
-          </button>
-        ))}
-      </div>
-
-      {/* Filters */}
-      <div className="flex gap-3">
-        <div className="relative flex-1">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input
-            type="text"
-            placeholder={`Rechercher par ${terms.item}, canal ou client...`}
-            value={search}
-            onChange={e => { setSearch(e.target.value); setPage(1); }}
-            className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-300 bg-surface"
-          />
-        </div>
-        {(search || channelFilter) && (
-          <button
-            onClick={() => { setSearch(''); setChannelFilter(''); setPage(1); }}
-            className="px-3 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-500 hover:bg-gray-50 flex items-center gap-1"
-          >
-            <Filter size={14} /> Reset
-          </button>
-        )}
-      </div>
-
-      {(search || channelFilter) && (
-        <div className="bg-indigo-50 border border-indigo-100 rounded-xl px-4 py-2 text-sm text-indigo-700">
-          {filtered.length} résultats · {MAD(totalRev)}
+      {/* Channels: tap one to filter */}
+      {channelStats.length > 0 && (
+        <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-hide">
+          {channelStats.map(([ch, stats]) => (
+            <button
+              key={ch}
+              onClick={() => { setChannelFilter(channelFilter === ch ? '' : ch); setPage(1); }}
+              aria-pressed={channelFilter === ch}
+              className="chip"
+            >
+              <span className="w-2.5 h-2.5 rounded-full ring-2 ring-surface" style={{ backgroundColor: CHANNEL_COLORS[ch] ?? '#6b7280' }} />
+              {ch}
+              <span className="font-bold tabular-nums">{MAD(stats.revenue)}</span>
+              <span className="text-xs opacity-70">{stats.count}</span>
+            </button>
+          ))}
         </div>
       )}
+
+      {/* Search */}
+      <div className="flex gap-2">
+        <div className="relative flex-1">
+          <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-fg-4 pointer-events-none" />
+          <input
+            type="search"
+            placeholder={`Rechercher un ${terms.item}, un canal, un client…`}
+            value={search}
+            onChange={e => { setSearch(e.target.value); setPage(1); }}
+            className="input pl-10"
+          />
+        </div>
+        {filtering && (
+          <Button variant="secondary" onClick={() => { setSearch(''); setChannelFilter(''); setPage(1); }}>
+            <X size={14} /> <span className="hidden sm:inline">Effacer</span>
+          </Button>
+        )}
+      </div>
 
       {/* Sales list */}
       <div className="space-y-3">
         {loading && sales.length === 0 ? (
           <ListSkeleton count={4} />
-        ) : paginated.map(sale => {
-          const total = saleTotal(sale);
-          const cName = sale.customerName;
-          const cPhone = sale.customerPhone;
-          const isSending = sendingId === sale.id;
-          const msg = sendMsg?.id === sale.id ? sendMsg : null;
+        ) : (
+          <div key={`${page}-${channelFilter}-${search}`} className="space-y-3 stagger">
+            {paginated.map(sale => {
+              const total = saleTotal(sale);
+              const cName = sale.customerName;
+              const cPhone = sale.customerPhone;
+              const isSending = sendingId === sale.id;
+              const msg = sendMsg?.id === sale.id ? sendMsg : null;
+              const status = STATUS_BADGE[sale.status];
 
-          return (
-            <div key={sale.id} className="bg-surface rounded-2xl p-4 shadow-sm border border-gray-100">
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <Badge color={CHANNEL_BADGE[sale.channel] ?? 'gray'} size="sm">{sale.channel}</Badge>
-                  <span className="text-sm text-gray-500">{formatDate(sale.date)}</span>
-                  {sale.deliveryZone && (
-                    <span className="text-xs text-gray-500 bg-blue-50 border border-blue-100 px-2 py-0.5 rounded-full">
-                      {sale.deliveryZone}
-                    </span>
-                  )}
-                  {sale.note && <span className="text-xs text-gray-400 italic">"{sale.note}"</span>}
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="text-lg font-bold text-gray-900">{MAD(total)}</div>
-                  {/* PDF download */}
-                  {sale.status === 'paid' && (
-                    <button
-                      onClick={() => downloadInvoice(sale, products, currentBusiness)}
-                      title="Télécharger la facture PDF"
-                      className="p-1.5 rounded-lg bg-indigo-50 text-indigo-500 hover:bg-indigo-100 transition-colors"
-                    >
-                      <Download size={14} />
-                    </button>
-                  )}
-                  {/* WhatsApp send */}
-                  {sale.status === 'paid' && cPhone && (
-                    <button
-                      onClick={() => handleSendInvoice(sale)}
-                      disabled={isSending}
-                      title={`Envoyer la facture à ${cPhone} par WhatsApp`}
-                      className="p-1.5 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 disabled:opacity-50 transition-colors"
-                    >
-                      {isSending
-                        ? <span className="w-3.5 h-3.5 border-2 border-emerald-300 border-t-emerald-600 rounded-full animate-spin inline-block" />
-                        : <Send size={14} />}
-                    </button>
-                  )}
-                  <button
-                    onClick={() => setDeleteId(sale.id)}
-                    className="p-1.5 rounded-lg bg-red-50 text-red-400 hover:bg-red-100 transition-colors"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              </div>
-
-              {/* Client info */}
-              {(cName || cPhone) && (
-                <div className="flex items-center gap-3 mb-2 text-xs text-gray-500">
-                  {cName && <span className="flex items-center gap-1"><User size={11} />{cName}</span>}
-                  {cPhone && <span className="flex items-center gap-1"><Phone size={11} />{cPhone}</span>}
-                </div>
-              )}
-
-              {/* Send feedback */}
-              {msg && (
-                <div className={`mb-2 text-xs px-3 py-1.5 rounded-lg ${
-                  msg.ok ? 'bg-emerald-50 text-emerald-700'
-                  : msg.text === '__wa_not_connected__' ? 'bg-amber-50 text-amber-700'
-                  : 'bg-red-50 text-red-600'
-                }`}>
-                  {msg.text === '__wa_not_connected__' ? (
-                    <span>
-                      WhatsApp non connecté.{' '}
-                      <a href="#/whatsapp" className="underline font-semibold hover:text-amber-900">
-                        Connecter WhatsApp
-                      </a>
-                    </span>
-                  ) : msg.text}
-                </div>
-              )}
-
-              {/* Status selector */}
-              <div className="flex gap-1 mb-3">
-                {statusesFor(sale.status).map(s => {
-                  const cfg = STATUS_BADGE[s];
-                  const active = sale.status === s;
-                  const colors: Record<string, string> = {
-                    paid: active ? 'bg-emerald-600 text-white' : 'text-emerald-700 hover:bg-emerald-50',
-                    pending: active ? 'bg-amber-500 text-white' : 'text-amber-700 hover:bg-amber-50',
-                    cancelled: active ? 'bg-red-500 text-white' : 'text-red-600 hover:bg-red-50',
-                    credit: active ? 'bg-indigo-600 text-white' : 'text-indigo-700 hover:bg-indigo-50',
-                  };
-                  return (
-                    <button
-                      key={s}
-                      onClick={() => !active && updateSaleStatus(sale.id, s)}
-                      disabled={active}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors ${colors[s]} ${active ? 'border-transparent cursor-default' : 'border-gray-200'}`}
-                    >
-                      {cfg.label}
-                    </button>
-                  );
-                })}
-              </div>
-
-              <div className="space-y-1.5">
-                {sale.items.map((item, i) => {
-                  const product = products.find(p => p.id === item.productId);
-                  return (
-                    <div key={i} className="flex items-center gap-2 text-sm">
-                      <div className="w-1.5 h-1.5 rounded-full bg-indigo-400 shrink-0" />
-                      <span className="flex-1 text-gray-700">
-                        {product?.name ?? words.unknownItem}
-                        <span className="text-gray-400"> × {item.quantity}</span>
-                      </span>
-                      <span className="font-medium text-gray-900">{MAD(item.unitPrice)}/u</span>
-                      <span className="text-gray-500">{MAD(item.quantity * item.unitPrice)}</span>
+              return (
+                <article key={sale.id} className="card card-hover p-4 sm:p-5">
+                  {/* Channel, date, total */}
+                  <div className="flex items-start gap-3">
+                    <span className="mt-1.5 w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: CHANNEL_COLORS[sale.channel] ?? '#6b7280' }} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-semibold text-fg">{sale.channel}</span>
+                        <span className="text-xs text-fg-4">·</span>
+                        <span className="text-xs text-fg-3">{formatDate(sale.date)}</span>
+                        <Badge color={status.color} size="sm">{status.label}</Badge>
+                      </div>
+                      {(cName || cPhone || sale.deliveryZone) && (
+                        <div className="flex items-center gap-x-3 gap-y-1 mt-1 text-xs text-fg-3 flex-wrap">
+                          {cName && <span className="flex items-center gap-1"><User size={12} />{cName}</span>}
+                          {cPhone && <span className="flex items-center gap-1"><Phone size={12} />{cPhone}</span>}
+                          {sale.deliveryZone && <span className="flex items-center gap-1"><MapPin size={12} />{sale.deliveryZone}</span>}
+                        </div>
+                      )}
                     </div>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })}
-        {!loading && filtered.length === 0 && (
-          <div className="text-center py-16 text-gray-400">
-            <p className="text-lg">Aucune vente trouvée</p>
-            <p className="text-sm mt-1">Enregistrez votre première vente avec le bouton ci-dessus</p>
+                    <div className="text-right shrink-0">
+                      <div className="text-lg sm:text-xl font-bold tracking-tight text-fg tabular-nums">{MAD(total)}</div>
+                      <div className="text-[11px] text-fg-4">{sale.items.length} ligne{sale.items.length > 1 ? 's' : ''}</div>
+                    </div>
+                  </div>
+
+                  {/* Lines */}
+                  <div className="mt-3 rounded-xl bg-surface-2 divide-y divide-line/70">
+                    {sale.items.map((item, i) => {
+                      const product = products.find(p => p.id === item.productId);
+                      return (
+                        <div key={i} className="flex items-center gap-3 px-3 py-2 text-sm">
+                          <span className="flex-1 min-w-0 truncate text-fg-2">
+                            {product?.name ?? words.unknownItem}
+                          </span>
+                          <span className="text-xs text-fg-3 tabular-nums whitespace-nowrap">{item.quantity} × {MAD(item.unitPrice)}</span>
+                          <span className="font-semibold text-fg tabular-nums whitespace-nowrap">{MAD(item.quantity * item.unitPrice)}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {sale.note && <p className="mt-2 text-xs text-fg-3 italic">« {sale.note} »</p>}
+
+                  {/* Send feedback */}
+                  {msg && (
+                    <div className={`mt-3 text-xs px-3 py-2 rounded-xl animate-fade-in ${
+                      msg.ok ? 'bg-emerald-50 text-emerald-700'
+                      : msg.text === '__wa_not_connected__' ? 'bg-amber-50 text-amber-700'
+                      : 'bg-red-50 text-red-700'
+                    }`}>
+                      {msg.text === '__wa_not_connected__' ? (
+                        <span>
+                          WhatsApp non connecté.{' '}
+                          <a href="#/whatsapp" className="underline font-semibold">Connecter WhatsApp</a>
+                        </span>
+                      ) : msg.text}
+                    </div>
+                  )}
+
+                  {/* Status and actions */}
+                  <div className="mt-3 flex items-center gap-2 flex-wrap">
+                    <div className="segmented flex-1 min-w-[220px]">
+                      {statusesFor(sale.status).map(s => (
+                        <button
+                          key={s}
+                          onClick={() => sale.status !== s && updateSaleStatus(sale.id, s)}
+                          aria-pressed={sale.status === s}
+                          className={sale.status === s ? STATUS_ACTIVE[s] : ''}
+                        >
+                          {STATUS_BADGE[s].label}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex items-center gap-1 ml-auto">
+                      {sale.status === 'paid' && (
+                        <button onClick={() => downloadInvoice(sale, products, currentBusiness)}
+                          title="Télécharger la facture PDF" aria-label="Télécharger la facture PDF" className="icon-btn">
+                          <Download size={16} />
+                        </button>
+                      )}
+                      {sale.status === 'paid' && cPhone && (
+                        <button onClick={() => handleSendInvoice(sale)} disabled={isSending}
+                          title={`Envoyer la facture à ${cPhone} par WhatsApp`} aria-label="Envoyer la facture par WhatsApp"
+                          className="icon-btn text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50">
+                          {isSending
+                            ? <span className="w-4 h-4 border-2 border-emerald-300 border-t-emerald-600 rounded-full animate-spin" />
+                            : <Send size={16} />}
+                        </button>
+                      )}
+                      <button onClick={() => setDeleteId(sale.id)} title="Supprimer" aria-label="Supprimer la vente"
+                        className="icon-btn hover:text-red-600 hover:bg-red-50">
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
           </div>
+        )}
+        {!loading && filtered.length === 0 && (
+          filtering ? (
+            <EmptyState icon={Search} title="Aucune vente ne correspond" text="Essaie un autre mot ou retire le filtre de canal." />
+          ) : (
+            <EmptyState icon={ShoppingCart} title="Aucune vente pour l'instant" text="Enregistre ta première vente : elle apparaîtra ici, avec sa facture."
+              action={<Button onClick={openModal}><Plus size={16} /> Nouvelle vente</Button>} />
+          )
         )}
       </div>
 
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between py-2">
-          <span className="text-sm text-gray-500">
-            Page {page} / {totalPages} · {filtered.length} ventes
-          </span>
-          <div className="flex gap-2">
-            <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
-              className="p-2 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
-              <ChevronLeft size={16} />
-            </button>
-            {Array.from({ length: totalPages }, (_, i) => i + 1)
-              .filter(n => n === 1 || n === totalPages || Math.abs(n - page) <= 1)
-              .reduce<(number | '...')[]>((acc, n, i, arr) => {
-                if (i > 0 && (n as number) - (arr[i - 1] as number) > 1) acc.push('...');
-                acc.push(n);
-                return acc;
-              }, [])
-              .map((n, i) => n === '...' ? (
-                <span key={`e${i}`} className="px-2 py-2 text-gray-400 text-sm">…</span>
-              ) : (
-                <button key={n} onClick={() => setPage(n as number)}
-                  className={`w-9 h-9 rounded-xl text-sm font-medium transition-colors ${page === n ? 'bg-indigo-600 text-white' : 'border border-gray-200 text-gray-700 hover:bg-gray-50'}`}>
-                  {n}
-                </button>
-              ))
-            }
-            <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
-              className="p-2 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
-              <ChevronRight size={16} />
-            </button>
-          </div>
-        </div>
-      )}
+      <Pagination page={page} totalPages={totalPages} onPage={setPage}
+        summary={`Page ${page} / ${totalPages} · ${filtered.length} ventes`} />
+
+      <Fab icon={Plus} label="Vente" onClick={openModal} />
 
       {/* Sale Modal */}
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Enregistrer une vente" size="lg">
-        <div className="space-y-4">
-          {/* Canal + Date */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="text-xs font-medium text-gray-600 mb-1 block">Canal *</label>
-              <select value={channel} onChange={e => setChannel(e.target.value as SaleChannel)}
-                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300">
-                {SALE_CHANNELS.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
+      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Nouvelle vente" size="lg">
+        <div className="space-y-6">
+          <FormSection title="Vente" icon={ShoppingCart}>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="label">Canal *</label>
+                <select value={channel} onChange={e => setChannel(e.target.value as SaleChannel)} className="input">
+                  {SALE_CHANNELS.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="label">Date *</label>
+                <input type="date" value={date} onChange={e => setDate(e.target.value)} className="input" />
+              </div>
             </div>
-            <div>
-              <label className="text-xs font-medium text-gray-600 mb-1 block">Date *</label>
-              <input type="date" value={date} onChange={e => setDate(e.target.value)}
-                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300" />
-            </div>
-          </div>
+          </FormSection>
 
-          {/* Client */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4" ref={suggestBoxRef}>
-            <div className="relative">
-              <label className="text-xs font-medium text-gray-600 mb-1 block">
-                <span className="flex items-center gap-1"><Phone size={11} /> Téléphone client</span>
-              </label>
-              <input
-                type="tel"
-                value={customerPhone}
-                onChange={e => handlePhoneInput(e.target.value)}
-                onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
-                placeholder="+243 8XX XXX XXX"
-                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300"
-              />
-              {showSuggestions && (
-                <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-surface border border-gray-200 rounded-xl shadow-lg overflow-hidden">
-                  {suggestions.map((s, i) => (
-                    <button key={i} type="button"
-                      onMouseDown={() => pickSuggestion(s)}
-                      className="w-full text-left px-3 py-2 text-sm hover:bg-indigo-50 flex items-center justify-between gap-2 border-b border-gray-50 last:border-0">
-                      <span className="font-medium text-gray-800 truncate">{s.name || s.phone}</span>
-                      <span className="text-gray-400 text-xs shrink-0">{s.name ? s.phone : ''}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
+          <FormSection title="Client" icon={User}>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" ref={suggestBoxRef}>
+              <div className="relative">
+                <label className="label">Téléphone</label>
+                <input
+                  type="tel"
+                  inputMode="tel"
+                  value={customerPhone}
+                  onChange={e => handlePhoneInput(e.target.value)}
+                  onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
+                  placeholder="+243 8XX XXX XXX"
+                  className="input"
+                />
+                {showSuggestions && (
+                  <div className="absolute z-50 left-0 right-0 top-full mt-1.5 glass-strong border rounded-xl shadow-float overflow-hidden animate-scale-in origin-top">
+                    {suggestions.map((s, i) => (
+                      <button key={i} type="button"
+                        onMouseDown={() => pickSuggestion(s)}
+                        className="w-full text-left px-3 py-2.5 text-sm hover:bg-surface-2 flex items-center justify-between gap-2 border-b border-line/60 last:border-0">
+                        <span className="font-medium text-fg truncate">{s.name || s.phone}</span>
+                        <span className="text-fg-4 text-xs shrink-0">{s.name ? s.phone : ''}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div>
+                <label className="label">Nom</label>
+                <input type="text" value={customerName} onChange={e => handleNameInput(e.target.value)}
+                  placeholder="Nom ou prénom" autoComplete="off" className="input" />
+              </div>
             </div>
-            <div>
-              <label className="text-xs font-medium text-gray-600 mb-1 block">
-                <span className="flex items-center gap-1"><User size={11} /> Nom du client</span>
-              </label>
-              <input
-                type="text"
-                value={customerName}
-                onChange={e => handleNameInput(e.target.value)}
-                placeholder="Nom ou prénom"
-                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300"
-              />
-            </div>
-          </div>
+          </FormSection>
 
-          {/* Produits */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-xs font-medium text-gray-600">{words.Items} *</label>
-              <button onClick={addItem} className="text-xs text-indigo-600 hover:text-indigo-800 font-medium">+ Ajouter ligne</button>
-            </div>
+          <FormSection title={`${words.Items} *`} icon={Package}
+            aside={<button onClick={addItem} className="text-xs text-indigo-700 font-semibold hover:underline">+ Ajouter une ligne</button>}>
             <div className="space-y-2">
               {items.map((item, idx) => (
-                <div key={idx} className="flex flex-wrap gap-x-2 gap-y-1.5 items-end border-b border-gray-50 pb-2 last:border-0 last:pb-0 sm:border-0 sm:pb-0">
-                  <div className="w-full sm:flex-1">
-                    {idx === 0 && <div className="text-xs text-gray-400 mb-1">{words.Item}</div>}
-                    <select value={item.productId} onChange={e => updateItem(idx, 'productId', e.target.value)}
-                      className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-300">
-                      <option value="">Choisir...</option>
+                <div key={idx} className="rounded-xl border border-line bg-surface-2/60 p-3 space-y-2 animate-fade-in">
+                  <div className="flex items-center gap-2">
+                    <select value={item.productId} onChange={e => updateItem(idx, 'productId', e.target.value)} className="input flex-1">
+                      <option value="">Choisir…</option>
                       {products.map(p => <option key={p.id} value={p.id}>{p.name} ({p.sku})</option>)}
                     </select>
+                    {items.length > 1 && (
+                      <button onClick={() => removeItem(idx)} aria-label="Retirer la ligne" className="icon-btn hover:text-red-600 hover:bg-red-50 shrink-0">
+                        <Trash2 size={15} />
+                      </button>
+                    )}
                   </div>
-                  <div className="w-16 sm:w-20">
-                    {idx === 0 && <div className="text-xs text-gray-400 mb-1">Qté</div>}
-                    <NumberInput value={item.quantity} min={0.1} onChange={val => updateItem(idx, 'quantity', val)}
-                      className="w-full border border-gray-200 rounded-xl px-2 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-300" />
+                  <div className="grid grid-cols-[1fr_1.4fr_auto] gap-2 items-end">
+                    <div>
+                      <label className="label">Quantité</label>
+                      <NumberInput value={item.quantity} min={0.1} onChange={val => updateItem(idx, 'quantity', val)} className="input" />
+                    </div>
+                    <div>
+                      <label className="label">Prix unitaire ({currency})</label>
+                      <NumberInput value={item.unitPrice} onChange={val => updateItem(idx, 'unitPrice', val)} className="input" />
+                    </div>
+                    <div className="text-right pb-2.5 min-w-[80px]">
+                      <div className="text-[11px] text-fg-4">Total</div>
+                      <div className="text-sm font-bold text-fg tabular-nums">{MAD(item.quantity * item.unitPrice)}</div>
+                    </div>
                   </div>
-                  <div className="flex-1 sm:w-28">
-                    {idx === 0 && <div className="text-xs text-gray-400 mb-1">Prix ({currency})</div>}
-                    <NumberInput value={item.unitPrice} onChange={val => updateItem(idx, 'unitPrice', val)}
-                      className="w-full border border-gray-200 rounded-xl px-2 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-300" />
-                  </div>
-                  <div className="w-20 sm:w-24 text-right pb-2">
-                    {idx === 0 && <div className="text-xs text-gray-400 mb-1">Total</div>}
-                    <div className="text-sm font-medium text-gray-700">{MAD(item.quantity * item.unitPrice)}</div>
-                  </div>
-                  {items.length > 1 && (
-                    <button onClick={() => removeItem(idx)} className="pb-2 text-red-400 hover:text-red-600">
-                      <Trash2 size={14} />
-                    </button>
-                  )}
                 </div>
               ))}
             </div>
-            <div className="mt-3 text-right text-sm font-semibold text-gray-900">
-              Total: {MAD(items.reduce((s, i) => s + i.quantity * i.unitPrice, 0))}
+            <div className="flex items-center justify-between rounded-xl bg-indigo-600/10 px-4 py-3">
+              <span className="text-sm font-medium text-indigo-800">Total de la vente</span>
+              <span className="text-lg font-bold text-indigo-800 tabular-nums">{MAD(formTotal)}</span>
             </div>
-          </div>
+          </FormSection>
 
-          {/* Statut */}
-          <div>
-            <label className="text-xs font-medium text-gray-600 mb-2 block">Statut *</label>
-            <div className="flex gap-2">
+          <FormSection title="Statut *">
+            <div className="segmented">
               {statusesFor().map(s => (
-                <button key={s} onClick={() => setStatus(s)}
-                  className={`flex-1 py-2 rounded-xl text-sm font-medium border transition-colors ${
-                    status === s
-                      ? s === 'paid' ? 'bg-emerald-600 text-white border-emerald-600'
-                        : s === 'pending' ? 'bg-amber-500 text-white border-amber-500'
-                        : s === 'credit' ? 'bg-indigo-600 text-white border-indigo-600'
-                        : 'bg-red-500 text-white border-red-500'
-                      : 'bg-surface text-gray-600 border-gray-200 hover:bg-gray-50'
-                  }`}>
+                <button key={s} onClick={() => setStatus(s)} aria-pressed={status === s}
+                  className={`!py-2 !text-sm ${status === s ? STATUS_ACTIVE[s] : ''}`}>
                   {STATUS_BADGE[s].label}
                 </button>
               ))}
             </div>
-          </div>
+          </FormSection>
 
-          {/* Zone livraison */}
-          <div>
-            <label className="text-xs font-medium text-gray-600 mb-1 block">Zone de livraison</label>
-            <select value={deliveryZone} onChange={e => setDeliveryZone(e.target.value)}
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300">
-              <option value="">— Non spécifiée —</option>
-              <optgroup label="Kinshasa — Communes">
-                {KINSHASA_COMMUNES.map(c => <option key={c} value={`Kinshasa — ${c}`}>{c}</option>)}
-              </optgroup>
-              <optgroup label="Autres villes RDC">
-                {RDC_VILLES.map(v => <option key={v} value={v}>{v}</option>)}
-              </optgroup>
-              <option value="Autre ville">Autre ville</option>
-            </select>
-          </div>
+          <FormSection title="Livraison & note" icon={MapPin}>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="label">Zone de livraison</label>
+                <select value={deliveryZone} onChange={e => setDeliveryZone(e.target.value)} className="input">
+                  <option value="">— Non spécifiée —</option>
+                  <optgroup label="Kinshasa — Communes">
+                    {KINSHASA_COMMUNES.map(c => <option key={c} value={`Kinshasa — ${c}`}>{c}</option>)}
+                  </optgroup>
+                  <optgroup label="Autres villes RDC">
+                    {RDC_VILLES.map(v => <option key={v} value={v}>{v}</option>)}
+                  </optgroup>
+                  <option value="Autre ville">Autre ville</option>
+                </select>
+              </div>
+              <div>
+                <label className="label">Note (facultatif)</label>
+                <input type="text" value={note} onChange={e => setNote(e.target.value)} placeholder="Commentaire…" className="input" />
+              </div>
+            </div>
+          </FormSection>
 
-          {/* Note */}
-          <div>
-            <label className="text-xs font-medium text-gray-600 mb-1 block">Note (optionnel)</label>
-            <input type="text" value={note} onChange={e => setNote(e.target.value)}
-              placeholder="Commentaire..."
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300" />
-          </div>
-
-          <div className="flex gap-3 pt-2">
+          {/* The actions stay in view on a phone, above the keyboard */}
+          <div className="sticky bottom-0 -mx-5 px-5 pt-3 pb-1 bg-surface border-t border-line flex gap-3">
             <Button variant="secondary" onClick={() => setModalOpen(false)} className="flex-1" disabled={submitting}>Annuler</Button>
-            <Button onClick={handleSave} loading={submitting} className="flex-1">Enregistrer</Button>
+            <Button onClick={handleSave} loading={submitting} className="flex-[2]">
+              Enregistrer · {MAD(formTotal)}
+            </Button>
           </div>
         </div>
       </Modal>

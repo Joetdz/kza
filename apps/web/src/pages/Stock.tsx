@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
-import { Plus, Edit2, Trash2, TrendingUp, TrendingDown, History, Search, ImagePlus, X, RefreshCw, MapPin, Layers, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, Edit2, Trash2, TrendingUp, TrendingDown, History, Search, ImagePlus, X, RefreshCw, MapPin, Layers, ChevronDown, ChevronUp, Package, AlertTriangle } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { Modal } from '../components/ui/Modal';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
@@ -7,6 +7,7 @@ import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { NumberInput } from '../components/ui/NumberInput';
 import { CardsSkeleton } from '../components/ui/Skeleton';
+import { PageHeader, Stat, EmptyState, Fab } from '../components/ui/Page';
 import { useCurrency } from '../hooks/useCurrency';
 import { formatDate } from '../utils/formatters';
 import { uploadApi, categoriesApi, resolveImageUrl, productsApi } from '../api';
@@ -92,13 +93,21 @@ export function Stock() {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // The catalogue at a glance: tracked items, their units, their selling value, the low ones.
+  const trackedProducts = useMemo(() => products.filter(p => p.trackStock ?? true), [products]);
+  const lowProducts = useMemo(() => trackedProducts.filter(p => p.quantity <= p.alertThreshold), [trackedProducts]);
+  const trackedUnits = trackedProducts.reduce((n, p) => n + p.quantity, 0);
+  const stockValue = trackedProducts.reduce((n, p) => n + p.quantity * (p.sellingPrice > 0 ? p.sellingPrice : 0), 0);
+  const [onlyLow, setOnlyLow] = useState(false);
+
   const filtered = useMemo(() =>
     products.filter(p =>
+      (!onlyLow || ((p.trackStock ?? true) && p.quantity <= p.alertThreshold)) && (
       p.name.toLowerCase().includes(search.toLowerCase()) ||
       p.sku.toLowerCase().includes(search.toLowerCase()) ||
-      p.category.toLowerCase().includes(search.toLowerCase())
+      p.category.toLowerCase().includes(search.toLowerCase()))
     ),
-    [products, search]
+    [products, search, onlyLow]
   );
 
   // Variants of the same model share one card, placed where the first one appears.
@@ -305,7 +314,7 @@ export function Stock() {
 
   const field = (key: keyof typeof form, label: string, type = 'text', opts?: string[], hint?: string, locked = false) => (
     <div>
-      <label className="text-xs font-medium text-gray-600 mb-1 block">{label}</label>
+      <label className="label">{label}</label>
       {locked ? (
         <input
           type={type}
@@ -317,7 +326,7 @@ export function Stock() {
         <select
           value={form[key] as string}
           onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
-          className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300"
+          className="input"
         >
           <option value="">Choisir...</option>
           {opts.map(o => <option key={o} value={o}>{o}</option>)}
@@ -326,14 +335,14 @@ export function Stock() {
         <NumberInput
           value={form[key] as number}
           onChange={val => setForm(f => ({ ...f, [key]: val }))}
-          className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300"
+          className="input"
         />
       ) : (
         <input
           type={type}
           value={form[key] as string}
           onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
-          className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300"
+          className="input"
         />
       )}
       {hint && <p className="text-[11px] text-gray-400 mt-1">{hint}</p>}
@@ -345,20 +354,20 @@ export function Stock() {
             return (
               <div
                 key={p.id}
-                className={`bg-surface rounded-2xl p-4 shadow-sm border transition-all ${isLow ? 'border-red-200 bg-red-50/30' : 'border-gray-100'}`}
+                className={`card card-hover p-4 ${isLow ? '!border-red-200' : ''}`}
               >
                 {/* Header : image + nom + badge */}
                 <div className="flex items-center gap-3 mb-3">
                   {p.imageUrl ? (
-                    <img src={resolveImageUrl(p.imageUrl)!} alt={p.name} className="w-11 h-11 rounded-xl object-cover shrink-0 border border-gray-100" />
+                    <img src={resolveImageUrl(p.imageUrl)!} alt={p.name} loading="lazy" className="w-12 h-12 rounded-xl object-cover shrink-0 border border-line" />
                   ) : (
-                    <div className="w-11 h-11 rounded-xl bg-gray-100 flex items-center justify-center shrink-0">
-                      <ImagePlus size={16} className="text-gray-300" />
+                    <div className="w-12 h-12 rounded-xl bg-surface-2 flex items-center justify-center shrink-0">
+                      <ImagePlus size={16} className="text-fg-4" />
                     </div>
                   )}
                   <div className="flex-1 min-w-0">
-                    <div className="font-semibold text-gray-900 truncate text-sm">{p.name}</div>
-                    <div className="text-xs text-gray-400 truncate">{p.sku}{p.category ? ` · ${p.category}` : ''}</div>
+                    <div className="font-semibold text-fg truncate text-sm">{p.name}</div>
+                    <div className="text-xs text-fg-3 truncate">{p.sku}{p.category ? ` · ${p.category}` : ''}</div>
                   </div>
                   {isLow && <Badge color="red" size="sm">Bas</Badge>}
                   {!(p.trackStock ?? true) && <Badge color="gray" size="sm">Service</Badge>}
@@ -394,6 +403,14 @@ export function Stock() {
                     </div>
                   </div>
                 </div>
+
+                {/* How far the stock is above its alert threshold */}
+                {(p.trackStock ?? true) && (
+                  <div className="mb-3 h-1.5 rounded-full bg-surface-2 overflow-hidden" title={`${p.quantity} en stock, alerte à ${p.alertThreshold}`}>
+                    <div className={`h-full rounded-full transition-[width] duration-700 ease-out-soft ${isLow ? 'bg-red-500' : p.quantity <= p.alertThreshold * 2 ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                      style={{ width: `${Math.min(100, (p.quantity / Math.max(1, p.alertThreshold * 3)) * 100)}%` }} />
+                  </div>
+                )}
 
                 {/* Fournisseur */}
                 {p.supplier && (
@@ -458,7 +475,7 @@ export function Stock() {
     const iconBtn = 'p-1.5 rounded-lg transition-colors';
     return (
       <div key={`group:${name}`}
-        className={`bg-surface rounded-2xl p-4 shadow-sm border transition-all ${lowCount ? 'border-red-200' : 'border-gray-100'} ${open ? 'sm:col-span-2 xl:col-span-3' : ''}`}>
+        className={`card card-hover p-4 ${lowCount ? '!border-red-200' : ''} ${open ? 'sm:col-span-2 xl:col-span-3' : ''}`}>
         <div className="flex items-center gap-3 mb-3">
           {image ? (
             <img src={resolveImageUrl(image)!} alt={name} className="w-11 h-11 rounded-xl object-cover shrink-0 border border-gray-100" />
@@ -558,56 +575,67 @@ export function Stock() {
 
   return (
     <div className="space-y-5 overflow-x-hidden">
-      <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 truncate">{terms.catalogue}</h1>
-          <p className="text-xs sm:text-sm text-gray-500">{products.length} {terms.items}</p>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <button
-            onClick={handleReconcile}
-            disabled={reconciling}
-            title="Recalculer le stock depuis l'historique"
-            className="flex items-center gap-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors disabled:opacity-50"
-          >
+      <PageHeader
+        title={terms.catalogue}
+        subtitle={`${products.length} ${terms.items}`}
+        actions={<>
+          <Button variant="secondary" onClick={handleReconcile} disabled={reconciling} title="Recalculer le stock depuis l'historique">
             <RefreshCw size={15} className={reconciling ? 'animate-spin' : ''} />
             <span className="hidden sm:inline">Recalculer</span>
-          </button>
-          <button
-            onClick={openAdd}
-            className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-3 sm:px-4 py-2.5 rounded-xl text-sm font-medium transition-colors"
-          >
-            <Plus size={16} /><span className="hidden sm:inline">Ajouter</span>
-          </button>
-        </div>
-      </div>
+          </Button>
+          <Button onClick={openAdd} className="hidden lg:inline-flex">
+            <Plus size={16} /> Ajouter
+          </Button>
+        </>}
+      />
 
-      <div className="relative">
-        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-        <input
-          type="text"
-          placeholder="Rechercher par nom, SKU, catégorie..."
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-300 bg-surface"
-        />
+      {/* The catalogue at a glance */}
+      {products.length > 0 && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 stagger">
+          <Stat label={terms.items.charAt(0).toUpperCase() + terms.items.slice(1)} value={String(products.length)} hint={`${trackedProducts.length} suivis en stock`} />
+          <Stat label="Unités en stock" value={trackedUnits.toLocaleString('fr-FR')} />
+          <Stat label="Valeur de vente" value={MAD(stockValue)} hint="prix de vente × stock" />
+          <Stat label="Stock bas" value={String(lowProducts.length)} tone={lowProducts.length ? 'negative' : 'positive'} hint={lowProducts.length ? 'sous le seuil d\'alerte' : 'tout est au-dessus du seuil'} />
+        </div>
+      )}
+
+      <div className="flex gap-2">
+        <div className="relative flex-1">
+          <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-fg-4 pointer-events-none" />
+          <input
+            type="search"
+            placeholder="Rechercher par nom, SKU, catégorie…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="input pl-10"
+          />
+        </div>
+        {lowProducts.length > 0 && (
+          <button onClick={() => setOnlyLow(v => !v)} aria-pressed={onlyLow} className="chip">
+            <AlertTriangle size={14} /> <span className="hidden sm:inline">Stock bas</span> {lowProducts.length}
+          </button>
+        )}
       </div>
 
       {loading ? (
         <CardsSkeleton count={6} />
+      ) : filtered.length === 0 ? (
+        search || onlyLow ? (
+          <EmptyState icon={Search} title="Rien ne correspond" text="Essaie un autre nom, SKU ou catégorie." />
+        ) : (
+          <EmptyState icon={Package} title={`Ton ${terms.catalogue.toLowerCase()} est vide`}
+            text={`Ajoute ton ${firstItem(terms)} : son stock, ses prix et ses mouvements se suivent ici.`}
+            action={<Button onClick={openAdd}><Plus size={16} /> Ajouter</Button>} />
+        )
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 stagger">
           {listItems.map(item => item.kind === 'group'
             ? renderGroupCard(item.name, item.variants)
             : renderProductCard(item.product))}
-          {filtered.length === 0 && (
-            <div className="col-span-full text-center py-16 text-gray-400">
-              <p className="text-lg">Rien à afficher</p>
-              <p className="text-sm mt-1">Ajoutez votre {firstItem(terms)} avec le bouton ci-dessus</p>
-            </div>
-          )}
         </div>
       )}
+
+      <Fab icon={Plus} label="Ajouter" onClick={openAdd} />
 
       {/* Add/Edit Modal */}
       <Modal open={modalOpen} onClose={() => !submitting && setModalOpen(false)} title={editing ? (editing.variantGroup ? 'Modifier la variante' : `Modifier ${words.theItem}`) : variantMode ? (addingToGroup ? `Nouvelles variantes — ${addingToGroup}` : `${words.newItem} à variantes`) : words.newItem} size="md">
@@ -686,17 +714,17 @@ export function Stock() {
             {editing?.variantGroup ? (
               <>
                 <div>
-                  <label className="text-xs font-medium text-gray-600 mb-1 block">Modèle</label>
+                  <label className="label">Modèle</label>
                   <div className="w-full border border-gray-100 bg-gray-50 rounded-xl px-3 py-2.5 text-sm text-gray-500 truncate">{editing.variantGroup}</div>
                   <p className="text-[11px] text-gray-400 mt-1">Renommez le modèle depuis sa carte</p>
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-gray-600 mb-1 block">Variante *</label>
+                  <label className="label">Variante *</label>
                   <input
                     type="text"
                     value={form.variantLabel ?? ''}
                     onChange={e => setForm(f => ({ ...f, variantLabel: e.target.value }))}
-                    className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300"
+                    className="input"
                   />
                   <p className="text-[11px] text-gray-400 mt-1">Ex : M / Rouge</p>
                 </div>
@@ -726,11 +754,11 @@ export function Stock() {
             </div>
             {agendaEnabled && !form.trackStock && (
               <div>
-                <label className="text-xs font-medium text-gray-600 mb-1 block">Durée d'une séance</label>
+                <label className="label">Durée d'une séance</label>
                 <select
                   value={form.durationMinutes ?? ''}
                   onChange={e => setForm(f => ({ ...f, durationMinutes: e.target.value ? Number(e.target.value) : null }))}
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300 bg-surface"
+                  className="input"
                 >
                   <option value="">Durée par défaut de l'agenda</option>
                   {[10, 15, 20, 30, 45, 60, 75, 90, 120, 150, 180, 240].map(m => <option key={m} value={m}>{m} min</option>)}
@@ -839,7 +867,7 @@ export function Stock() {
       <Modal open={!!movementProduct} onClose={() => !submittingMov && setMovementProduct(null)} title={`Mouvement — ${movementProduct?.name}`} size="sm">
         <div className="space-y-4">
           <div>
-            <label className="text-xs font-medium text-gray-600 mb-1 block">Type</label>
+            <label className="label">Type</label>
             <div className="flex gap-3">
               {(['in', 'out'] as const).map(t => (
                 <button
@@ -858,23 +886,23 @@ export function Stock() {
           </div>
 
           <div>
-            <label className="text-xs font-medium text-gray-600 mb-1 block">Quantité</label>
+            <label className="label">Quantité</label>
             <NumberInput value={movForm.quantity} min={0.1} onChange={val => setMovForm(f => ({ ...f, quantity: val }))}
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300" />
+              className="input" />
           </div>
 
           {movForm.type === 'in' && (
             <>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-medium text-gray-600 mb-1 block">Coût d'achat total ({currency})</label>
+                  <label className="label">Coût d'achat total ({currency})</label>
                   <NumberInput value={movForm.purchaseCost} onChange={val => setMovForm(f => ({ ...f, purchaseCost: val }))}
-                    className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300" />
+                    className="input" />
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-gray-600 mb-1 block">Coût de fret ({currency})</label>
+                  <label className="label">Coût de fret ({currency})</label>
                   <NumberInput value={movForm.freightCost} onChange={val => setMovForm(f => ({ ...f, freightCost: val }))}
-                    className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300" />
+                    className="input" />
                 </div>
               </div>
               {unitAcquisitionCost > 0 && (
@@ -894,16 +922,16 @@ export function Stock() {
           )}
 
           <div>
-            <label className="text-xs font-medium text-gray-600 mb-1 block">Motif</label>
+            <label className="label">Motif</label>
             <input type="text" value={movForm.reason} onChange={e => setMovForm(f => ({ ...f, reason: e.target.value }))}
               placeholder="Réapprovisionnement, vente, retour..."
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300" />
+              className="input" />
           </div>
 
           <div>
-            <label className="text-xs font-medium text-gray-600 mb-1 block">Date</label>
+            <label className="label">Date</label>
             <input type="date" value={movForm.date} onChange={e => setMovForm(f => ({ ...f, date: e.target.value }))}
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300" />
+              className="input" />
           </div>
 
           <div className="flex gap-3 pt-2">

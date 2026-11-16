@@ -85,6 +85,35 @@
   .card-hover {
     @apply transition-[box-shadow,transform,border-color] duration-200 hover:shadow-card hover:border-line-strong hover:-translate-y-0.5;
   }
+  /* Form fields: one height and one focus ring everywhere. */
+  .input {
+    @apply w-full bg-surface border border-line rounded-xl px-3.5 py-2.5 text-sm text-fg outline-none
+      transition-[border-color,box-shadow] duration-150 hover:border-line-strong
+      focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/15;
+  }
+  .label {
+    @apply block text-xs font-medium text-fg-2 mb-1.5;
+  }
+  /* Choices side by side, one of them on (statuses, periods…). */
+  .segmented {
+    @apply flex gap-1 p-1 rounded-xl bg-surface-2 border border-line;
+  }
+  .segmented > button {
+    @apply flex-1 px-3 py-1.5 rounded-lg text-xs font-semibold text-fg-3 hover:text-fg;
+  }
+  .segmented > button[aria-pressed='true'] {
+    @apply bg-surface text-fg shadow-soft;
+  }
+  .chip {
+    @apply shrink-0 inline-flex items-center gap-2 px-3.5 py-2 rounded-xl border border-line bg-surface text-sm font-medium text-fg-2
+      hover:border-line-strong hover:text-fg;
+  }
+  .chip[aria-pressed='true'] {
+    @apply bg-indigo-600 border-indigo-600 text-white shadow-soft;
+  }
+  .icon-btn {
+    @apply inline-flex items-center justify-center w-9 h-9 rounded-xl text-fg-3 hover:text-fg hover:bg-surface-2 disabled:opacity-40;
+  }
   .skeleton {
     background: linear-gradient(90deg, rgb(var(--surface-2)) 25%, rgb(var(--surface-3)) 50%, rgb(var(--surface-2)) 75%);
     background-size: 400px 100%;

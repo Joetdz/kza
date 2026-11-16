@@ -9,7 +9,7 @@ import { Button } from './ui/Button';
 import { NumberInput } from './ui/NumberInput';
 import { toast } from '../hooks/useToast';
 
-const input = 'w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300';
+const input = 'input';
 /** A partner payment's « FC » is an account's « CDF ». */
 const accountCurrency = (c: string | null | undefined) => ((c ?? '').toUpperCase() === 'USD' ? 'USD' : 'CDF');
 const fmtPayment = (amount: number, currency: string) => fmtMoney(amount, accountCurrency(currency));
@@ -152,7 +152,7 @@ export function PartnerPaymentsPanel({ payments, onPaymentsChange }: {
         ) : (
           <div className="grid gap-2 sm:grid-cols-2">
             {balances.map(b => (
-              <div key={b.partner.id} className="bg-surface rounded-2xl border border-gray-100 shadow-sm p-4">
+              <div key={b.partner.id} className="card p-4">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <p className="font-semibold text-gray-900 text-sm truncate flex items-center gap-1.5"><Truck size={14} className="text-gray-400" /> {b.partner.name}</p>
@@ -198,17 +198,17 @@ export function PartnerPaymentsPanel({ payments, onPaymentsChange }: {
             className="shrink-0 border border-gray-200 rounded-xl px-2 py-1 text-xs" aria-label="Au" />
         </div>
         <div className="grid grid-cols-3 gap-2">
-          <div className="bg-surface rounded-2xl border border-gray-100 shadow-sm p-3">
+          <div className="card p-3">
             <p className="text-[11px] text-gray-500">Attendu (livré)</p>
             <p className="text-sm font-black text-gray-900">{fmtMoney(dueIn('Usd'), 'USD')}</p>
             <p className="text-sm font-black text-gray-900">{fmtMoney(dueIn('Cdf'), 'CDF')}</p>
           </div>
-          <div className="bg-surface rounded-2xl border border-gray-100 shadow-sm p-3">
+          <div className="card p-3">
             <p className="text-[11px] text-gray-500">Versé (confirmé)</p>
             <p className="text-sm font-black text-green-700">{fmtMoney(received('USD'), 'USD')}</p>
             <p className="text-sm font-black text-green-700">{fmtMoney(received('CDF'), 'CDF')}</p>
           </div>
-          <div className="bg-surface rounded-2xl border border-gray-100 shadow-sm p-3">
+          <div className="card p-3">
             <p className="text-[11px] text-gray-500">Reste de ces livraisons</p>
             <p className="text-sm font-black text-red-600">{fmtMoney(restIn('Usd'), 'USD')}</p>
             <p className="text-sm font-black text-red-600">{fmtMoney(restIn('Cdf'), 'CDF')}</p>
@@ -232,7 +232,7 @@ export function PartnerPaymentsPanel({ payments, onPaymentsChange }: {
                 : pay.status === 'rejected' ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-700';
               const badgeLabel = pay.status === 'confirmed' ? 'Confirmé' : pay.status === 'rejected' ? 'Rejeté' : 'En attente';
               return (
-                <div key={pay.id} className="bg-surface rounded-2xl p-4 border border-gray-100 shadow-sm">
+                <div key={pay.id} className="card p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap mb-1">
@@ -294,7 +294,7 @@ function AccountChoice({ currency, accounts, value, onChange }: {
   const usable = accounts.filter(a => a.currency === currency);
   return (
     <div>
-      <label className="text-xs font-medium text-gray-600 mb-1 block">Reçu sur quel compte ?</label>
+      <label className="label">Reçu sur quel compte ?</label>
       <select value={value} onChange={e => onChange(e.target.value)} className={input}>
         <option value="">Ne pas l'ajouter à la trésorerie</option>
         {usable.map(a => <option key={a.id} value={a.id}>{accountLabel(a)} — {fmtMoney(a.balance, a.currency)}</option>)}
@@ -363,14 +363,14 @@ function RecordPaymentModal({ balance, accounts, onClose, onDone }: {
       <div className="space-y-4">
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="text-xs font-medium text-gray-600 mb-1 block">Devise</label>
+            <label className="label">Devise</label>
             <select value={currency} onChange={e => setCurrency(e.target.value as 'USD' | 'FC')} className={input}>
               <option value="USD">Dollars ($)</option>
               <option value="FC">Francs (FC)</option>
             </select>
           </div>
           <div>
-            <label className="text-xs font-medium text-gray-600 mb-1 block">Montant *</label>
+            <label className="label">Montant *</label>
             <NumberInput value={amount} onChange={setAmount} className={input} />
           </div>
         </div>
@@ -381,7 +381,7 @@ function RecordPaymentModal({ balance, accounts, onClose, onDone }: {
         )}
         <AccountChoice currency={accCurrency} accounts={accounts} value={accountId} onChange={setAccountId} />
         <div>
-          <label className="text-xs font-medium text-gray-600 mb-1 block">Note</label>
+          <label className="label">Note</label>
           <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Ex. Remis en main propre au bureau" className={input} />
         </div>
         {error && <p className="text-xs text-red-600 bg-red-50 rounded-xl px-3 py-2">{error}</p>}

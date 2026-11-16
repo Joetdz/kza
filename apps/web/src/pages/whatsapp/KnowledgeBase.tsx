@@ -259,7 +259,7 @@ export function KnowledgeBase() {
             Ajoutez un script de closing pour chaque {terms.item}. L'IA l'utilisera automatiquement quand un client s'y intéresse.
           </p>
           {products.length === 0 && (
-            <div className="text-center py-10 text-gray-400 text-sm bg-surface rounded-2xl border border-gray-100">
+            <div className="card text-center py-10 text-gray-400 text-sm">
               {words.noItem} trouvé{words.e}.
             </div>
           )}
@@ -268,7 +268,7 @@ export function KnowledgeBase() {
             const isExpanded = expanded[product.id] ?? false;
             const hasScript = kb?.closingScript;
             return (
-              <div key={product.id} className="bg-surface rounded-2xl border border-gray-100 overflow-hidden">
+              <div key={product.id} className="card overflow-hidden">
                 {/* Product row */}
                 <div
                   className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors"
@@ -419,7 +419,7 @@ export function KnowledgeBase() {
 
           {/* Form */}
           {showForm && (
-            <div className="bg-surface rounded-2xl border border-gray-100 p-5 space-y-4">
+            <div className="card p-5 space-y-4">
               <h3 className="font-semibold text-gray-900 text-sm">
                 {editId ? "Modifier l'entrée" : 'Nouvelle entrée'}
               </h3>
@@ -553,7 +553,7 @@ export function KnowledgeBase() {
           {/* List */}
           <div className="space-y-3">
             {filtered.length === 0 && (
-              <div className="text-center py-12 text-gray-400 text-sm bg-surface rounded-2xl border border-gray-100">
+              <div className="card text-center py-12 text-gray-400 text-sm">
                 {entries.length === 0
                   ? 'Aucune entrée. Clique sur "Nouvelle entrée" pour commencer.'
                   : 'Aucun résultat pour cette recherche.'}

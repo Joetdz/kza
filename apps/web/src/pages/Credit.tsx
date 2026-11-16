@@ -77,12 +77,12 @@ export function Credit() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Créances</h1>
+        <h1 className="text-[22px] sm:text-[26px] font-bold tracking-tight text-fg leading-tight">Créances</h1>
         <p className="text-xs sm:text-sm text-gray-500">Ventes à crédit et argent encore dû par vos clients</p>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div className="bg-surface rounded-2xl border border-gray-100 p-4">
+        <div className="card p-4">
           <div className="flex items-center gap-2 text-xs text-gray-500"><Wallet size={14} /> Reste à encaisser</div>
           <div className="text-xl font-black text-gray-900 mt-1">{fmt(stats.total)}</div>
         </div>
@@ -91,7 +91,7 @@ export function Credit() {
           <div className={`text-xl font-black mt-1 ${stats.lateCount ? 'text-red-600' : 'text-gray-900'}`}>{fmt(stats.lateTotal)}</div>
           <div className="text-[11px] text-gray-400">{stats.lateCount} vente{stats.lateCount > 1 ? 's' : ''}</div>
         </div>
-        <div className="bg-surface rounded-2xl border border-gray-100 p-4">
+        <div className="card p-4">
           <div className="flex items-center gap-2 text-xs text-gray-500"><Users size={14} /> Clients concernés</div>
           <div className="text-xl font-black text-gray-900 mt-1">{stats.customers}</div>
         </div>
@@ -105,7 +105,7 @@ export function Credit() {
       {loading ? (
         <div className="text-center py-12 text-gray-400 text-sm">Chargement…</div>
       ) : items.length === 0 ? (
-        <div className="text-center py-12 text-gray-400 bg-surface rounded-2xl border border-gray-100">
+        <div className="card text-center py-12 text-gray-400">
           <Wallet size={28} className="mx-auto mb-2 text-gray-300" />
           <p className="text-sm">Aucune créance en cours</p>
         </div>
@@ -239,7 +239,7 @@ function PaymentModal({ receivable: r, currency, onClose, onSaved }: {
     <Modal open onClose={() => !saving && onClose()} title={`Paiement — ${r.customerName || 'Client'}`} size="sm">
       <div className="space-y-3">
         <div>
-          <label className="text-xs font-medium text-gray-600 mb-1 block">Montant reçu ({currency})</label>
+          <label className="label">Montant reçu ({currency})</label>
           <NumberInput value={amount} onChange={setAmount} className={input} />
           <div className="flex gap-2 mt-1.5">
             <button type="button" onClick={() => setAmount(r.remaining)} className="text-[11px] text-indigo-600 font-medium">Tout le reste ({r.remaining})</button>
@@ -250,18 +250,18 @@ function PaymentModal({ receivable: r, currency, onClose, onSaved }: {
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="text-xs font-medium text-gray-600 mb-1 block">Date</label>
+            <label className="label">Date</label>
             <input type="date" value={date} onChange={e => setDate(e.target.value)} className={input} />
           </div>
           <div>
-            <label className="text-xs font-medium text-gray-600 mb-1 block">Moyen</label>
+            <label className="label">Moyen</label>
             <select value={method} onChange={e => setMethod(e.target.value as PaymentMethod)} className={`${input} bg-surface`}>
               {Object.entries(METHODS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
           </div>
         </div>
         <div>
-          <label className="text-xs font-medium text-gray-600 mb-1 block">Note</label>
+          <label className="label">Note</label>
           <input value={note} onChange={e => setNote(e.target.value)} className={input} placeholder="Ex : réf. M-Pesa" />
         </div>
         <div className="flex gap-3 pt-1">
@@ -312,7 +312,7 @@ function ScheduleModal({ receivable: r, currency, onClose, onSaved }: {
 
         {rows.length === 0 && (
           <div>
-            <label className="text-xs font-medium text-gray-600 mb-1 block">Date limite pour solder</label>
+            <label className="label">Date limite pour solder</label>
             <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} className={`${input} w-full`} />
           </div>
         )}

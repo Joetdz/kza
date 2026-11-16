@@ -131,12 +131,12 @@ export function Team() {
     );
   }
 
-  const inputCls = 'w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-surface';
+  const inputCls = 'input';
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
       <header>
-        <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+        <h1 className="text-[22px] sm:text-[26px] font-bold tracking-tight text-fg leading-tight flex items-center gap-2">
           <Users size={22} className="text-indigo-600" /> Équipe
         </h1>
         <p className="text-sm text-gray-500 mt-1">

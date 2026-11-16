@@ -119,7 +119,7 @@ export function Dashboard() {
     <div className="space-y-6 overflow-x-hidden">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="min-w-0">
-          <h1 className="text-xl sm:text-2xl font-bold text-fg">Dashboard</h1>
+          <h1 className="text-[22px] sm:text-[26px] font-bold tracking-tight text-fg leading-tight">Dashboard</h1>
           <p className="text-sm text-fg-3 mt-1">
             {selectedProduct ? `Vue détaillée — ${selectedProduct.name}` : "Vue d'ensemble de votre activité"}
           </p>

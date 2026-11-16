@@ -102,7 +102,7 @@ export function Clients() {
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-5xl mx-auto px-4 py-8">
         <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-black text-gray-900">Clients</h1>
+          <h1 className="text-[22px] sm:text-[26px] font-bold tracking-tight text-fg leading-tight">Clients</h1>
           <button onClick={load} disabled={loading}
             className="p-2 text-gray-400 hover:text-indigo-600 transition-colors disabled:opacity-50">
             <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
@@ -112,15 +112,15 @@ export function Clients() {
         {/* Repeat-purchase summary */}
         {repeat.customers > 0 && (
           <div className="grid grid-cols-3 gap-3 mb-5">
-            <div className="bg-surface rounded-2xl border border-gray-100 px-4 py-3">
+            <div className="card px-4 py-3">
               <p className="text-[11px] text-gray-400 font-semibold">Clients</p>
               <p className="text-xl font-black text-gray-900">{repeat.customers}</p>
             </div>
-            <div className="bg-surface rounded-2xl border border-gray-100 px-4 py-3">
+            <div className="card px-4 py-3">
               <p className="text-[11px] text-gray-400 font-semibold">Ont recommandé</p>
               <p className="text-xl font-black text-amber-600">{repeat.returning}</p>
             </div>
-            <div className="bg-surface rounded-2xl border border-gray-100 px-4 py-3">
+            <div className="card px-4 py-3">
               <p className="text-[11px] text-gray-400 font-semibold">Taux de réachat</p>
               <p className="text-xl font-black text-indigo-600">{repeat.rate}%</p>
             </div>
@@ -168,7 +168,7 @@ export function Clients() {
                 const st = STATUS_LABELS[o.status] ?? STATUS_LABELS.pending;
                 const isPostponed = !!o.scheduledAt && o.status !== 'delivered' && o.status !== 'cancelled';
                 return (
-                  <div key={o.id} className="bg-surface rounded-2xl px-4 py-3 border border-gray-100 shadow-sm">
+                  <div key={o.id} className="card px-4 py-3">
                     <div className="flex items-start gap-3">
                       <div className="flex-1 min-w-0">
                         {/* Name + status */}

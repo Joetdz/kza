@@ -177,7 +177,7 @@ export function Audience() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-gray-900">Audience</h1>
+          <h1 className="text-[22px] sm:text-[26px] font-bold tracking-tight text-fg leading-tight">Audience</h1>
           <p className="text-sm text-gray-500 mt-0.5">
             Contacts synchronisés depuis WhatsApp — base pour les futures campagnes
           </p>

@@ -77,7 +77,7 @@ export function Automations() {
 
       {/* Form */}
       {showForm && (
-        <div className="bg-surface rounded-2xl border border-gray-100 p-5 space-y-4">
+        <div className="card p-5 space-y-4">
           <h3 className="font-semibold text-gray-900 text-sm">Nouvelle automatisation</h3>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Nom</label>
@@ -186,12 +186,12 @@ export function Automations() {
       {/* List */}
       <div className="space-y-3">
         {automations.length === 0 && (
-          <div className="text-center py-12 text-gray-400 text-sm bg-surface rounded-2xl border border-gray-100">
+          <div className="card text-center py-12 text-gray-400 text-sm">
             Aucune automatisation. Clique sur "Nouvelle règle" pour commencer.
           </div>
         )}
         {automations.map(a => (
-          <div key={a.id} className="bg-surface rounded-2xl border border-gray-100 px-4 py-3 flex items-center gap-3">
+          <div key={a.id} className="card px-4 py-3 flex items-center gap-3">
             <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${a.enabled ? 'bg-indigo-100' : 'bg-gray-100'}`}>
               <Zap size={16} className={a.enabled ? 'text-indigo-600' : 'text-gray-400'} />
             </div>

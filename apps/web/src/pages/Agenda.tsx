@@ -92,7 +92,7 @@ export function Agenda() {
     <div className="space-y-5">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Agenda</h1>
+          <h1 className="text-[22px] sm:text-[26px] font-bold tracking-tight text-fg leading-tight">Agenda</h1>
           <p className="text-xs sm:text-sm text-gray-500 capitalize">
             {new Date(`${selected}T12:00:00Z`).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' })}
           </p>
@@ -118,7 +118,7 @@ export function Agenda() {
       )}
 
       {/* Week strip */}
-      <div className="bg-surface rounded-2xl border border-gray-100 p-3 flex items-center gap-2">
+      <div className="card p-3 flex items-center gap-2">
         <button onClick={() => setSelected(addDays(selected, -7))} className="p-2 rounded-lg hover:bg-gray-100 text-gray-500" title="Semaine précédente">
           <ChevronLeft size={16} />
         </button>
@@ -151,7 +151,7 @@ export function Agenda() {
         {loading ? (
           <div className="text-center py-12 text-gray-400 text-sm">Chargement…</div>
         ) : dayAppointments.length === 0 ? (
-          <div className="text-center py-12 text-gray-400 bg-surface rounded-2xl border border-gray-100">
+          <div className="card text-center py-12 text-gray-400">
             <CalendarDays size={28} className="mx-auto mb-2 text-gray-300" />
             <p className="text-sm">Aucun rendez-vous ce jour-là</p>
           </div>
@@ -289,16 +289,16 @@ function NewAppointmentModal({ settings, initialDate, today, services, onClose, 
       <div className="space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label className="text-xs font-medium text-gray-600 mb-1 block">Client *</label>
+            <label className="label">Client *</label>
             <input value={form.customerName} onChange={e => setForm(f => ({ ...f, customerName: e.target.value }))} className={input} placeholder="Nom du client" />
           </div>
           <div>
-            <label className="text-xs font-medium text-gray-600 mb-1 block">Téléphone</label>
+            <label className="label">Téléphone</label>
             <input type="tel" value={form.customerPhone} onChange={e => setForm(f => ({ ...f, customerPhone: e.target.value }))} className={input} placeholder="Pour le rappel WhatsApp" />
           </div>
           {services.length > 0 && (
             <div>
-              <label className="text-xs font-medium text-gray-600 mb-1 block">Service</label>
+              <label className="label">Service</label>
               <select value={form.productId} onChange={e => setForm(f => ({ ...f, productId: e.target.value }))} className={`${input} bg-surface`}>
                 <option value="">— Aucun —</option>
                 {services.map(s => (
@@ -309,7 +309,7 @@ function NewAppointmentModal({ settings, initialDate, today, services, onClose, 
           )}
           {settings.resources.length > 0 && (
             <div>
-              <label className="text-xs font-medium text-gray-600 mb-1 block">Avec</label>
+              <label className="label">Avec</label>
               <select value={form.resource} onChange={e => setForm(f => ({ ...f, resource: e.target.value }))} className={`${input} bg-surface`}>
                 <option value="">Peu importe</option>
                 {settings.resources.map(r => <option key={r} value={r}>{r}</option>)}
@@ -317,7 +317,7 @@ function NewAppointmentModal({ settings, initialDate, today, services, onClose, 
             </div>
           )}
           <div>
-            <label className="text-xs font-medium text-gray-600 mb-1 block">Date</label>
+            <label className="label">Date</label>
             <input type="date" min={today} value={form.date} onChange={e => e.target.value && setForm(f => ({ ...f, date: e.target.value }))} className={input} />
           </div>
         </div>
@@ -341,7 +341,7 @@ function NewAppointmentModal({ settings, initialDate, today, services, onClose, 
         </div>
 
         <div>
-          <label className="text-xs font-medium text-gray-600 mb-1 block">Notes</label>
+          <label className="label">Notes</label>
           <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2} className={input} />
         </div>
 
@@ -430,13 +430,13 @@ function SettingsModal({ settings, onClose, onSaved }: {
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="text-xs font-medium text-gray-600 mb-1 block">Créneaux toutes les</label>
+            <label className="label">Créneaux toutes les</label>
             <select value={slotMinutes} onChange={e => setSlotMinutes(Number(e.target.value))} className={`${input} w-full bg-surface`}>
               {[10, 15, 20, 30, 45, 60, 90, 120].map(m => <option key={m} value={m}>{m} min</option>)}
             </select>
           </div>
           <div>
-            <label className="text-xs font-medium text-gray-600 mb-1 block">Durée par défaut</label>
+            <label className="label">Durée par défaut</label>
             <select value={duration} onChange={e => setDuration(Number(e.target.value))} className={`${input} w-full bg-surface`}>
               {[15, 20, 30, 45, 60, 90, 120, 180, 240].map(m => <option key={m} value={m}>{m} min</option>)}
             </select>
@@ -444,20 +444,20 @@ function SettingsModal({ settings, onClose, onSaved }: {
         </div>
 
         <div>
-          <label className="text-xs font-medium text-gray-600 mb-1 block">Personnel, postes ou salles (optionnel)</label>
+          <label className="label">Personnel, postes ou salles (optionnel)</label>
           <input value={resources} onChange={e => setResources(e.target.value)} placeholder="Ex : Awa, Junior, Fauteuil 3" className={`${input} w-full`} />
           <p className="text-[11px] text-gray-400 mt-1">Séparés par des virgules. Chacun prend un rendez-vous à la fois.</p>
         </div>
 
         {!hasResources && (
           <div>
-            <label className="text-xs font-medium text-gray-600 mb-1 block">Rendez-vous en même temps</label>
+            <label className="label">Rendez-vous en même temps</label>
             <input type="number" min={1} max={100} value={capacity} onChange={e => setCapacity(Math.max(1, Number(e.target.value) || 1))} className={`${input} w-24`} />
           </div>
         )}
 
         <div>
-          <label className="text-xs font-medium text-gray-600 mb-1 block">Rappel WhatsApp au client</label>
+          <label className="label">Rappel WhatsApp au client</label>
           <select value={reminderHours} onChange={e => setReminderHours(Number(e.target.value))} className={`${input} bg-surface`}>
             <option value={0}>Pas de rappel</option>
             <option value={2}>2 h avant</option>

@@ -152,7 +152,7 @@ function BusinessModalContent({ business, onClose, isFirstBusiness = false }: Pr
   }
 
   // ─── Shared classes ──────────────────────────────────────────────────────────
-  const inputCls = 'w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-indigo-500 transition-colors bg-surface';
+  const inputCls = 'input py-3';
   const primaryCls = 'w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white px-4 py-3 rounded-xl text-sm font-semibold transition-colors';
 
   // ─── EDIT MODE — all fields visible ─────────────────────────────────────────

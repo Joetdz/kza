@@ -352,7 +352,7 @@ export function Goals() {
     <div className="space-y-5 overflow-x-hidden">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 truncate">
+          <h1 className="text-[22px] sm:text-[26px] font-bold tracking-tight text-fg leading-tight truncate">
             {mainTab === 'objectifs' ? 'Objectifs de Vente' : 'Budget prévisionnel'}
           </h1>
           <p className="text-xs sm:text-sm text-gray-500">
@@ -394,7 +394,7 @@ export function Goals() {
       )}
 
       {mainTab === 'objectifs' && range && (
-        <div className="bg-surface rounded-2xl shadow-sm border border-gray-100 p-3 sm:p-4">
+        <div className="card p-3 sm:p-4">
           <div className="flex items-center justify-between gap-3 mb-3">
             <div className="min-w-0">
               <h2 className="font-semibold text-gray-900 text-sm capitalize">{monthLabel(selectedMonth)}</h2>
@@ -515,7 +515,7 @@ export function Goals() {
         </div>
       )}
 
-      <div className="bg-surface rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+      <div className="card overflow-hidden">
         <div className="p-4 pb-3">
           <h2 className="font-semibold text-gray-900 text-sm">Budget prévisionnel vs Réalisé</h2>
           <p className="text-xs text-gray-400">
@@ -560,7 +560,7 @@ export function Goals() {
         )}
       </div>
 
-      <div className="bg-surface rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+      <div className="card overflow-hidden">
         <div className="p-4 pb-3 flex items-center justify-between gap-3">
           <div>
             <h2 className="font-semibold text-gray-900 text-sm">Dépenses : Prévu vs Réalisé</h2>
@@ -675,45 +675,45 @@ export function Goals() {
         ) : (
         <div className="space-y-5">
           {/* Settings */}
-          <div className="bg-surface rounded-2xl shadow-sm border border-gray-100 p-4">
+          <div className="card p-4">
             <div className="flex items-center gap-2 mb-3">
               <Calculator size={16} className="text-indigo-500" />
               <h2 className="font-semibold text-gray-900 text-sm">Paramètres de projection</h2>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
-                <label className="text-xs font-medium text-gray-600 mb-1 block">Mois de départ</label>
+                <label className="label">Mois de départ</label>
                 <input
                   type="month"
                   min={currentMonth}
                   value={forecast.startMonth || currentMonth}
                   // Closed months can't be planned again.
                   onChange={e => { if (e.target.value >= currentMonth) updateForecastSettings({ startMonth: e.target.value }); }}
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300"
+                  className="input"
                 />
               </div>
               <div>
-                <label className="text-xs font-medium text-gray-600 mb-1 block">Croissance mensuelle (%)</label>
+                <label className="label">Croissance mensuelle (%)</label>
                 <NumberInput
                   value={forecast.monthlyGrowthPct}
                   onChange={val => updateForecastSettings({ monthlyGrowthPct: val })}
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300"
+                  className="input"
                 />
               </div>
               <div>
-                <label className="text-xs font-medium text-gray-600 mb-1 block">Horizon (mois)</label>
+                <label className="label">Horizon (mois)</label>
                 <input
                   type="number" min={1} max={36}
                   value={forecast.horizonMonths}
                   onChange={e => updateForecastSettings({ horizonMonths: Math.min(36, Math.max(1, +e.target.value)) })}
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300"
+                  className="input"
                 />
               </div>
             </div>
           </div>
 
           {/* Projected quantities + ad budget per product, month by month */}
-          <div className="bg-surface rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="card overflow-hidden">
             <div className="flex items-center justify-between p-4 pb-3">
               <div>
                 <h2 className="font-semibold text-gray-900 text-sm">Quantité et budget pub projetés, par mois</h2>
@@ -796,7 +796,7 @@ export function Goals() {
           </div>
 
           {/* Manual forecast OPEX lines */}
-          <div className="bg-surface rounded-2xl shadow-sm border border-gray-100 p-4">
+          <div className="card p-4">
             <div className="flex items-center justify-between mb-3">
               <h2 className="font-semibold text-gray-900 text-sm">Autres OPEX du budget (ajoutées manuellement)</h2>
               <button onClick={openAddExpense}
@@ -826,7 +826,7 @@ export function Goals() {
           </div>
 
           {/* History of closed months — frozen at each month's end */}
-          <div className="bg-surface rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="card overflow-hidden">
             <div className="p-4 pb-3 flex items-center gap-2">
               <Lock size={15} className="text-gray-400" />
               <div>
@@ -869,7 +869,7 @@ export function Goals() {
           </div>
 
           {/* Projected P&L */}
-          <div className="bg-surface rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="card overflow-hidden">
             <div className="p-5 border-b border-gray-100">
               <h2 className="font-semibold text-gray-900">Compte de résultat prévisionnel</h2>
               <p className="text-xs text-gray-500">Même structure que le vrai compte de résultat (onglet Analyse)</p>
@@ -942,30 +942,30 @@ export function Goals() {
       <Modal open={expenseModalOpen} onClose={() => setExpenseModalOpen(false)} title={editingExpense ? 'Modifier la ligne' : 'Nouvelle ligne OPEX'} size="sm">
         <div className="space-y-4">
           <div>
-            <label className="text-xs font-medium text-gray-600 mb-1 block">Catégorie *</label>
+            <label className="label">Catégorie *</label>
             <input
               type="text"
               value={expenseForm.category}
               onChange={e => setExpenseForm(f => ({ ...f, category: e.target.value }))}
               placeholder="Ex: marketing, entretien..."
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300"
+              className="input"
             />
           </div>
           <div>
-            <label className="text-xs font-medium text-gray-600 mb-1 block">Montant mensuel *</label>
+            <label className="label">Montant mensuel *</label>
             <NumberInput
               value={expenseForm.amount}
               onChange={val => setExpenseForm(f => ({ ...f, amount: val }))}
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300"
+              className="input"
             />
           </div>
           <div>
-            <label className="text-xs font-medium text-gray-600 mb-1 block">Description</label>
+            <label className="label">Description</label>
             <input
               type="text"
               value={expenseForm.description}
               onChange={e => setExpenseForm(f => ({ ...f, description: e.target.value }))}
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300"
+              className="input"
             />
           </div>
           <div className="flex gap-3 pt-2">

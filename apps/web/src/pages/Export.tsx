@@ -55,12 +55,12 @@ export function Export() {
   return (
     <div className="space-y-6 max-w-2xl">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Export de données</h1>
+        <h1 className="text-[22px] sm:text-[26px] font-bold tracking-tight text-fg leading-tight">Export de données</h1>
         <p className="text-sm text-gray-500">Téléchargez vos rapports en Excel ou PDF</p>
       </div>
 
       {/* Summary */}
-      <div className="bg-surface rounded-2xl p-5 shadow-sm border border-gray-100">
+      <div className="card p-5">
         <h2 className="font-semibold text-gray-900 mb-4">Résumé des données</h2>
         <div className="grid grid-cols-2 gap-3">
           {[
@@ -88,7 +88,7 @@ export function Export() {
       {/* Export options */}
       <div className="space-y-3">
         {/* Excel */}
-        <div className="bg-surface rounded-2xl p-5 shadow-sm border border-gray-100">
+        <div className="card p-5">
           <div className="flex flex-wrap items-start gap-4">
             <div className="p-3 bg-emerald-50 rounded-xl text-emerald-600">
               <FileSpreadsheet size={24} />
@@ -119,7 +119,7 @@ export function Export() {
         </div>
 
         {/* PDF */}
-        <div className="bg-surface rounded-2xl p-5 shadow-sm border border-gray-100">
+        <div className="card p-5">
           <div className="flex flex-wrap items-start gap-4">
             <div className="p-3 bg-red-50 rounded-xl text-red-600">
               <FileText size={24} />

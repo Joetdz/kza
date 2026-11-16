@@ -97,7 +97,7 @@ export function Documents() {
     <div className="space-y-5">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Devis & factures</h1>
+          <h1 className="text-[22px] sm:text-[26px] font-bold tracking-tight text-fg leading-tight">Devis & factures</h1>
           <p className="text-xs sm:text-sm text-gray-500">Numérotés automatiquement, en PDF à votre nom</p>
         </div>
         <button onClick={() => setEditing('new')}
@@ -118,7 +118,7 @@ export function Documents() {
       {loading ? (
         <div className="text-center py-12 text-gray-400 text-sm">Chargement…</div>
       ) : shown.length === 0 ? (
-        <div className="text-center py-12 text-gray-400 bg-surface rounded-2xl border border-gray-100">
+        <div className="card text-center py-12 text-gray-400">
           <FileText size={28} className="mx-auto mb-2 text-gray-300" />
           <p className="text-sm">{tab === 'quote' ? 'Aucun devis' : 'Aucune facture'} pour l'instant</p>
         </div>
@@ -127,7 +127,7 @@ export function Documents() {
           {shown.map(d => {
             const st = STATUS[d.status] ?? STATUS.draft;
             return (
-              <div key={d.id} className="bg-surface rounded-2xl border border-gray-100 px-4 py-3">
+              <div key={d.id} className="card px-4 py-3">
                 <div className="flex items-start gap-3">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -287,23 +287,23 @@ function DocumentEditor({ type, doc, onClose, onSaved }: {
       <div className="space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div>
-            <label className="text-xs font-medium text-gray-600 mb-1 block">Client *</label>
+            <label className="label">Client *</label>
             <input value={form.customerName} onChange={e => setForm(f => ({ ...f, customerName: e.target.value }))} className={input} />
           </div>
           <div>
-            <label className="text-xs font-medium text-gray-600 mb-1 block">WhatsApp</label>
+            <label className="label">WhatsApp</label>
             <input type="tel" value={form.customerPhone} onChange={e => setForm(f => ({ ...f, customerPhone: e.target.value }))} className={input} />
           </div>
           <div>
-            <label className="text-xs font-medium text-gray-600 mb-1 block">Adresse</label>
+            <label className="label">Adresse</label>
             <input value={form.customerAddress} onChange={e => setForm(f => ({ ...f, customerAddress: e.target.value }))} className={input} />
           </div>
           <div>
-            <label className="text-xs font-medium text-gray-600 mb-1 block">Date</label>
+            <label className="label">Date</label>
             <input type="date" value={form.issueDate} onChange={e => setForm(f => ({ ...f, issueDate: e.target.value }))} className={input} />
           </div>
           <div>
-            <label className="text-xs font-medium text-gray-600 mb-1 block">{type === 'quote' ? 'Valable jusqu\'au' : 'À payer avant le'}</label>
+            <label className="label">{type === 'quote' ? 'Valable jusqu\'au' : 'À payer avant le'}</label>
             <input type="date" value={form.dueDate} onChange={e => setForm(f => ({ ...f, dueDate: e.target.value }))} className={input} />
           </div>
         </div>
@@ -340,11 +340,11 @@ function DocumentEditor({ type, doc, onClose, onSaved }: {
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 items-end">
           <div>
-            <label className="text-xs font-medium text-gray-600 mb-1 block">Remise ({bizCurrency})</label>
+            <label className="label">Remise ({bizCurrency})</label>
             <NumberInput value={form.discount} onChange={v => setForm(f => ({ ...f, discount: v }))} className={input} />
           </div>
           <div>
-            <label className="text-xs font-medium text-gray-600 mb-1 block">TVA (%)</label>
+            <label className="label">TVA (%)</label>
             <NumberInput value={form.taxRate} onChange={v => setForm(f => ({ ...f, taxRate: Math.min(100, v) }))} className={input} />
           </div>
           <div className="col-span-2 text-right text-sm space-y-0.5">
@@ -355,7 +355,7 @@ function DocumentEditor({ type, doc, onClose, onSaved }: {
         </div>
 
         <div>
-          <label className="text-xs font-medium text-gray-600 mb-1 block">Notes (conditions, délai, coordonnées de paiement…)</label>
+          <label className="label">Notes (conditions, délai, coordonnées de paiement…)</label>
           <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2} className={input} />
         </div>
 

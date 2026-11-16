@@ -3,6 +3,7 @@ import { ArrowDownLeft, ArrowLeftRight, ArrowUpRight, Archive, Edit2, Landmark, 
 import { format, startOfMonth, subMonths, endOfMonth, startOfYear } from 'date-fns';
 import { Modal } from '../components/ui/Modal';
 import { Button } from '../components/ui/Button';
+import { PageHeader } from '../components/ui/Page';
 import { NumberInput } from '../components/ui/NumberInput';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import {
@@ -25,7 +26,7 @@ const PERIODS: { key: string; label: string; range: () => [string, string] }[] =
 ];
 
 const KIND_ICONS: Record<AccountKind, typeof Wallet> = { bank: Landmark, mobile_money: Smartphone, cash: Wallet };
-const input = 'w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300';
+const input = 'input';
 const CURRENCIES: AccountCurrency[] = ['USD', 'CDF'];
 
 /** Sums by currency: never added across dollars and francs. */
@@ -84,16 +85,11 @@ export function Treasury() {
 
   return (
     <div className="space-y-5 overflow-x-hidden">
-      <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Trésorerie</h1>
-          <p className="text-xs sm:text-sm text-gray-500">Ton argent, compte par compte</p>
-        </div>
-        <button onClick={() => setAccountModal('new')}
-          className="shrink-0 flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-3 sm:px-4 py-2.5 rounded-xl text-sm font-medium">
-          <Plus size={16} /><span className="hidden sm:inline">Nouveau compte</span>
-        </button>
-      </div>
+      <PageHeader
+        title="Trésorerie"
+        subtitle="Ton argent, compte par compte"
+        actions={<Button onClick={() => setAccountModal('new')}><Plus size={16} /><span className="hidden sm:inline">Nouveau compte</span></Button>}
+      />
 
       {/* Where the money is */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -101,7 +97,7 @@ export function Treasury() {
           <p className="text-xs text-white/60">Disponible dans tes comptes</p>
           <MoneyByCurrency sums={totals} className="block text-2xl font-black mt-1" />
         </div>
-        <div className="bg-surface rounded-2xl border border-gray-100 shadow-sm p-4">
+        <div className="card p-4">
           <p className="text-xs text-gray-500 flex items-center gap-1.5"><Truck size={13} /> Encore chez les partenaires de livraison</p>
           <p className="text-2xl font-black text-gray-900 mt-1">
             {fmtMoney(atPartners.USD, 'USD')} · {fmtMoney(atPartners.CDF, 'CDF')}
@@ -175,17 +171,17 @@ export function Treasury() {
           </div>
 
           <div className="grid grid-cols-2 gap-2">
-            <div className="bg-surface rounded-2xl border border-gray-100 shadow-sm p-3">
+            <div className="card p-3">
               <p className="text-xs text-gray-500">Entrées{accountFilter ? ' (ce compte)' : ''}</p>
               <MoneyByCurrency sums={inflow} className="block text-base font-black text-green-700" />
             </div>
-            <div className="bg-surface rounded-2xl border border-gray-100 shadow-sm p-3">
+            <div className="card p-3">
               <p className="text-xs text-gray-500">Sorties{accountFilter ? ' (ce compte)' : ''}</p>
               <MoneyByCurrency sums={outflow} className="block text-base font-black text-red-600" />
             </div>
           </div>
 
-          <div className="bg-surface rounded-2xl border border-gray-100 shadow-sm divide-y divide-gray-50">
+          <div className="card divide-y divide-gray-50">
             {movements.length === 0 && <p className="text-sm text-gray-400 text-center py-10">Aucun mouvement sur cette période.</p>}
             {movements.map(m => (
               <div key={m.id} className="flex items-center gap-3 p-3">
@@ -267,7 +263,7 @@ function AccountModal({ account, onClose, onSaved }: { account: TreasuryAccount 
       <div className="space-y-4">
         {/* The type first: it decides what the number is. */}
         <div>
-          <label className="text-xs font-medium text-gray-600 mb-1 block">Type de compte *</label>
+          <label className="label">Type de compte *</label>
           <div className="grid grid-cols-3 gap-2">
             {(Object.keys(ACCOUNT_KIND_LABELS) as AccountKind[]).map(k => {
               const Icon = KIND_ICONS[k];
@@ -281,29 +277,29 @@ function AccountModal({ account, onClose, onSaved }: { account: TreasuryAccount 
           </div>
         </div>
         <div>
-          <label className="text-xs font-medium text-gray-600 mb-1 block">Nom *</label>
+          <label className="label">Nom *</label>
           <input value={name} onChange={e => setName(e.target.value)} className={input}
             placeholder={kind === 'bank' ? 'Ex. Rawbank, Equity BCDC' : kind === 'mobile_money' ? 'Ex. M-Pesa, Orange Money, Airtel Money' : 'Ex. Caisse boutique'} />
         </div>
         <div>
-          <label className="text-xs font-medium text-gray-600 mb-1 block">{numberField.label}{numberField.required ? ' *' : ''}</label>
+          <label className="label">{numberField.label}{numberField.required ? ' *' : ''}</label>
           <input value={accountNumber} onChange={e => setAccountNumber(e.target.value)} placeholder={numberField.placeholder}
             inputMode={kind === 'mobile_money' ? 'tel' : 'text'} className={`${input} font-mono`} />
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="text-xs font-medium text-gray-600 mb-1 block">Devise</label>
+            <label className="label">Devise</label>
             <select value={currency} onChange={e => setCurrency(e.target.value as AccountCurrency)} disabled={!!account} className={input}>
               <option value="USD">Dollars ($)</option>
               <option value="CDF">Francs (FC)</option>
             </select>
           </div>
           <div>
-            <label className="text-xs font-medium text-gray-600 mb-1 block">Solde de départ</label>
+            <label className="label">Solde de départ</label>
             <NumberInput value={opening} onChange={setOpening} className={input} />
           </div>
           <div>
-            <label className="text-xs font-medium text-gray-600 mb-1 block">À la date du</label>
+            <label className="label">À la date du</label>
             <input type="date" value={openingDate} onChange={e => setOpeningDate(e.target.value)} className={input} />
           </div>
         </div>
@@ -346,22 +342,22 @@ function MovementModal({ direction, accounts, defaultAccountId, onClose, onSaved
       <div className="space-y-4">
         <div className="grid grid-cols-2 gap-3">
           <div className="col-span-2">
-            <label className="text-xs font-medium text-gray-600 mb-1 block">Compte</label>
+            <label className="label">Compte</label>
             <select value={accountId} onChange={e => setAccountId(e.target.value)} className={input}>
               {accounts.map(a => <option key={a.id} value={a.id}>{accountLabel(a)} — {fmtMoney(a.balance, a.currency)}</option>)}
             </select>
           </div>
           <div>
-            <label className="text-xs font-medium text-gray-600 mb-1 block">Montant ({account?.currency === 'CDF' ? 'FC' : '$'}) *</label>
+            <label className="label">Montant ({account?.currency === 'CDF' ? 'FC' : '$'}) *</label>
             <NumberInput value={amount} onChange={setAmount} className={input} />
           </div>
           <div>
-            <label className="text-xs font-medium text-gray-600 mb-1 block">Date</label>
+            <label className="label">Date</label>
             <input type="date" value={date} onChange={e => setDate(e.target.value)} className={input} />
           </div>
         </div>
         <div>
-          <label className="text-xs font-medium text-gray-600 mb-1 block">Libellé</label>
+          <label className="label">Libellé</label>
           <input value={label} onChange={e => setLabel(e.target.value)} className={input}
             placeholder={direction === 'in' ? 'Ex. Vente comptoir, apport du gérant' : 'Ex. Retrait du gérant, achat comptant'} />
         </div>
@@ -408,29 +404,29 @@ function TransferModal({ accounts, onClose, onSaved }: { accounts: TreasuryAccou
       <div className="space-y-4">
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="text-xs font-medium text-gray-600 mb-1 block">De</label>
+            <label className="label">De</label>
             <select value={fromId} onChange={e => setFromId(e.target.value)} className={input}>
               {accounts.map(a => <option key={a.id} value={a.id}>{accountLabel(a)} ({a.currency === 'CDF' ? 'FC' : '$'})</option>)}
             </select>
           </div>
           <div>
-            <label className="text-xs font-medium text-gray-600 mb-1 block">Vers</label>
+            <label className="label">Vers</label>
             <select value={toId} onChange={e => setToId(e.target.value)} className={input}>
               {accounts.map(a => <option key={a.id} value={a.id}>{accountLabel(a)} ({a.currency === 'CDF' ? 'FC' : '$'})</option>)}
             </select>
           </div>
           <div>
-            <label className="text-xs font-medium text-gray-600 mb-1 block">Montant envoyé ({source?.currency === 'CDF' ? 'FC' : '$'})</label>
+            <label className="label">Montant envoyé ({source?.currency === 'CDF' ? 'FC' : '$'})</label>
             <NumberInput value={amount} onChange={setAmount} className={input} />
           </div>
           {exchange ? (
             <div>
-              <label className="text-xs font-medium text-gray-600 mb-1 block">Montant reçu ({target?.currency === 'CDF' ? 'FC' : '$'})</label>
+              <label className="label">Montant reçu ({target?.currency === 'CDF' ? 'FC' : '$'})</label>
               <NumberInput value={amountTo} onChange={setAmountTo} className={input} />
             </div>
           ) : (
             <div>
-              <label className="text-xs font-medium text-gray-600 mb-1 block">Date</label>
+              <label className="label">Date</label>
               <input type="date" value={date} onChange={e => setDate(e.target.value)} className={input} />
             </div>
           )}
@@ -441,13 +437,13 @@ function TransferModal({ accounts, onClose, onSaved }: { accounts: TreasuryAccou
               Change de devises{rate ? ` — taux : 1 ${source!.currency === 'USD' ? '$' : 'FC'} = ${rate.toLocaleString('fr-FR', { maximumFractionDigits: 4 })} ${target!.currency === 'USD' ? '$' : 'FC'}` : ''}
             </p>
             <div>
-              <label className="text-xs font-medium text-gray-600 mb-1 block">Date</label>
+              <label className="label">Date</label>
               <input type="date" value={date} onChange={e => setDate(e.target.value)} className={input} />
             </div>
           </>
         )}
         <div>
-          <label className="text-xs font-medium text-gray-600 mb-1 block">Libellé (facultatif)</label>
+          <label className="label">Libellé (facultatif)</label>
           <input value={label} onChange={e => setLabel(e.target.value)} placeholder="Ex. Dépôt à la banque" className={input} />
         </div>
         {error && <p className="text-xs text-red-600 bg-red-50 rounded-xl px-3 py-2">{error}</p>}

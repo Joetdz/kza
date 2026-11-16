@@ -53,7 +53,7 @@ export function ProfileSetup({ onDone }: { onDone: () => void }) {
 
           <div className="space-y-3">
             <div>
-              <label className="text-xs font-medium text-gray-600 mb-1 block">
+              <label className="label">
                 Nom de votre boutique / entreprise *
               </label>
               <input
@@ -64,7 +64,7 @@ export function ProfileSetup({ onDone }: { onDone: () => void }) {
               />
             </div>
             <div>
-              <label className="text-xs font-medium text-gray-600 mb-1 block">Pays</label>
+              <label className="label">Pays</label>
               <select
                 value={country}
                 onChange={e => setCountry(e.target.value)}
@@ -75,7 +75,7 @@ export function ProfileSetup({ onDone }: { onDone: () => void }) {
             </div>
             {sectors.length > 0 && (
               <div>
-                <label className="text-xs font-medium text-gray-600 mb-1 block">
+                <label className="label">
                   Secteur d'activité
                 </label>
                 <select
