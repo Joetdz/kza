@@ -850,7 +850,7 @@ export function Logistics() {
           <div>
             <div className="flex justify-between items-center mb-3">
               <p className="text-sm text-gray-500">{orders.filter(o => !o.isDraft).length} commande{orders.filter(o => !o.isDraft).length !== 1 ? 's' : ''}{orders.filter(o => o.isDraft).length > 0 && <span className="ml-2 px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full text-xs font-semibold">{orders.filter(o => o.isDraft).length} brouillon{orders.filter(o => o.isDraft).length !== 1 ? 's' : ''}</span>}</p>
-              <Button onClick={() => setShowOrderModal(true)} className="hidden lg:inline-flex">
+              <Button onClick={() => setShowOrderModal(true)} size="sm" className="shrink-0">
                 <Plus size={15} /> Nouvelle commande
               </Button>
             </div>
