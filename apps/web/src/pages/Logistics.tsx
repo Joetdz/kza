@@ -8,7 +8,8 @@ import { toast } from '../hooks/useToast';
 import { logisticsApi, type StockLocation, type DeliveryPartner, type ManualOrder, type RelanceOrder, type PartnerReport, type PartnerPayment, type FollowUpConfig, type FollowUpEntry, type CustomerLookup } from '../api/logistics';
 import { ScrollLock } from '../components/ui/ScrollLock';
 import { ListSkeleton } from '../components/ui/Skeleton';
-import { PageHeader } from '../components/ui/Page';
+import { Button } from '../components/ui/Button';
+import { PageHeader, Fab } from '../components/ui/Page';
 import { CitySelect } from '../components/CitySelect';
 import { waApi } from '../api/whatsapp';
 
@@ -849,32 +850,30 @@ export function Logistics() {
           <div>
             <div className="flex justify-between items-center mb-3">
               <p className="text-sm text-gray-500">{orders.filter(o => !o.isDraft).length} commande{orders.filter(o => !o.isDraft).length !== 1 ? 's' : ''}{orders.filter(o => o.isDraft).length > 0 && <span className="ml-2 px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full text-xs font-semibold">{orders.filter(o => o.isDraft).length} brouillon{orders.filter(o => o.isDraft).length !== 1 ? 's' : ''}</span>}</p>
-              <button onClick={() => setShowOrderModal(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 transition-colors">
+              <Button onClick={() => setShowOrderModal(true)} className="hidden lg:inline-flex">
                 <Plus size={15} /> Nouvelle commande
-              </button>
+              </Button>
             </div>
-            {/* Filter + Search */}
-            <div className="flex flex-wrap gap-2 mb-4">
+            <Fab icon={Plus} label="Commande" onClick={() => setShowOrderModal(true)} />
+            {/* Search, then the statuses: they scroll sideways on a phone */}
+            <div className="relative mb-3">
+              <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-fg-4 pointer-events-none" />
+              <input type="search" placeholder="Nom, ville, #commande…" value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)} className="input pl-10" />
+            </div>
+            <div className="flex gap-2 mb-4 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-hide">
               {(['all', 'draft', 'pending', 'dispatched', 'delivered', 'returned', 'cancelled'] as const).map(s => {
                 // Same rules as the list below, so the count always matches what the filter shows.
                 const count = orders.filter(o => matchesSearch(o) && (
                   s === 'all' || (s === 'draft' ? o.isDraft : !o.isDraft && o.status === s)
                 )).length;
                 return (
-                  <button key={s} onClick={() => setStatusFilter(s)}
-                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${statusFilter === s ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
+                  <button key={s} onClick={() => setStatusFilter(s)} aria-pressed={statusFilter === s} className="chip !py-1.5 !text-xs">
                     {s === 'all' ? 'Tous' : s === 'draft' ? 'Brouillons' : STATUS_LABELS[s]?.label ?? s}
-                    <span className={`px-1.5 rounded-full text-[10px] leading-4 ${statusFilter === s ? 'bg-white/25 text-white' : 'bg-gray-200 text-gray-600'}`}>{count}</span>
+                    <span className={`px-1.5 rounded-full text-[10px] leading-4 tabular-nums ${statusFilter === s ? 'bg-white/25 text-white' : 'bg-surface-3 text-fg-2'}`}>{count}</span>
                   </button>
                 );
               })}
-              <div className="flex items-center gap-1.5 flex-1 min-w-[180px] border border-gray-200 rounded-xl px-3 py-1.5 bg-surface focus-within:ring-2 focus-within:ring-indigo-400">
-                <Search size={13} className="text-gray-400 shrink-0" />
-                <input type="text" placeholder="Nom, ville, #commande…" value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  className="flex-1 text-sm outline-none bg-transparent" />
-              </div>
             </div>
             {statusFilter === 'draft' && (() => {
               const visible = orders.filter(o => o.isDraft && matchesSearch(o)).map(o => o.id);
@@ -1579,113 +1578,162 @@ export function Logistics() {
       )}
 
       {/* ── MODAL COMMANDE ── */}
-      {showOrderModal && (
+      {showOrderModal && (() => {
+        const productsTotal = orderItems.reduce((n, it) => n + (Number(it.quantity) || 0) * (Number(it.unitPrice) || 0), 0);
+        const lines = orderItems.filter(it => it.productId && Number(it.quantity) > 0).length;
+        const setQty = (idx: number, qty: number) =>
+          setOrderItems(items => items.map((it, i) => i === idx ? { ...it, quantity: String(Math.max(1, qty)) } : it));
+        return (
         <Modal title="Nouvelle commande" onClose={() => { setShowOrderModal(false); resetOrderForm(); }} wide>
-          <div className="space-y-4">
-            {/* Produits */}
-            <div>
-              <label className="block text-xs font-semibold text-gray-600 mb-2">Produits *</label>
+          <div className="space-y-6">
+            {/* 1. Client — a known number fills the rest */}
+            <section className="space-y-3">
+              <h3 className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-fg-3">
+                <span className="w-5 h-5 rounded-full bg-indigo-600 text-white text-[10px] flex items-center justify-center">1</span> Client
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <Field label="Téléphone" type="tel" value={orderForm.customerPhone} onChange={v => setOrderForm(f => ({ ...f, customerPhone: v }))} placeholder="+243..." />
+                <Field label="Nom client *" value={orderForm.customerName} onChange={v => setOrderForm(f => ({ ...f, customerName: v }))} placeholder="Nom complet" />
+              </div>
+              {knownCustomer && (
+                <div className="flex items-start gap-2 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2.5 animate-fade-in">
+                  <History size={14} className="text-amber-600 shrink-0 mt-0.5" />
+                  <p className="text-xs text-amber-800">
+                    Client connu — <strong>{knownCustomer.orderCount} commande{knownCustomer.orderCount > 1 ? 's' : ''}</strong>,
+                    dernière le {new Date(knownCustomer.lastOrderAt).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })}.
+                    Les champs vides ont été pré-remplis.
+                  </p>
+                </div>
+              )}
+            </section>
+
+            {/* 2. Articles */}
+            <section className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-fg-3">
+                  <span className="w-5 h-5 rounded-full bg-indigo-600 text-white text-[10px] flex items-center justify-center">2</span> Produits *
+                </h3>
+                <button onClick={() => setOrderItems(items => [...items, { productId: '', quantity: '1', unitPrice: '' }])}
+                  className="flex items-center gap-1 text-xs text-indigo-700 font-semibold hover:underline">
+                  <Plus size={12} /> Ajouter un produit
+                </button>
+              </div>
               {orderItems.map((item, idx) => {
                 const prod = products.find(p => p.id === item.productId);
+                const qty = Number(item.quantity) || 0;
                 return (
-                  <div key={idx} className="flex gap-2 mb-2 items-center">
-                    {prod?.imageUrl ? (
-                      <img src={prod.imageUrl} alt={prod.name} className="w-8 h-8 rounded-lg object-cover border border-gray-100 shrink-0" />
-                    ) : (
-                      <div className="w-8 h-8 rounded-lg bg-gray-100 shrink-0" />
-                    )}
-                    <select value={item.productId}
-                      onChange={e => {
-                        const p = products.find(pr => pr.id === e.target.value);
-                        setOrderItems(items => items.map((it, i) => i === idx
-                          ? { ...it, productId: e.target.value, unitPrice: p ? String(p.sellingPrice) : it.unitPrice }
-                          : it));
-                      }}
-                      className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-400 bg-surface">
-                      <option value="">— Produit</option>
-                      {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                    </select>
-                    <input type="number" min="1" value={item.quantity} placeholder="Qté"
-                      onChange={e => setOrderItems(items => items.map((it, i) => i === idx ? { ...it, quantity: e.target.value } : it))}
-                      className="w-16 border border-gray-200 rounded-xl px-2 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-400 text-center" />
-                    <div className="relative">
-                      <input type="number" min="0" value={item.unitPrice} placeholder="Prix"
-                        onChange={e => setOrderItems(items => items.map((it, i) => i === idx ? { ...it, unitPrice: e.target.value } : it))}
-                        className="w-24 border border-gray-200 rounded-xl pl-2 pr-6 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-400" />
-                      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-400 font-bold">$</span>
+                  <div key={idx} className="rounded-xl border border-line bg-surface-2/60 p-3 space-y-3 animate-fade-in">
+                    <div className="flex items-center gap-2.5">
+                      {prod?.imageUrl ? (
+                        <img src={prod.imageUrl} alt={prod.name} className="w-11 h-11 rounded-lg object-cover border border-line shrink-0" />
+                      ) : (
+                        <div className="w-11 h-11 rounded-lg bg-surface-3 shrink-0 flex items-center justify-center"><Package size={16} className="text-fg-4" /></div>
+                      )}
+                      <select value={item.productId}
+                        onChange={e => {
+                          const p = products.find(pr => pr.id === e.target.value);
+                          setOrderItems(items => items.map((it, i) => i === idx
+                            ? { ...it, productId: e.target.value, unitPrice: p ? String(p.sellingPrice) : it.unitPrice }
+                            : it));
+                        }}
+                        className="input flex-1 min-w-0">
+                        <option value="">— Choisir un produit</option>
+                        {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                      </select>
+                      {orderItems.length > 1 && (
+                        <button onClick={() => setOrderItems(items => items.filter((_, i) => i !== idx))} aria-label="Retirer le produit"
+                          className="icon-btn hover:text-red-600 hover:bg-red-50 shrink-0">
+                          <X size={16} />
+                        </button>
+                      )}
                     </div>
-                    {orderItems.length > 1 && (
-                      <button onClick={() => setOrderItems(items => items.filter((_, i) => i !== idx))} className="text-red-400 hover:text-red-600">
-                        <X size={16} />
-                      </button>
-                    )}
+                    <div className="flex items-end gap-3">
+                      {/* Quantity: big buttons for the thumb */}
+                      <div>
+                        <span className="label">Quantité</span>
+                        <div className="flex items-center rounded-xl border border-line bg-surface overflow-hidden">
+                          <button type="button" onClick={() => setQty(idx, qty - 1)} disabled={qty <= 1} aria-label="Moins"
+                            className="w-10 h-10 flex items-center justify-center text-fg-2 hover:bg-surface-2 disabled:opacity-30 text-lg font-semibold">−</button>
+                          <input type="number" min="1" inputMode="numeric" value={item.quantity}
+                            onChange={e => setOrderItems(items => items.map((it, i) => i === idx ? { ...it, quantity: e.target.value } : it))}
+                            className="w-12 h-10 text-center text-sm font-semibold !bg-transparent outline-none border-x border-line" />
+                          <button type="button" onClick={() => setQty(idx, qty + 1)} aria-label="Plus"
+                            className="w-10 h-10 flex items-center justify-center text-fg-2 hover:bg-surface-2 text-lg font-semibold">+</button>
+                        </div>
+                      </div>
+                      <div className="flex-1">
+                        <span className="label">Prix unitaire</span>
+                        <div className="relative">
+                          <input type="number" min="0" inputMode="decimal" value={item.unitPrice} placeholder="0"
+                            onChange={e => setOrderItems(items => items.map((it, i) => i === idx ? { ...it, unitPrice: e.target.value } : it))}
+                            className="input pr-8" />
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-fg-4 font-bold">$</span>
+                        </div>
+                      </div>
+                      <div className="text-right pb-2.5 min-w-[64px]">
+                        <div className="text-[11px] text-fg-4">Total</div>
+                        <div className="text-sm font-bold text-fg tabular-nums">{(qty * (Number(item.unitPrice) || 0)).toLocaleString('fr-FR')} $</div>
+                      </div>
+                    </div>
                   </div>
                 );
               })}
-              <button onClick={() => setOrderItems(items => [...items, { productId: '', quantity: '1', unitPrice: '' }])}
-                className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-700 font-semibold mt-1">
-                <Plus size={12} /> Ajouter un produit
-              </button>
-            </div>
+            </section>
 
-            {/* Client */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <Field label="Nom client *" value={orderForm.customerName} onChange={v => setOrderForm(f => ({ ...f, customerName: v }))} placeholder="Nom complet" />
-              <Field label="Téléphone" value={orderForm.customerPhone} onChange={v => setOrderForm(f => ({ ...f, customerPhone: v }))} placeholder="+243..." />
-            </div>
-
-            {knownCustomer && (
-              <div className="flex items-start gap-2 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2">
-                <History size={13} className="text-amber-600 shrink-0 mt-0.5" />
-                <p className="text-xs text-amber-800">
-                  Client connu — <strong>{knownCustomer.orderCount} commande{knownCustomer.orderCount > 1 ? 's' : ''}</strong>,
-                  dernière le {new Date(knownCustomer.lastOrderAt).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })}.
-                  Les champs vides ont été pré-remplis.
-                </p>
+            {/* 3. Delivery */}
+            <section className="space-y-3">
+              <h3 className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-fg-3">
+                <span className="w-5 h-5 rounded-full bg-indigo-600 text-white text-[10px] flex items-center justify-center">3</span> Livraison
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <CitySelect value={orderForm.city} onChange={v => setOrderForm(f => ({ ...f, city: v, commune: '' }))} required />
+                {CITY_COMMUNES[orderForm.city]?.length > 0 ? (
+                  <div>
+                    <label className="label">Commune</label>
+                    <select value={orderForm.commune} onChange={e => setOrderForm(f => ({ ...f, commune: e.target.value }))} className="input">
+                      <option value="">— Choisir</option>
+                      {CITY_COMMUNES[orderForm.city].map((c: string) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+                ) : <div className="hidden sm:block" />}
               </div>
-            )}
-
-            {/* Ville + Commune + Frais */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <CitySelect value={orderForm.city} onChange={v => setOrderForm(f => ({ ...f, city: v, commune: '' }))} required />
-              <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Frais de livraison</label>
-                <div className="relative">
-                  <input type="number" min="0" value={orderForm.deliveryFee} placeholder="0"
-                    onChange={e => setOrderForm(f => ({ ...f, deliveryFee: e.target.value }))}
-                    className="w-full border border-gray-200 rounded-xl pl-3 pr-8 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-400" />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-500 font-bold">FC</span>
+              <Field label="Adresse précise *" value={orderForm.addressDetail} onChange={v => setOrderForm(f => ({ ...f, addressDetail: v }))} placeholder="Avenue, quartier, référence..." />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="label">Frais de livraison</label>
+                  <div className="relative">
+                    <input type="number" min="0" inputMode="numeric" value={orderForm.deliveryFee} placeholder="0"
+                      onChange={e => setOrderForm(f => ({ ...f, deliveryFee: e.target.value }))}
+                      className="input pr-10" />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-fg-4 font-bold">FC</span>
+                  </div>
+                </div>
+                <div>
+                  <label className="label flex items-center gap-1"><Calendar size={11} /> Livraison prévue</label>
+                  <input type="datetime-local" value={orderForm.scheduledAt}
+                    onChange={e => setOrderForm(f => ({ ...f, scheduledAt: e.target.value }))}
+                    className="input" />
                 </div>
               </div>
-            </div>
+            </section>
 
-            {/* Commune */}
-            {CITY_COMMUNES[orderForm.city]?.length > 0 && (
-              <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Commune</label>
-                <select value={orderForm.commune} onChange={e => setOrderForm(f => ({ ...f, commune: e.target.value }))}
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-400 bg-surface">
-                  <option value="">— Choisir</option>
-                  {CITY_COMMUNES[orderForm.city].map((c: string) => <option key={c} value={c}>{c}</option>)}
-                </select>
+            {/* 4. Summary */}
+            <section className="rounded-xl bg-indigo-600/10 px-4 py-3 space-y-1.5">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-indigo-800">{lines} produit{lines > 1 ? 's' : ''}</span>
+                <span className="font-semibold text-indigo-800 tabular-nums">{productsTotal.toLocaleString('fr-FR')} $</span>
               </div>
-            )}
-
-            <Field label="Adresse précise *" value={orderForm.addressDetail} onChange={v => setOrderForm(f => ({ ...f, addressDetail: v }))} placeholder="Avenue, quartier, référence..." />
-
-            {/* Date de livraison prévue */}
-            <div>
-              <label className="block text-xs font-semibold text-gray-600 mb-1 flex items-center gap-1">
-                <Calendar size={11} /> Date et heure de livraison prévue
-              </label>
-              <input type="datetime-local" value={orderForm.scheduledAt}
-                onChange={e => setOrderForm(f => ({ ...f, scheduledAt: e.target.value }))}
-                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-400 bg-surface" />
-            </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-indigo-800">Livraison{orderForm.city ? ` — ${orderForm.city}` : ''}</span>
+                <span className="font-semibold text-indigo-800 tabular-nums">{(Number(orderForm.deliveryFee) || 0).toLocaleString('fr-FR')} FC</span>
+              </div>
+            </section>
           </div>
-          <ModalFooter onClose={() => { setShowOrderModal(false); resetOrderForm(); }} onConfirm={handleCreateOrder} loading={submitting} label="Créer la commande" />
+          <ModalFooter onClose={() => { setShowOrderModal(false); resetOrderForm(); }} onConfirm={handleCreateOrder} loading={submitting}
+            label={`Créer la commande · ${productsTotal.toLocaleString('fr-FR')} $`} />
         </Modal>
-      )}
+        );
+      })()}
 
       {/* ── MODAL STOCK EMPLACEMENT ── */}
       {stockModal && (
@@ -2036,13 +2084,21 @@ export function Logistics() {
 // ── Helpers UI ──────────────────────────────────────────────────────────────
 
 function Modal({ title, onClose, children, wide }: { title: string; onClose: () => void; children: React.ReactNode; wide?: boolean }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4" role="dialog" aria-modal="true" aria-label={title}>
       <ScrollLock />
-      <div className={`bg-surface rounded-2xl shadow-2xl w-full ${wide ? 'max-w-2xl' : 'max-w-md'} max-h-[90vh] flex flex-col`}>
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-          <h2 className="font-bold text-gray-900">{title}</h2>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100"><X size={18} className="text-gray-500" /></button>
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm animate-fade-in" onClick={onClose} />
+      <div className={`relative bg-surface border border-line shadow-float w-full ${wide ? 'sm:max-w-2xl' : 'sm:max-w-md'}
+        rounded-t-3xl sm:rounded-2xl max-h-[94dvh] sm:max-h-[90vh] flex flex-col animate-sheet-up sm:animate-scale-in`}>
+        <div className="sm:hidden flex justify-center pt-2.5 -mb-1"><span className="w-10 h-1 rounded-full bg-line-strong" /></div>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-line shrink-0">
+          <h2 className="font-semibold text-fg text-lg">{title}</h2>
+          <button onClick={onClose} aria-label="Fermer" className="icon-btn -mr-1.5"><X size={18} /></button>
         </div>
         <div className="flex-1 overflow-y-auto p-5 space-y-3">{children}</div>
       </div>
@@ -2054,21 +2110,19 @@ function Modal({ title, onClose, children, wide }: { title: string; onClose: () 
 function Field({ label, value, onChange, placeholder, type = 'text' }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string; type?: string }) {
   return (
     <div>
-      <label className="block text-xs font-semibold text-gray-600 mb-1">{label}</label>
+      <label className="label">{label}</label>
       <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
-        className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-400" />
+        inputMode={type === 'tel' ? 'tel' : undefined} className="input" />
     </div>
   );
 }
 
+/** The window's actions: always in view at the bottom, above the phone's keyboard and home bar. */
 function ModalFooter({ onClose, onConfirm, loading, label }: { onClose: () => void; onConfirm: () => void; loading: boolean; label: string }) {
   return (
-    <div className="flex gap-2 pt-2">
-      <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50">Annuler</button>
-      <button onClick={onConfirm} disabled={loading}
-        className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50">
-        {loading ? '...' : label}
-      </button>
+    <div className="sticky bottom-0 -mx-5 -mb-5 mt-2 px-5 pt-3 pb-[max(1.25rem,env(safe-area-inset-bottom))] bg-surface border-t border-line flex gap-3">
+      <Button variant="secondary" onClick={onClose} className="flex-1" disabled={loading}>Annuler</Button>
+      <Button onClick={onConfirm} loading={loading} className="flex-[2]">{label}</Button>
     </div>
   );
 }
