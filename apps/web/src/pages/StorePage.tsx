@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { StatTile, VisitorsChart, type VisitDay } from '../components/VisitorsChart';
+import { Button } from '../components/ui/Button';
 import {
   Store, Copy, ExternalLink, Check, Package,
   ToggleLeft, ToggleRight, Loader2, ShoppingBag, Clock, CheckCircle,
   XCircle, Truck, Plus, X, Film, Mic, MicOff, Play, Square, Trash2,
-  Sparkles, RefreshCw, Music, Scissors, Image as ImageIcon, ArrowDown, ArrowUp, Eye, Heart, Users, MessageCircle,
+  Sparkles, RefreshCw, Music, Scissors, Image as ImageIcon, ArrowDown, ArrowUp, Eye, Heart, Users, MessageCircle, Share2,
 } from 'lucide-react';
 import { mediaApi, uploadApi, type ProductMedia } from '../api';
 import { useSegment } from '../hooks/useSegment';
@@ -1326,8 +1327,7 @@ export function StorePage() {
   };
 
   const copyLink = () => {
-    const url = `${window.location.origin}${window.location.pathname}#/boutique/${store.slug}`;
-    navigator.clipboard.writeText(url).then(() => {
+    navigator.clipboard.writeText(storeUrl).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
@@ -1486,26 +1486,61 @@ export function StorePage() {
   ] as const;
 
   const storeProducts = products.filter(p => visibleIds.has(p.id));
+  const pendingOrders = orders.filter(o => o.status === 'pending').length;
+  const shareStore = () => {
+    if (navigator.share) navigator.share({ title: store?.name, url: storeUrl }).catch(() => {});
+    else copyLink();
+  };
 
   return (
-    <div className="max-w-3xl mx-auto p-4 sm:p-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-6">
-        <div className="w-10 h-10 bg-indigo-100 rounded-2xl flex items-center justify-center">
-          <Store size={20} className="text-indigo-600" />
-        </div>
-        <div>
-          <h1 className="text-[22px] sm:text-[26px] font-bold tracking-tight text-fg leading-tight">Ma Boutique en ligne</h1>
-          <p className="text-sm text-gray-500">Exposez vos {terms.items} et recevez les commandes sur WhatsApp</p>
+    <div className="max-w-4xl space-y-5">
+      {/* The store: its name, whether it is online, its link */}
+      <div className="relative overflow-hidden card p-5">
+        <div className="absolute -right-12 -top-16 w-56 h-56 rounded-full opacity-[0.12] blur-2xl" style={{ background: form.primaryColor }} aria-hidden />
+        <div className="relative flex flex-col sm:flex-row sm:items-center gap-4">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-white text-xl font-black shrink-0 shadow-soft overflow-hidden"
+              style={{ background: form.primaryColor }}>
+              {store?.logoUrl ? <img src={store.logoUrl} alt="" className="w-full h-full object-cover" /> : (form.name || 'B').charAt(0).toUpperCase()}
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h1 className="text-[22px] sm:text-[26px] font-bold tracking-tight text-fg leading-tight truncate">{store?.name || form.name || 'Ma Boutique'}</h1>
+                {store && (
+                  <span className={`inline-flex items-center gap-1.5 text-[11px] font-semibold px-2 py-0.5 rounded-full ${form.active ? 'bg-emerald-50 text-emerald-700' : 'bg-surface-2 text-fg-3'}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${form.active ? 'bg-emerald-500 animate-pulse' : 'bg-fg-4'}`} />
+                    {form.active ? 'En ligne' : 'Hors ligne'}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs sm:text-sm text-fg-3 truncate">
+                {store ? storeUrl.replace(/^https?:\/\//, '') : `Expose tes ${terms.items} et reçois les commandes sur WhatsApp`}
+              </p>
+            </div>
+          </div>
+          {store && (
+            <div className="flex items-center gap-2 shrink-0">
+              <Button variant="secondary" size="sm" onClick={copyLink}>
+                {copied ? <Check size={14} /> : <Copy size={14} />} {copied ? 'Copié' : 'Copier'}
+              </Button>
+              <a href={storeUrl} target="_blank" rel="noreferrer" className="icon-btn border border-line" title="Ouvrir la boutique" aria-label="Ouvrir la boutique">
+                <ExternalLink size={15} />
+              </a>
+              <Button size="sm" onClick={shareStore}><Share2 size={14} /> Partager</Button>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 bg-gray-100 p-1 rounded-2xl mb-6 overflow-x-auto">
+      {/* Tabs: scroll sideways on a phone */}
+      <div className="flex gap-1 bg-surface-2 border border-line p-1 rounded-2xl overflow-x-auto scrollbar-hide">
         {TABS.map(t => (
-          <button key={t.key} onClick={() => setTab(t.key)}
-            className={`flex-shrink-0 py-2 px-3 rounded-xl text-sm font-medium transition-all ${tab === t.key ? 'bg-surface text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+          <button key={t.key} onClick={() => setTab(t.key)} aria-pressed={tab === t.key}
+            className={`flex-shrink-0 flex items-center gap-1.5 py-2 px-3.5 rounded-xl text-sm font-semibold transition-all ${tab === t.key ? 'bg-surface text-fg shadow-soft' : 'text-fg-3 hover:text-fg'}`}>
             {t.label}
+            {t.key === 'orders' && pendingOrders > 0 && (
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-500 text-white tabular-nums">{pendingOrders}</span>
+            )}
           </button>
         ))}
       </div>
@@ -1514,27 +1549,27 @@ export function StorePage() {
       {tab === 'config' && (
         <div className="card p-6 space-y-5">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Nom de la boutique *</label>
+            <label className="label">Nom de la boutique *</label>
             <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
               placeholder="Ex : Mode Kinshasa, Electronique Gombe..."
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
+              className="input" />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Description courte</label>
+            <label className="label">Description courte</label>
             <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
               placeholder="Décrivez votre boutique en 1-2 phrases..."
               rows={2}
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 resize-none" />
+              className="input resize-none" />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Numéro WhatsApp *</label>
+            <label className="label">Numéro WhatsApp *</label>
             <p className="text-xs text-gray-400 mb-1.5">Les commandes seront envoyées sur ce numéro</p>
             <input value={form.whatsappPhone} onChange={e => setForm(f => ({ ...f, whatsappPhone: e.target.value }))}
               placeholder="+243812345678"
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
+              className="input" />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Couleur principale</label>
+            <label className="label !mb-2">Couleur principale</label>
             <div className="flex gap-2">
               {COLORS.map(c => (
                 <button key={c.value} onClick={() => setForm(f => ({ ...f, primaryColor: c.value }))}
@@ -1544,7 +1579,7 @@ export function StorePage() {
             </div>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Devise de la boutique</label>
+            <label className="label !mb-2">Devise de la boutique</label>
             <div className="flex flex-wrap gap-2">
               {(['CDF', 'USD', 'EUR', 'XAF', 'XOF'] as const).map(cur => (
                 <button key={cur} onClick={() => setForm(f => ({ ...f, currency: cur }))}
@@ -1555,7 +1590,7 @@ export function StorePage() {
             </div>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Meta Pixel ID</label>
+            <label className="label">Meta Pixel ID</label>
             <p className="text-xs text-gray-400 mb-1.5">Suivi des conversions pour Facebook Ads — trouve ton ID dans Meta Events Manager</p>
             <input value={form.metaPixelId} onChange={e => setForm(f => ({ ...f, metaPixelId: e.target.value }))}
               placeholder="Ex: 1234567890123456"
