@@ -7,6 +7,8 @@ import { useStore } from '../store/useStore';
 import { toast } from '../hooks/useToast';
 import { logisticsApi, type StockLocation, type DeliveryPartner, type ManualOrder, type RelanceOrder, type PartnerReport, type PartnerPayment, type FollowUpConfig, type FollowUpEntry, type CustomerLookup } from '../api/logistics';
 import { ScrollLock } from '../components/ui/ScrollLock';
+import { ListSkeleton } from '../components/ui/Skeleton';
+import { PageHeader } from '../components/ui/Page';
 import { CitySelect } from '../components/CitySelect';
 import { waApi } from '../api/whatsapp';
 
@@ -636,17 +638,18 @@ export function Logistics() {
   ] as const;
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-5xl mx-auto px-4 py-8">
-        <div className="flex items-center gap-3 mb-6">
-          <h1 className="text-[22px] sm:text-[26px] font-bold tracking-tight text-fg leading-tight">Logistique</h1>
+    <div className="overflow-x-hidden">
+      <div className="max-w-6xl">
+        <div className="mb-5">
+          <PageHeader title="Logistique" subtitle="Emplacements, partenaires de livraison, commandes et versements" />
         </div>
 
-        <div className="flex gap-1 bg-gray-100 p-1 rounded-2xl mb-6 w-fit flex-wrap">
+        {/* Tabs: scroll sideways on a phone */}
+        <div className="flex gap-1 bg-surface-2 border border-line p-1 rounded-2xl mb-6 overflow-x-auto scrollbar-hide sm:w-fit">
           {tabs.map(({ id, label, icon: Icon, ...rest }) => (
-            <button key={id} onClick={() => setTab(id)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all
-                ${tab === id ? 'bg-surface text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+            <button key={id} onClick={() => setTab(id)} aria-pressed={tab === id}
+              className={`shrink-0 flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all
+                ${tab === id ? 'bg-surface text-fg shadow-soft' : 'text-fg-3 hover:text-fg'}`}>
               <Icon size={15} />{label}
               {'badge' in rest && (rest as any).badge > 0 && (
                 <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-500 text-white">
@@ -657,7 +660,7 @@ export function Logistics() {
           ))}
         </div>
 
-        {loading && <div className="text-center py-12 text-gray-400 text-sm">Chargement...</div>}
+        {loading && <ListSkeleton count={4} />}
 
         {/* ── EMPLACEMENTS ── */}
         {!loading && tab === 'locations' && (
@@ -862,7 +865,7 @@ export function Logistics() {
                   <button key={s} onClick={() => setStatusFilter(s)}
                     className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${statusFilter === s ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
                     {s === 'all' ? 'Tous' : s === 'draft' ? 'Brouillons' : STATUS_LABELS[s]?.label ?? s}
-                    <span className={`px-1.5 rounded-full text-[10px] leading-4 ${statusFilter === s ? 'bg-surface/25 text-white' : 'bg-gray-200 text-gray-600'}`}>{count}</span>
+                    <span className={`px-1.5 rounded-full text-[10px] leading-4 ${statusFilter === s ? 'bg-white/25 text-white' : 'bg-gray-200 text-gray-600'}`}>{count}</span>
                   </button>
                 );
               })}

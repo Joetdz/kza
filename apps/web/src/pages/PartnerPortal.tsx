@@ -293,7 +293,7 @@ function Portal({ data: initialData, token, onLogout }: {
               <div className="flex items-center gap-2 mb-0.5">
                 <Truck size={20} />
                 <h1 className="text-lg font-black">{data.name}</h1>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-surface/20">
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/20">
                   {data.type === 'COMPANY' ? 'Entreprise' : 'Indépendant'}
                 </span>
               </div>
@@ -318,7 +318,7 @@ function Portal({ data: initialData, token, onLogout }: {
                 {label}
                 {count !== undefined && (
                   <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full
-                    ${tab === id ? 'bg-indigo-100 text-indigo-600' : 'bg-surface/20'}`}>
+                    ${tab === id ? 'bg-indigo-100 text-indigo-600' : 'bg-white/20'}`}>
                     {count}
                   </span>
                 )}

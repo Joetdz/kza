@@ -502,7 +502,7 @@ export function Goals() {
             <span className="font-semibold">Progression globale {periodName}</span>
           </div>
           <div className="text-4xl font-black mb-2">{Math.round(globalProgressPct)}%</div>
-          <div className="w-full bg-surface/20 rounded-full h-2">
+          <div className="w-full bg-white/20 rounded-full h-2">
             <div
               className="h-2 rounded-full bg-surface transition-all"
               style={{ width: `${Math.min(100, globalProgressPct)}%` }}

@@ -10,6 +10,25 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="KZA" />
+    <!-- The app's theme before the first paint (no light flash in dark mode). Only for a
+         signed-in visit to the app itself: the store, portals and landing stay light. -->
+    <script>
+      (function () {
+        try {
+          var h = location.hash || '';
+          if (/^#\/(boutique|partenaire|investisseur|invitation|compte|pricing)/.test(h) || h.indexOf('type=recovery') >= 0) return;
+          var signedIn = false;
+          for (var i = 0; i < localStorage.length; i++) {
+            var k = localStorage.key(i);
+            if (k && /^sb-.*-auth-token$/.test(k)) { signedIn = true; break; }
+          }
+          if (!signedIn) return;
+          var pref = localStorage.getItem('kza_theme') || 'system';
+          var dark = pref === 'dark' || (pref === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+          document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+        } catch (e) {}
+      })();
+    </script>
     <link rel="icon" href="/favicon.ico" sizes="48x48" />
     <link rel="icon" href="/icon.svg" sizes="any" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/apple-touch-icon-180x180.png" />

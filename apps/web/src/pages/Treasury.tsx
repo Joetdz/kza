@@ -108,7 +108,7 @@ export function Treasury() {
 
       {/* Accounts */}
       {accounts.length === 0 ? (
-        <div className="bg-surface rounded-2xl border border-dashed border-gray-200 p-8 text-center">
+        <div className="card border-dashed p-8 text-center">
           <Wallet size={32} className="text-gray-300 mx-auto mb-2" />
           <p className="text-sm text-gray-600 font-medium">Crée tes comptes pour suivre ton argent</p>
           <p className="text-xs text-gray-400 mt-1">Une banque, un compte mobile money (M-Pesa, Orange Money, Airtel Money) ou une caisse physique, en $ ou en FC, avec son solde d'aujourd'hui.</p>

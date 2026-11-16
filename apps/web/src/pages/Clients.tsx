@@ -1,5 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Phone, MessageCircle, Package, Search, RefreshCw, History } from 'lucide-react';
+import { Phone, MessageCircle, Search, RefreshCw, History, Users } from 'lucide-react';
+import { Button } from '../components/ui/Button';
+import { ListSkeleton } from '../components/ui/Skeleton';
+import { PageHeader, Stat, EmptyState } from '../components/ui/Page';
 import { logisticsApi, type ManualOrder } from '../api/logistics';
 import { CustomerHistoryPanel } from '../components/CustomerHistoryPanel';
 
@@ -99,85 +102,79 @@ export function Clients() {
 
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-5xl mx-auto px-4 py-8">
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-[22px] sm:text-[26px] font-bold tracking-tight text-fg leading-tight">Clients</h1>
-          <button onClick={load} disabled={loading}
-            className="p-2 text-gray-400 hover:text-indigo-600 transition-colors disabled:opacity-50">
-            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+    <div className="space-y-5 overflow-x-hidden">
+      <PageHeader
+        title="Clients"
+        subtitle={`${orders.length} commande${orders.length > 1 ? 's' : ''} · les clients et leur historique`}
+        actions={
+          <Button variant="secondary" onClick={load} disabled={loading} title="Actualiser">
+            <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
+            <span className="hidden sm:inline">Actualiser</span>
+          </Button>
+        }
+      />
+
+      {/* Repeat-purchase summary */}
+      {repeat.customers > 0 && (
+        <div className="grid grid-cols-3 gap-3 stagger">
+          <Stat label="Clients" value={String(repeat.customers)} />
+          <Stat label="Ont recommandé" value={String(repeat.returning)} tone="warning" />
+          <Stat label="Taux de réachat" value={`${repeat.rate} %`} tone="positive" />
+        </div>
+      )}
+
+      {/* Search */}
+      <div className="relative">
+        <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-fg-4 pointer-events-none" />
+        <input
+          type="search" value={search} onChange={e => setSearch(e.target.value)}
+          placeholder="Rechercher par nom, téléphone, adresse…"
+          className="input pl-10"
+        />
+      </div>
+
+      {/* Filter chips */}
+      <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-hide">
+        {FILTERS.map(f => (
+          <button key={f.value} onClick={() => setFilter(f.value)} aria-pressed={filter === f.value} className="chip !py-1.5 !text-xs">
+            {f.label}
+            {counts[f.value] !== undefined && (
+              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${filter === f.value ? 'bg-white/20 text-white' : f.color}`}>
+                {counts[f.value]}
+              </span>
+            )}
           </button>
-        </div>
+        ))}
+      </div>
 
-        {/* Repeat-purchase summary */}
-        {repeat.customers > 0 && (
-          <div className="grid grid-cols-3 gap-3 mb-5">
-            <div className="card px-4 py-3">
-              <p className="text-[11px] text-gray-400 font-semibold">Clients</p>
-              <p className="text-xl font-black text-gray-900">{repeat.customers}</p>
-            </div>
-            <div className="card px-4 py-3">
-              <p className="text-[11px] text-gray-400 font-semibold">Ont recommandé</p>
-              <p className="text-xl font-black text-amber-600">{repeat.returning}</p>
-            </div>
-            <div className="card px-4 py-3">
-              <p className="text-[11px] text-gray-400 font-semibold">Taux de réachat</p>
-              <p className="text-xl font-black text-indigo-600">{repeat.rate}%</p>
-            </div>
-          </div>
-        )}
-
-        {/* Search */}
-        <div className="relative mb-4">
-          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input
-            type="text" value={search} onChange={e => setSearch(e.target.value)}
-            placeholder="Rechercher par nom, téléphone, adresse..."
-            className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-400 bg-surface"
-          />
-        </div>
-
-        {/* Filter chips */}
-        <div className="flex gap-2 flex-wrap mb-5">
-          {FILTERS.map(f => (
-            <button key={f.value} onClick={() => setFilter(f.value)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all border
-                ${filter === f.value
-                  ? 'border-indigo-400 bg-indigo-50 text-indigo-700 shadow-sm'
-                  : 'border-transparent bg-surface text-gray-600 hover:bg-gray-100'
-                }`}>
-              {f.label}
-              {counts[f.value] !== undefined && (
-                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${f.color}`}>
-                  {counts[f.value]}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
-
-        {loading && (
-          <div className="text-center py-12 text-gray-400 text-sm">Chargement...</div>
-        )}
-
-        {!loading && (
-          <>
-            <p className="text-xs text-gray-400 mb-3">{filtered.length} résultat{filtered.length !== 1 ? 's' : ''}</p>
-            <div className="space-y-2">
+      {loading && orders.length === 0 ? (
+        <ListSkeleton count={5} />
+      ) : (
+        <>
+          <p className="text-xs text-fg-3">{filtered.length} résultat{filtered.length !== 1 ? 's' : ''}</p>
+          {filtered.length === 0 ? (
+            <EmptyState icon={Users} title="Aucun client trouvé"
+              text={search || filter !== 'all' ? 'Essaie un autre nom, numéro ou statut.' : 'Les clients apparaissent ici dès leur première commande.'} />
+          ) : (
+            <div key={`${filter}-${search}`} className="space-y-2 stagger">
               {filtered.map(o => {
                 const st = STATUS_LABELS[o.status] ?? STATUS_LABELS.pending;
                 const isPostponed = !!o.scheduledAt && o.status !== 'delivered' && o.status !== 'cancelled';
                 return (
-                  <div key={o.id} className="card px-4 py-3">
+                  <article key={o.id} className="card card-hover p-4">
                     <div className="flex items-start gap-3">
+                      {/* Initials */}
+                      <div className="w-10 h-10 rounded-full bg-indigo-600/10 text-indigo-700 font-bold text-sm flex items-center justify-center shrink-0">
+                        {o.customerName.trim().charAt(0).toUpperCase() || '?'}
+                      </div>
                       <div className="flex-1 min-w-0">
                         {/* Name + status */}
-                        <div className="flex items-center gap-2 flex-wrap mb-0.5">
-                          <span className="font-black text-indigo-600 text-xs">#{String(o.orderNumber).padStart(4, '0')}</span>
-                          <p className="font-bold text-gray-900">{o.customerName}</p>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="font-semibold text-fg truncate">{o.customerName}</p>
+                          <span className="text-[11px] font-semibold text-fg-4 tabular-nums">#{String(o.orderNumber).padStart(4, '0')}</span>
                           <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${st.color}`}>{st.label}</span>
                           {isPostponed && (
-                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-purple-50 text-purple-600">
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-purple-50 text-purple-700">
                               📅 {new Date(o.scheduledAt!).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}
                             </span>
                           )}
@@ -192,63 +189,47 @@ export function Clients() {
                           )}
                         </div>
 
-                        {/* Phone */}
-                        {o.customerPhone && (
-                          <p className="text-sm text-gray-500 font-medium">{o.customerPhone}</p>
-                        )}
+                        {o.customerPhone && <p className="text-sm text-fg-2 tabular-nums mt-0.5">{o.customerPhone}</p>}
 
-                        {/* Location + date */}
-                        <p className="text-xs text-gray-400">
+                        <p className="text-xs text-fg-3 mt-0.5">
                           {o.city} — {o.address} · {new Date(o.createdAt).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })}
                         </p>
 
-                        {/* Items summary */}
-                        <p className="text-xs text-gray-500 mt-0.5">
+                        <p className="text-xs text-fg-3 mt-1 line-clamp-2">
                           {o.items.map(i => `${i.product.name} ×${i.quantity}`).join(', ')}
                         </p>
 
-                        {/* Amount */}
-                        <div className="flex items-center gap-3 mt-1 text-xs">
-                          <span className="font-bold text-gray-700">${Number(o.totalAmount).toLocaleString('fr-FR')}</span>
-                          <span className="text-amber-600">{Number(o.deliveryFee).toLocaleString('fr-FR')} FC livraison</span>
-                          {o.partner && <span className="text-gray-400">via {o.partner.name}</span>}
+                        <div className="flex items-center gap-3 mt-2 text-xs flex-wrap">
+                          <span className="font-bold text-fg tabular-nums">${Number(o.totalAmount).toLocaleString('fr-FR')}</span>
+                          <span className="text-amber-700 tabular-nums">{Number(o.deliveryFee).toLocaleString('fr-FR')} FC livraison</span>
+                          {o.partner && <span className="text-fg-4">via {o.partner.name}</span>}
                         </div>
                       </div>
 
                       {/* Quick actions */}
                       {o.customerPhone && (
-                        <div className="flex gap-1.5 shrink-0">
-                          <a href={`tel:${o.customerPhone}`}
-                            className="p-2 rounded-xl bg-green-50 text-green-600 hover:bg-green-100 transition-colors"
-                            title="Appeler">
-                            <Phone size={14} />
+                        <div className="flex flex-col sm:flex-row gap-1 shrink-0">
+                          <a href={`tel:${o.customerPhone}`} className="icon-btn text-emerald-600 hover:bg-emerald-50" title="Appeler" aria-label="Appeler">
+                            <Phone size={16} />
                           </a>
                           <a href={waLink(o.customerPhone)} target="_blank" rel="noopener noreferrer"
-                            className="p-2 rounded-xl bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-colors"
-                            title="WhatsApp">
-                            <MessageCircle size={14} />
+                            className="icon-btn text-emerald-600 hover:bg-emerald-50" title="WhatsApp" aria-label="Écrire sur WhatsApp">
+                            <MessageCircle size={16} />
                           </a>
                           <button onClick={() => setHistoryPhone(o.customerPhone!)}
-                            className="p-2 rounded-xl bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition-colors"
-                            title="Historique d'achat">
-                            <History size={14} />
+                            className="icon-btn text-indigo-600 hover:bg-indigo-600/10" title="Historique d'achat" aria-label="Historique d'achat">
+                            <History size={16} />
                           </button>
                         </div>
                       )}
                     </div>
-                  </div>
+                  </article>
                 );
               })}
-              {filtered.length === 0 && !loading && (
-                <div className="text-center py-12 text-gray-400">
-                  <Package size={32} className="mx-auto mb-2 opacity-40" />
-                  <p className="text-sm">Aucun client trouvé.</p>
-                </div>
-              )}
             </div>
-          </>
-        )}
-      </div>
+          )}
+        </>
+      )}
 
       {historyPhone && (
         <CustomerHistoryPanel phone={historyPhone} onClose={() => setHistoryPhone(null)} />

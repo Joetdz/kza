@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { FileText, Plus, Download, Send, Edit2, Trash2, ArrowRightLeft, ShoppingCart, X } from 'lucide-react';
+import { Fab } from '../components/ui/Page';
 import { documentTotals, tierPrice, type DocumentLine, type DocumentType } from '@kza/shared';
 import { documentsApi, type CommercialDocument, type DocumentInput } from '../api/documents';
 import { salesApi, productsApi } from '../api';
@@ -95,6 +96,7 @@ export function Documents() {
 
   return (
     <div className="space-y-5">
+      <Fab icon={Plus} label={tab === 'quote' ? 'Devis' : 'Facture'} onClick={() => setEditing('new')} />
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <h1 className="text-[22px] sm:text-[26px] font-bold tracking-tight text-fg leading-tight">Devis & factures</h1>

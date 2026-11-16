@@ -249,7 +249,7 @@ export function Pricing() {
             {FEATURES.map(({ Icon, color, plan, title, desc }) => {
               const c = ICON_COLORS[color];
               return (
-                <div key={title} className="bg-surface rounded-2xl border border-gray-200 p-5 flex gap-4 hover:shadow-md transition-shadow">
+                <div key={title} className="card p-5 flex gap-4 hover:shadow-md transition-shadow">
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${c.bg} ${c.text}`}>
                     <Icon size={18} />
                   </div>
@@ -271,7 +271,7 @@ export function Pricing() {
         {/* Comparison table */}
         <section className="space-y-6">
           <h2 className="text-2xl sm:text-3xl font-black text-gray-900 text-center">Comparaison détaillée</h2>
-          <div className="overflow-x-auto rounded-2xl border border-gray-200 bg-surface shadow-sm">
+          <div className="card overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100">

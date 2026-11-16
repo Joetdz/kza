@@ -482,7 +482,7 @@ export function Inbox() {
 
   if (!statusLoaded) {
     return (
-      <div className="flex items-center justify-center h-[calc(100vh-64px)]" style={{ background: C.chatBg }}>
+      <div className="flex items-center justify-center rounded-2xl h-[calc(100dvh-16rem)] min-h-[420px] lg:h-[calc(100dvh-11.5rem)]" style={{ background: C.chatBg }}>
         <span className="w-6 h-6 border-2 border-[#00a884] border-t-transparent rounded-full animate-spin" />
       </div>
     );
@@ -494,7 +494,7 @@ export function Inbox() {
 
   return (
     <>
-    <div className="flex h-[calc(100vh-64px)] overflow-hidden rounded-xl shadow-2xl" style={{ background: C.chatBg }}>
+    <div className="flex h-[calc(100dvh-16rem)] min-h-[420px] lg:h-[calc(100dvh-11.5rem)] overflow-hidden rounded-2xl shadow-float border border-black/20" style={{ background: C.chatBg }}>
 
       {/* ── LEFT PANEL — Contact list ──────────────────────────────────────────── */}
       <div className={`flex-col w-full lg:w-[360px] lg:shrink-0 border-r ${mobilePanel === 'contacts' ? 'flex' : 'hidden lg:flex'}`} style={{ background: C.panelBg, borderColor: C.divider }}>

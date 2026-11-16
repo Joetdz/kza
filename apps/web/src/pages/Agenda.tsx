@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   CalendarDays, ChevronLeft, ChevronRight, Plus, Settings, Phone, Bot, Check, X, UserX, RotateCcw, Trash2, Clock,
 } from 'lucide-react';
+import { Fab } from '../components/ui/Page';
 import { addDays, utcToLocal } from '@kza/shared';
 import { agendaApi, type AgendaSettings, type Appointment, type AppointmentStatus, type OpeningRange } from '../api/agenda';
 import { useStore } from '../store/useStore';
@@ -90,6 +91,7 @@ export function Agenda() {
 
   return (
     <div className="space-y-5">
+      {settings && <Fab icon={Plus} label="Rendez-vous" onClick={() => setShowNew(true)} />}
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <h1 className="text-[22px] sm:text-[26px] font-bold tracking-tight text-fg leading-tight">Agenda</h1>

@@ -146,7 +146,7 @@ export function Team() {
       </header>
 
       {/* ── Créer une invitation ─────────────────────────────────────────── */}
-      <section className="bg-surface border border-gray-200 rounded-2xl p-5">
+      <section className="card p-5">
         <h2 className="font-semibold text-gray-900 flex items-center gap-2 mb-4">
           <UserPlus size={17} className="text-indigo-600" /> Inviter quelqu’un
         </h2>
@@ -190,7 +190,7 @@ export function Team() {
 
       {/* ── Invitations en attente ───────────────────────────────────────── */}
       {invites.length > 0 && (
-        <section className="bg-surface border border-gray-200 rounded-2xl p-5">
+        <section className="card p-5">
           <h2 className="font-semibold text-gray-900 flex items-center gap-2 mb-3">
             <Clock size={17} className="text-amber-500" /> En attente ({invites.length})
           </h2>
@@ -227,7 +227,7 @@ export function Team() {
       )}
 
       {/* ── Membres ──────────────────────────────────────────────────────── */}
-      <section className="bg-surface border border-gray-200 rounded-2xl p-5">
+      <section className="card p-5">
         <h2 className="font-semibold text-gray-900 mb-3">
           Membres ({members.length})
         </h2>

@@ -11,32 +11,29 @@ const TABS = [
 
 export function WhatsAppLayout() {
   return (
-    <div className="flex flex-col h-full">
-      {/* Sub-nav */}
-      <div className="border-b border-gray-100 bg-surface px-1 sm:px-4">
-        <nav className="flex">
-          {TABS.map(({ to, end, icon: Icon, label }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={end}
-              className={({ isActive }) =>
-                `flex items-center gap-1 px-2 sm:px-4 py-3 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
-                  isActive
-                    ? 'border-indigo-600 text-indigo-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700'
-                }`
-              }
-            >
-              <Icon size={15} />
-              <span className="hidden sm:inline">{label}</span>
-            </NavLink>
-          ))}
-        </nav>
-      </div>
+    <div className="flex flex-col h-full gap-4">
+      {/* Sub-nav: the module's sections, scrolling sideways on a phone */}
+      <nav className="flex gap-1 bg-surface-2 border border-line p-1 rounded-2xl overflow-x-auto scrollbar-hide sm:w-fit">
+        {TABS.map(({ to, end, icon: Icon, label }) => (
+          <NavLink
+            key={to}
+            to={to}
+            end={end}
+            title={label}
+            className={({ isActive }) =>
+              `shrink-0 flex items-center gap-1.5 px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all whitespace-nowrap ${
+                isActive ? 'bg-surface text-fg shadow-soft' : 'text-fg-3 hover:text-fg'
+              }`
+            }
+          >
+            <Icon size={15} />
+            <span className="hidden sm:inline">{label}</span>
+          </NavLink>
+        ))}
+      </nav>
 
       {/* Page content */}
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 min-h-0">
         <Outlet />
       </div>
     </div>

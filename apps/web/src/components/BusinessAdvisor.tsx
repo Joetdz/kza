@@ -288,80 +288,72 @@ export function BusinessAdvisor() {
   // who can't see that data anyway. All hooks above still ran, so this is safe.
   if (!canSeeFinances) return null;
 
+
   return (
     <>
-      {/* Floating button */}
+      {/* Floating button: a round icon above the phone's bottom bar and main action, a pill on a desk */}
       {!open && (
         <button
           onClick={() => setOpen(true)}
-          className="fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-3 rounded-full shadow-2xl text-white font-medium text-sm transition-all hover:scale-105 active:scale-95"
-          style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)' }}
+          aria-label="Ouvrir Kayden Zion, l'assistante business"
+          className="fixed z-40 right-4 lg:right-6 bottom-[calc(9.5rem+env(safe-area-inset-bottom))] lg:bottom-6
+            flex items-center gap-2 w-12 h-12 lg:w-auto lg:h-auto justify-center lg:px-4 lg:py-3 rounded-full
+            bg-gradient-to-br from-indigo-500 to-violet-600 text-white font-medium text-sm shadow-glow
+            transition-transform hover:scale-105 active:scale-95 animate-pop"
         >
           <BrainCircuit size={20} />
-          <span>Kayden Zion</span>
+          <span className="hidden lg:inline">Kayden Zion</span>
           {insights.length > 0 && (
-            <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full text-xs flex items-center justify-center font-bold">
+            <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 bg-red-500 ring-2 ring-canvas rounded-full text-[11px] flex items-center justify-center font-bold">
               {insights.length}
             </span>
           )}
         </button>
       )}
 
-      {/* Panel */}
+      {/* Panel: full screen on a phone, a floating window on a desk */}
       {open && (
         <div
-          className="fixed z-50 flex flex-col overflow-hidden shadow-2xl"
-          style={{ ...panelStyle, background: '#0f172a', border: '1px solid #1e293b' }}
+          role="dialog"
+          aria-label="Kayden Zion"
+          className={`fixed z-50 flex flex-col overflow-hidden glass-strong border shadow-float
+            ${isMobile ? 'animate-sheet-up' : 'animate-scale-in origin-bottom-right'}`}
+          style={panelStyle}
         >
           {/* Header */}
-          <div
-            className="flex items-center justify-between px-4 py-3 shrink-0"
-            style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)' }}
-          >
-            <div className="flex items-center gap-2">
-              <div className="w-9 h-9 rounded-full bg-surface/20 flex items-center justify-center font-bold text-white text-sm">
+          <div className="flex items-center justify-between px-4 py-3 shrink-0 bg-gradient-to-br from-indigo-500 to-violet-600" style={{ paddingTop: isMobile ? 'max(0.75rem, env(safe-area-inset-top))' : undefined }}>
+            <div className="flex items-center gap-2.5">
+              <div className="relative w-9 h-9 rounded-full bg-white/20 flex items-center justify-center font-bold text-white text-sm">
                 KZ
+                <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-400 ring-2 ring-indigo-500" />
               </div>
               <div>
                 <p className="text-white font-bold text-sm">Kayden Zion</p>
-                <p className="text-white/70 text-xs">Experte en développement business</p>
+                <p className="text-white/75 text-xs">Experte en développement business</p>
               </div>
             </div>
             <div className="flex items-center gap-1">
               {mode === 'chat' && (
-                <button
-                  onClick={clearHistory}
-                  className="p-1.5 rounded-full hover:bg-surface/20 transition-colors"
-                  title="Effacer la conversation"
-                >
-                  <Trash2 size={15} color="white" opacity={0.8} />
+                <button onClick={clearHistory} className="p-2 rounded-full text-white/85 hover:bg-white/20 transition-colors" title="Effacer la conversation" aria-label="Effacer la conversation">
+                  <Trash2 size={15} />
                 </button>
               )}
-              <button
-                onClick={handleClose}
-                className="p-1.5 rounded-full hover:bg-surface/20 transition-colors"
-              >
-                {isMobile ? <X size={18} color="white" /> : <ChevronDown size={18} color="white" />}
+              <button onClick={handleClose} className="p-2 rounded-full text-white hover:bg-white/20 transition-colors" aria-label="Fermer">
+                {isMobile ? <X size={18} /> : <ChevronDown size={18} />}
               </button>
             </div>
           </div>
 
           {/* Mode tabs */}
-          <div className="flex shrink-0" style={{ background: '#1e293b', borderBottom: '1px solid #334155' }}>
-            <button
-              onClick={switchToChat}
-              className={`flex-1 py-2 text-xs font-medium transition-colors flex items-center justify-center gap-1.5 ${mode === 'chat' ? 'text-indigo-400 border-b-2 border-indigo-400' : 'text-slate-400 hover:text-slate-200'}`}
-            >
-              <BrainCircuit size={13} />
-              Chat texte
-            </button>
-            <button
-              onClick={switchToCall}
-              className={`flex-1 py-2 text-xs font-medium transition-colors flex items-center justify-center gap-1.5 ${mode === 'call' ? 'text-indigo-400 border-b-2 border-indigo-400' : 'text-slate-400 hover:text-slate-200'}`}
-            >
-              <PhoneCall size={13} />
-              Appel vocal
-            </button>
+          <div className="px-3 pt-3 shrink-0">
+            <div className="segmented">
+              <button onClick={switchToChat} aria-pressed={mode === 'chat'} className="flex items-center justify-center gap-1.5">
+                <BrainCircuit size={13} /> Chat texte
+              </button>
+              <button onClick={switchToCall} aria-pressed={mode === 'call'} className="flex items-center justify-center gap-1.5">
+                <PhoneCall size={13} /> Appel vocal
+              </button>
+            </div>
           </div>
 
           {/* ── CHAT MODE ── */}
@@ -369,17 +361,17 @@ export function BusinessAdvisor() {
             <>
               {/* Insights */}
               {(insightsLoading || insights.length > 0) && (
-                <div className="px-3 py-2 shrink-0 space-y-1" style={{ background: '#1e293b', borderBottom: '1px solid #334155' }}>
+                <div className="mx-3 mt-3 p-2 shrink-0 space-y-0.5 rounded-xl bg-surface-2 border border-line">
                   {insightsLoading ? (
-                    <div className="flex items-center gap-2 text-xs text-slate-400">
-                      <Loader2 size={12} className="animate-spin" /> Analyse en cours...
+                    <div className="flex items-center gap-2 text-xs text-fg-3 px-2 py-1">
+                      <Loader2 size={12} className="animate-spin" /> Analyse de ton activité…
                     </div>
                   ) : insights.map((ins, i) => (
                     <button
                       key={i}
                       onClick={() => sendChat(ins.text)}
-                      className="w-full text-left text-xs px-2 py-1 rounded-lg hover:bg-slate-700 transition-colors flex items-start gap-2"
-                      style={{ color: '#94a3b8' }}
+                      className="w-full text-left text-xs px-2 py-1.5 rounded-lg text-fg-2 hover:bg-surface hover:text-fg transition-colors flex items-start gap-2 animate-fade-in-up"
+                      style={{ animationDelay: `${i * 60}ms` }}
                     >
                       <span className="shrink-0">{ins.priority}</span>
                       <span className="truncate">{ins.text}</span>
@@ -389,37 +381,33 @@ export function BusinessAdvisor() {
               )}
 
               {/* Messages */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-4" style={{ background: '#0f172a' }}>
+              <div className="flex-1 overflow-y-auto p-4 space-y-4">
                 {messages.map((m, i) => (
-                  <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  <div key={i} className={`flex animate-fade-in-up ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                     {m.role === 'assistant' && (
-                      <div className="w-7 h-7 rounded-full shrink-0 mr-2 mt-0.5 flex items-center justify-center font-bold text-white text-xs"
-                        style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)' }}>
+                      <div className="w-7 h-7 rounded-full shrink-0 mr-2 mt-0.5 flex items-center justify-center font-bold text-white text-[10px] bg-gradient-to-br from-indigo-500 to-violet-600">
                         KZ
                       </div>
                     )}
                     <div
-                      className="max-w-[82%] rounded-2xl px-3 py-2 text-sm space-y-0.5"
-                      style={{
-                        background: m.role === 'user' ? '#6366f1' : '#1e293b',
-                        color: m.role === 'user' ? 'white' : '#e2e8f0',
-                        borderRadius: m.role === 'user' ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
-                      }}
+                      className={`max-w-[82%] px-3.5 py-2.5 text-sm leading-relaxed space-y-0.5 ${m.role === 'user'
+                        ? 'bg-indigo-600 text-white rounded-[18px_18px_4px_18px] shadow-soft'
+                        : 'bg-surface-2 text-fg border border-line rounded-[18px_18px_18px_4px]'}`}
                     >
                       {renderContent(m.content)}
                     </div>
                   </div>
                 ))}
+                {/* Shown only while a reply is really on its way */}
                 {loading && (
-                  <div className="flex justify-start">
-                    <div className="w-7 h-7 rounded-full shrink-0 mr-2 flex items-center justify-center font-bold text-white text-xs"
-                      style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)' }}>
+                  <div className="flex justify-start animate-fade-in" aria-live="polite" aria-label="Kayden Zion réfléchit">
+                    <div className="w-7 h-7 rounded-full shrink-0 mr-2 flex items-center justify-center font-bold text-white text-[10px] bg-gradient-to-br from-indigo-500 to-violet-600">
                       KZ
                     </div>
-                    <div className="rounded-2xl px-4 py-3 flex items-center gap-1" style={{ background: '#1e293b' }}>
-                      <span className="w-2 h-2 rounded-full bg-indigo-400 animate-bounce" style={{ animationDelay: '0ms' }} />
-                      <span className="w-2 h-2 rounded-full bg-indigo-400 animate-bounce" style={{ animationDelay: '150ms' }} />
-                      <span className="w-2 h-2 rounded-full bg-indigo-400 animate-bounce" style={{ animationDelay: '300ms' }} />
+                    <div className="rounded-2xl px-4 py-3 flex items-center gap-1 bg-surface-2 border border-line">
+                      <span className="w-2 h-2 rounded-full bg-indigo-500 animate-bounce" style={{ animationDelay: '0ms' }} />
+                      <span className="w-2 h-2 rounded-full bg-indigo-500 animate-bounce" style={{ animationDelay: '150ms' }} />
+                      <span className="w-2 h-2 rounded-full bg-indigo-500 animate-bounce" style={{ animationDelay: '300ms' }} />
                     </div>
                   </div>
                 )}
@@ -428,11 +416,10 @@ export function BusinessAdvisor() {
 
               {/* Suggestions */}
               {messages.length <= 1 && !loading && (
-                <div className="px-3 py-2 shrink-0 flex gap-2 overflow-x-auto" style={{ borderTop: '1px solid #1e293b' }}>
+                <div className="px-3 pb-2 shrink-0 flex gap-2 overflow-x-auto scrollbar-hide">
                   {[`${terms.feminine ? 'Quelles' : 'Quels'} sont mes ${terms.items} les plus rentables ?`, ...SUGGESTIONS].map((s, i) => (
                     <button key={i} onClick={() => sendChat(s)}
-                      className="shrink-0 text-xs px-3 py-1.5 rounded-full whitespace-nowrap transition-colors hover:bg-indigo-600"
-                      style={{ background: '#1e293b', color: '#94a3b8', border: '1px solid #334155' }}>
+                      className="shrink-0 text-xs px-3 py-1.5 rounded-full whitespace-nowrap border border-line bg-surface text-fg-2 hover:border-indigo-500 hover:text-indigo-700 transition-colors">
                       {s}
                     </button>
                   ))}
@@ -440,24 +427,24 @@ export function BusinessAdvisor() {
               )}
 
               {/* Text input */}
-              <div className="px-3 py-3 shrink-0 flex items-end gap-2" style={{ background: '#0f172a', borderTop: '1px solid #1e293b' }}>
+              <div className="px-3 py-3 shrink-0 flex items-end gap-2 border-t border-line" style={{ paddingBottom: isMobile ? 'max(0.75rem, env(safe-area-inset-bottom))' : undefined }}>
                 <textarea
                   ref={inputRef}
                   value={input}
                   onChange={e => setInput(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); } }}
-                  placeholder="Posez une question à Kayden Zion..."
+                  placeholder="Pose une question à Kayden Zion…"
                   rows={1}
-                  className="flex-1 resize-none rounded-xl px-3 py-2 text-sm outline-none"
-                  style={{ background: '#1e293b', color: '#e2e8f0', border: '1px solid #334155', maxHeight: 100 }}
+                  className="input flex-1 resize-none"
+                  style={{ maxHeight: 100 }}
                 />
                 <button
                   onClick={() => sendChat()}
                   disabled={!input.trim() || loading}
-                  className="p-2 rounded-xl transition-all disabled:opacity-40 shrink-0"
-                  style={{ background: '#6366f1' }}
+                  aria-label="Envoyer"
+                  className="h-[42px] w-[42px] rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-soft transition-all hover:bg-indigo-700 disabled:opacity-40 shrink-0"
                 >
-                  {loading ? <Loader2 size={18} color="white" className="animate-spin" /> : <Send size={18} color="white" />}
+                  {loading ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
                 </button>
               </div>
             </>
