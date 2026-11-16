@@ -13,7 +13,7 @@ export function WhatsAppLayout() {
   return (
     <div className="flex flex-col h-full">
       {/* Sub-nav */}
-      <div className="border-b border-gray-100 bg-white px-1 sm:px-4">
+      <div className="border-b border-gray-100 bg-surface px-1 sm:px-4">
         <nav className="flex">
           {TABS.map(({ to, end, icon: Icon, label }) => (
             <NavLink

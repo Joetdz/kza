@@ -268,14 +268,14 @@ export function Fundraising() {
         </div>
 
         <div className="grid sm:grid-cols-2 gap-4">
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+          <div className="bg-surface rounded-2xl shadow-sm border border-gray-100 p-5">
             <div className="flex items-center gap-2 text-sm text-gray-500 mb-2"><PiggyBank size={16} /> Montant levé</div>
             <div className="text-2xl font-bold text-gray-900">{fmt(stats.raised)} <span className="text-sm font-normal text-gray-400">/ {fmt(selected.targetAmount)}</span></div>
             <div className="w-full bg-gray-100 rounded-full h-2 mt-3">
               <div className="h-2 rounded-full bg-indigo-500" style={{ width: `${raisedPct}%` }} />
             </div>
           </div>
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+          <div className="bg-surface rounded-2xl shadow-sm border border-gray-100 p-5">
             <div className="flex items-center gap-2 text-sm text-gray-500 mb-2"><Users size={16} /> Remboursement</div>
             <div className="text-2xl font-bold text-gray-900">{fmt(stats.repaid)} <span className="text-sm font-normal text-gray-400">/ {fmt(stats.promised)}</span></div>
             <div className="w-full bg-gray-100 rounded-full h-2 mt-3">
@@ -290,7 +290,7 @@ export function Fundraising() {
           {selected.repaymentDueDate && <span className="flex items-center gap-1.5"><Calendar size={13} /> Échéance par défaut : <strong className="text-gray-700">{selected.repaymentDueDate}</strong></span>}
         </div>
 
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div className="bg-surface rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
           <div className="flex items-center justify-between p-4 pb-3">
             <h2 className="font-semibold text-gray-900 text-sm">Investisseurs</h2>
             <button onClick={openAddInvestment} className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-xl text-xs font-medium transition-colors">
@@ -469,7 +469,7 @@ export function Fundraising() {
               <button
                 key={c.id}
                 onClick={() => setSelectedId(c.id)}
-                className="text-left bg-white rounded-2xl p-5 shadow-sm border border-gray-100 hover:border-indigo-200 transition-all"
+                className="text-left bg-surface rounded-2xl p-5 shadow-sm border border-gray-100 hover:border-indigo-200 transition-all"
               >
                 <div className="flex items-start justify-between mb-2 gap-2">
                   <div className="font-semibold text-gray-900 truncate">{c.name}</div>

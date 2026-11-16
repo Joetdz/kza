@@ -433,7 +433,7 @@ export function Expenses() {
       .filter((n): n is string => !!n);
     const split = e.parts.length > 1;
     return (
-      <div key={e.key} className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 flex items-center gap-3">
+      <div key={e.key} className="bg-surface rounded-2xl p-4 shadow-sm border border-gray-100 flex items-center gap-3">
         <div
           className="w-2 rounded-full self-stretch"
           style={{ backgroundColor: catColor(e.category) }}
@@ -489,7 +489,7 @@ export function Expenses() {
       </div>
 
       {/* Recurring expenses — salaires, loyers, créances... auto-posted monthly */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+      <div className="bg-surface rounded-2xl shadow-sm border border-gray-100 p-4">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <Repeat size={16} className="text-indigo-500" />
@@ -544,7 +544,7 @@ export function Expenses() {
       </div>
 
       {/* Period: quick choices, or any two dates */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-3 space-y-2.5">
+      <div className="bg-surface rounded-2xl shadow-sm border border-gray-100 p-3 space-y-2.5">
         <div className="flex gap-1.5 overflow-x-auto scrollbar-hide">
           {PERIODS.map(p => (
             <button key={p.key} onClick={() => setDateRange(...p.range())} aria-pressed={activePeriod === p.key}
@@ -595,7 +595,7 @@ export function Expenses() {
           <div className="flex bg-gray-100 rounded-xl p-0.5 shrink-0">
             {([['grouped', LayoutList, 'Par catégorie'], ['list', List, 'Détail']] as const).map(([v, Icon, label]) => (
               <button key={v} onClick={() => chooseView(v)} aria-pressed={view === v}
-                className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold ${view === v ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}>
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold ${view === v ? 'bg-surface text-gray-900 shadow-sm' : 'text-gray-500'}`}>
                 <Icon size={13} /> {label}
               </button>
             ))}
@@ -608,7 +608,7 @@ export function Expenses() {
           const open = openGroups.has(g.cat);
           const share = filteredTotal > 0 ? (g.total / filteredTotal) * 100 : 0;
           return (
-            <div key={g.cat} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            <div key={g.cat} className="bg-surface rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
               <button onClick={() => toggleGroup(g.cat)} aria-expanded={open}
                 className="w-full flex items-center gap-3 p-4 text-left hover:bg-gray-50 transition-colors">
                 <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: catColor(g.cat) }} />
@@ -635,7 +635,7 @@ export function Expenses() {
         })}
 
         {view === 'grouped' && groups.length > 1 && (
-          <div className="flex items-center justify-between px-4 py-3 rounded-2xl bg-gray-900 text-white">
+          <div className="flex items-center justify-between px-4 py-3 rounded-2xl bg-ink text-white">
             <span className="text-sm font-semibold">Total de la période</span>
             <span className="text-lg font-black">{MAD(filteredTotal)}</span>
           </div>

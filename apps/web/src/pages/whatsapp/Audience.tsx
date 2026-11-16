@@ -68,7 +68,7 @@ function KpiCard({ icon: Icon, label, value, color }: {
   icon: React.ElementType; label: string; value: number; color: string;
 }) {
   return (
-    <div className="bg-white rounded-xl border border-gray-100 p-4 flex items-center gap-4 shadow-sm">
+    <div className="bg-surface rounded-xl border border-gray-100 p-4 flex items-center gap-4 shadow-sm">
       <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${color}`}>
         <Icon size={18} className="text-white" />
       </div>
@@ -93,7 +93,7 @@ function InlineSelect({
     <select
       value={value}
       onChange={e => onChange(e.target.value)}
-      className="text-xs border border-gray-200 rounded px-1.5 py-0.5 bg-white text-gray-700 outline-none focus:ring-1 focus:ring-indigo-400"
+      className="text-xs border border-gray-200 rounded px-1.5 py-0.5 bg-surface text-gray-700 outline-none focus:ring-1 focus:ring-indigo-400"
       onClick={e => e.stopPropagation()}
     >
       {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -225,7 +225,7 @@ export function Audience() {
       </div>
 
       {/* Filters */}
-      <div className="bg-white border border-gray-100 rounded-xl p-4 flex flex-wrap gap-3 items-center shadow-sm">
+      <div className="bg-surface border border-gray-100 rounded-xl p-4 flex flex-wrap gap-3 items-center shadow-sm">
         {/* Search */}
         <div className="flex items-center gap-2 flex-1 min-w-[200px] bg-gray-50 rounded-lg px-3 py-2 border border-gray-200">
           <Search size={14} className="text-gray-400 shrink-0" />
@@ -241,7 +241,7 @@ export function Audience() {
         <select
           value={filterConsent}
           onChange={e => setFilterConsent(e.target.value)}
-          className="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white text-gray-700 outline-none focus:ring-2 focus:ring-indigo-300"
+          className="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-surface text-gray-700 outline-none focus:ring-2 focus:ring-indigo-300"
         >
           <option value="">Consentement : Tous</option>
           <option value="unknown">Inconnu</option>
@@ -253,7 +253,7 @@ export function Audience() {
         <select
           value={filterStatus}
           onChange={e => setFilterStatus(e.target.value)}
-          className="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white text-gray-700 outline-none focus:ring-2 focus:ring-indigo-300"
+          className="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-surface text-gray-700 outline-none focus:ring-2 focus:ring-indigo-300"
         >
           <option value="">Statut : Tous</option>
           <option value="active">Actif</option>
@@ -265,7 +265,7 @@ export function Audience() {
       </div>
 
       {/* Table */}
-      <div className="bg-white border border-gray-100 rounded-xl overflow-hidden shadow-sm">
+      <div className="bg-surface border border-gray-100 rounded-xl overflow-hidden shadow-sm">
         {loading ? (
           <div className="flex items-center justify-center py-16 text-gray-400 text-sm">
             <span className="w-5 h-5 border-2 border-indigo-300 border-t-indigo-600 rounded-full animate-spin mr-3" />

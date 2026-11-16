@@ -124,7 +124,7 @@ export function Pricing() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Nav */}
-      <header className="sticky top-0 z-30 bg-white/80 backdrop-blur border-b border-gray-200">
+      <header className="sticky top-0 z-30 bg-surface/80 backdrop-blur border-b border-gray-200">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 flex items-center justify-between h-14">
           <button onClick={goToApp} className="text-xl font-black text-gray-900 tracking-tight hover:text-indigo-600 transition-colors">
             KZA
@@ -167,7 +167,7 @@ export function Pricing() {
               onClick={() => setAnnual(a => !a)}
               className={`relative w-12 h-6 rounded-full transition-colors ${annual ? 'bg-indigo-600' : 'bg-gray-300'}`}
             >
-              <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${annual ? 'translate-x-7' : 'translate-x-1'}`} />
+              <span className={`absolute top-1 w-4 h-4 bg-surface rounded-full shadow transition-transform ${annual ? 'translate-x-7' : 'translate-x-1'}`} />
             </button>
             <span className={`text-sm font-medium ${annual ? 'text-gray-900' : 'text-gray-400'}`}>
               Annuel
@@ -184,7 +184,7 @@ export function Pricing() {
               className={`relative rounded-2xl p-6 flex flex-col gap-5 transition-shadow
                 ${plan.featured
                   ? 'bg-indigo-600 text-white shadow-2xl shadow-indigo-200 ring-2 ring-indigo-600'
-                  : 'bg-white text-gray-900 shadow-sm border border-gray-200 hover:shadow-md'
+                  : 'bg-surface text-gray-900 shadow-sm border border-gray-200 hover:shadow-md'
                 }`}
             >
               {plan.featured && (
@@ -220,7 +220,7 @@ export function Pricing() {
                 onClick={goToApp}
                 className={`w-full py-2.5 rounded-xl text-sm font-semibold transition-colors
                   ${plan.featured
-                    ? 'bg-white text-indigo-700 hover:bg-indigo-50'
+                    ? 'bg-surface text-indigo-700 hover:bg-indigo-50'
                     : 'bg-indigo-600 text-white hover:bg-indigo-700'
                   }`}
               >
@@ -249,7 +249,7 @@ export function Pricing() {
             {FEATURES.map(({ Icon, color, plan, title, desc }) => {
               const c = ICON_COLORS[color];
               return (
-                <div key={title} className="bg-white rounded-2xl border border-gray-200 p-5 flex gap-4 hover:shadow-md transition-shadow">
+                <div key={title} className="bg-surface rounded-2xl border border-gray-200 p-5 flex gap-4 hover:shadow-md transition-shadow">
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${c.bg} ${c.text}`}>
                     <Icon size={18} />
                   </div>
@@ -271,7 +271,7 @@ export function Pricing() {
         {/* Comparison table */}
         <section className="space-y-6">
           <h2 className="text-2xl sm:text-3xl font-black text-gray-900 text-center">Comparaison détaillée</h2>
-          <div className="overflow-x-auto rounded-2xl border border-gray-200 bg-white shadow-sm">
+          <div className="overflow-x-auto rounded-2xl border border-gray-200 bg-surface shadow-sm">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100">
@@ -300,7 +300,7 @@ export function Pricing() {
                   ['Portail partenaire', false, false, true, true],
                   ['Marque blanche', false, false, false, true],
                 ].map((row, i) => (
-                  <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                  <tr key={i} className={i % 2 === 0 ? 'bg-surface' : 'bg-gray-50'}>
                     <td className="px-5 py-3 text-gray-700 font-medium">{row[0]}</td>
                     {row.slice(1).map((val, j) => (
                       <td key={j} className="px-4 py-3 text-center">
@@ -322,7 +322,7 @@ export function Pricing() {
           <p className="text-indigo-200 text-lg">Commencez gratuitement. Passez à un plan payant quand vous êtes prêt.</p>
           <button
             onClick={goToApp}
-            className="inline-flex items-center gap-2 bg-white text-indigo-700 font-bold px-8 py-3.5 rounded-2xl hover:bg-indigo-50 transition-colors text-sm"
+            className="inline-flex items-center gap-2 bg-surface text-indigo-700 font-bold px-8 py-3.5 rounded-2xl hover:bg-indigo-50 transition-colors text-sm"
           >
             <Zap size={16} /> Créer mon compte gratuitement
           </button>

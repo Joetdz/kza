@@ -345,7 +345,7 @@ export function Stock() {
             return (
               <div
                 key={p.id}
-                className={`bg-white rounded-2xl p-4 shadow-sm border transition-all ${isLow ? 'border-red-200 bg-red-50/30' : 'border-gray-100'}`}
+                className={`bg-surface rounded-2xl p-4 shadow-sm border transition-all ${isLow ? 'border-red-200 bg-red-50/30' : 'border-gray-100'}`}
               >
                 {/* Header : image + nom + badge */}
                 <div className="flex items-center gap-3 mb-3">
@@ -458,7 +458,7 @@ export function Stock() {
     const iconBtn = 'p-1.5 rounded-lg transition-colors';
     return (
       <div key={`group:${name}`}
-        className={`bg-white rounded-2xl p-4 shadow-sm border transition-all ${lowCount ? 'border-red-200' : 'border-gray-100'} ${open ? 'sm:col-span-2 xl:col-span-3' : ''}`}>
+        className={`bg-surface rounded-2xl p-4 shadow-sm border transition-all ${lowCount ? 'border-red-200' : 'border-gray-100'} ${open ? 'sm:col-span-2 xl:col-span-3' : ''}`}>
         <div className="flex items-center gap-3 mb-3">
           {image ? (
             <img src={resolveImageUrl(image)!} alt={name} className="w-11 h-11 rounded-xl object-cover shrink-0 border border-gray-100" />
@@ -589,7 +589,7 @@ export function Stock() {
           placeholder="Rechercher par nom, SKU, catégorie..."
           value={search}
           onChange={e => setSearch(e.target.value)}
-          className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
+          className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-300 bg-surface"
         />
       </div>
 
@@ -662,7 +662,7 @@ export function Stock() {
                 onClick={() => setVariantMode(v => !v)}
                 className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${variantMode ? 'bg-indigo-600' : 'bg-gray-300'}`}
               >
-                <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform ${variantMode ? 'translate-x-5' : 'translate-x-0'}`} />
+                <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-surface rounded-full shadow-sm transition-transform ${variantMode ? 'translate-x-5' : 'translate-x-0'}`} />
               </button>
             </div>
           )}
@@ -678,7 +678,7 @@ export function Stock() {
               onClick={() => setForm(f => ({ ...f, trackStock: !f.trackStock }))}
               className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${form.trackStock ? 'bg-indigo-600' : 'bg-gray-300'}`}
             >
-              <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform ${form.trackStock ? 'translate-x-5' : 'translate-x-0'}`} />
+              <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-surface rounded-full shadow-sm transition-transform ${form.trackStock ? 'translate-x-5' : 'translate-x-0'}`} />
             </button>
           </div>
 
@@ -730,7 +730,7 @@ export function Stock() {
                 <select
                   value={form.durationMinutes ?? ''}
                   onChange={e => setForm(f => ({ ...f, durationMinutes: e.target.value ? Number(e.target.value) : null }))}
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300 bg-surface"
                 >
                   <option value="">Durée par défaut de l'agenda</option>
                   {[10, 15, 20, 30, 45, 60, 75, 90, 120, 150, 180, 240].map(m => <option key={m} value={m}>{m} min</option>)}
@@ -751,13 +751,13 @@ export function Stock() {
                   <NumberInput
                     value={t.minQty}
                     onChange={v => setForm(f => ({ ...f, priceTiers: (f.priceTiers ?? []).map((x, j) => j === i ? { ...x, minQty: v } : x) }))}
-                    className="w-20 border border-gray-200 rounded-lg px-2 py-1 text-sm text-right outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
+                    className="w-20 border border-gray-200 rounded-lg px-2 py-1 text-sm text-right outline-none focus:ring-2 focus:ring-indigo-300 bg-surface"
                   />
                   <span className="text-gray-500 text-xs">unités :</span>
                   <NumberInput
                     value={t.unitPrice}
                     onChange={v => setForm(f => ({ ...f, priceTiers: (f.priceTiers ?? []).map((x, j) => j === i ? { ...x, unitPrice: v } : x) }))}
-                    className="w-24 border border-gray-200 rounded-lg px-2 py-1 text-sm text-right outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
+                    className="w-24 border border-gray-200 rounded-lg px-2 py-1 text-sm text-right outline-none focus:ring-2 focus:ring-indigo-300 bg-surface"
                   />
                   <span className="text-gray-400 text-xs">{currency}/u</span>
                   <button type="button" onClick={() => setForm(f => ({ ...f, priceTiers: (f.priceTiers ?? []).filter((_, j) => j !== i) }))}
@@ -781,13 +781,13 @@ export function Stock() {
                     value={axis.name}
                     onChange={e => setAxes(list => list.map((a, j) => j === i ? { ...a, name: e.target.value } : a))}
                     placeholder="Taille"
-                    className="border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
+                    className="border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-300 bg-surface"
                   />
                   <input
                     value={axis.values}
                     onChange={e => setAxes(list => list.map((a, j) => j === i ? { ...a, values: e.target.value } : a))}
                     placeholder="S, M, L, XL"
-                    className="border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
+                    className="border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-300 bg-surface"
                   />
                   <button type="button" onClick={() => setAxes(list => list.filter((_, j) => j !== i))}
                     className="p-2 text-gray-400 hover:text-red-500" title="Retirer">
@@ -810,7 +810,7 @@ export function Stock() {
                   </p>
                   <div className="max-h-48 overflow-y-auto space-y-1 pr-1">
                     {variantLabels.map(label => (
-                      <div key={label} className="flex items-center gap-2 bg-white rounded-lg px-3 py-1.5 border border-gray-100">
+                      <div key={label} className="flex items-center gap-2 bg-surface rounded-lg px-3 py-1.5 border border-gray-100">
                         <span className="flex-1 text-sm text-gray-700 truncate">{label}</span>
                         {form.trackStock && (
                           <NumberInput
@@ -848,7 +848,7 @@ export function Stock() {
                   className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition-colors border ${
                     movForm.type === t
                       ? t === 'in' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-amber-500 text-white border-amber-500'
-                      : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                      : 'bg-surface text-gray-600 border-gray-200 hover:bg-gray-50'
                   }`}
                 >
                   {t === 'in' ? '↑ Entrée' : '↓ Sortie'}

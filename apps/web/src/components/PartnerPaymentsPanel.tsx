@@ -107,7 +107,7 @@ export function PartnerPaymentsPanel({ payments, onPaymentsChange }: {
   return (
     <div className="space-y-5">
       {/* What the partners owe */}
-      <div className="bg-gray-900 text-white rounded-2xl p-4">
+      <div className="bg-ink text-white rounded-2xl p-4">
         <p className="text-xs text-white/60">Les partenaires te doivent encore</p>
         <p className="text-2xl font-black mt-1">{fmtMoney(owedUsd, 'USD')} · {fmtMoney(owedCdf, 'CDF')}</p>
         <p className="text-[11px] text-white/50 mt-1">
@@ -117,7 +117,7 @@ export function PartnerPaymentsPanel({ payments, onPaymentsChange }: {
       </div>
 
       {/* Where the tracking starts: before it, everything is settled. */}
-      <div className={`rounded-2xl p-4 border ${untracked ? 'bg-amber-50 border-amber-200' : 'bg-white border-gray-100 shadow-sm'}`}>
+      <div className={`rounded-2xl p-4 border ${untracked ? 'bg-amber-50 border-amber-200' : 'bg-surface border-gray-100 shadow-sm'}`}>
         <div className="flex items-start gap-3">
           <CalendarClock size={18} className={untracked ? 'text-amber-600 mt-0.5' : 'text-gray-400 mt-0.5'} />
           <div className="flex-1 min-w-0">
@@ -131,7 +131,7 @@ export function PartnerPaymentsPanel({ payments, onPaymentsChange }: {
             </p>
             <div className="flex items-center gap-2 mt-2 flex-wrap">
               <input type="date" value={startDate} max={ymd(new Date())} onChange={e => setStartDate(e.target.value)}
-                className="border border-gray-200 rounded-xl px-2.5 py-1.5 text-xs bg-white" />
+                className="border border-gray-200 rounded-xl px-2.5 py-1.5 text-xs bg-surface" />
               <button onClick={() => {
                 if (window.confirm(`Tout ce qui a été livré avant le ${shortDate(startDate)} sera considéré comme versé. Continuer ?`)) startTracking(startDate);
               }} disabled={starting || !startDate}
@@ -152,7 +152,7 @@ export function PartnerPaymentsPanel({ payments, onPaymentsChange }: {
         ) : (
           <div className="grid gap-2 sm:grid-cols-2">
             {balances.map(b => (
-              <div key={b.partner.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+              <div key={b.partner.id} className="bg-surface rounded-2xl border border-gray-100 shadow-sm p-4">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <p className="font-semibold text-gray-900 text-sm truncate flex items-center gap-1.5"><Truck size={14} className="text-gray-400" /> {b.partner.name}</p>
@@ -198,17 +198,17 @@ export function PartnerPaymentsPanel({ payments, onPaymentsChange }: {
             className="shrink-0 border border-gray-200 rounded-xl px-2 py-1 text-xs" aria-label="Au" />
         </div>
         <div className="grid grid-cols-3 gap-2">
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3">
+          <div className="bg-surface rounded-2xl border border-gray-100 shadow-sm p-3">
             <p className="text-[11px] text-gray-500">Attendu (livré)</p>
             <p className="text-sm font-black text-gray-900">{fmtMoney(dueIn('Usd'), 'USD')}</p>
             <p className="text-sm font-black text-gray-900">{fmtMoney(dueIn('Cdf'), 'CDF')}</p>
           </div>
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3">
+          <div className="bg-surface rounded-2xl border border-gray-100 shadow-sm p-3">
             <p className="text-[11px] text-gray-500">Versé (confirmé)</p>
             <p className="text-sm font-black text-green-700">{fmtMoney(received('USD'), 'USD')}</p>
             <p className="text-sm font-black text-green-700">{fmtMoney(received('CDF'), 'CDF')}</p>
           </div>
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3">
+          <div className="bg-surface rounded-2xl border border-gray-100 shadow-sm p-3">
             <p className="text-[11px] text-gray-500">Reste de ces livraisons</p>
             <p className="text-sm font-black text-red-600">{fmtMoney(restIn('Usd'), 'USD')}</p>
             <p className="text-sm font-black text-red-600">{fmtMoney(restIn('Cdf'), 'CDF')}</p>
@@ -232,7 +232,7 @@ export function PartnerPaymentsPanel({ payments, onPaymentsChange }: {
                 : pay.status === 'rejected' ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-700';
               const badgeLabel = pay.status === 'confirmed' ? 'Confirmé' : pay.status === 'rejected' ? 'Rejeté' : 'En attente';
               return (
-                <div key={pay.id} className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
+                <div key={pay.id} className="bg-surface rounded-2xl p-4 border border-gray-100 shadow-sm">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap mb-1">

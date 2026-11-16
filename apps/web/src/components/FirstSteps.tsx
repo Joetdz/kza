@@ -52,7 +52,7 @@ export function FirstSteps() {
   };
 
   return (
-    <div className="bg-white rounded-2xl p-5 shadow-sm border border-indigo-100">
+    <div className="bg-surface rounded-2xl p-5 shadow-sm border border-indigo-100">
       <div className="flex items-start justify-between gap-3 mb-3">
         <div className="min-w-0">
           <h2 className="font-semibold text-gray-900">Premiers pas {segment ? `· ${segment.emoji} ${segment.label}` : ''}</h2>

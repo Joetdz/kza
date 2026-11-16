@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
-  XAxis, YAxis, Tooltip, ResponsiveContainer, Legend,
+  XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid,
 } from 'recharts';
 import {
   TrendingUp, DollarSign, CreditCard, Package,
@@ -13,12 +13,13 @@ import {
   computeGlobalKpis, computeProductAnalytics,
   getSalesTimeSeries, getChannelRevenue, getExpenseBreakdown,
 } from '../utils/calculations';
-import { pct, formatDateShort, CHANNEL_COLORS, EXPENSE_LABELS, EXPENSE_COLORS, CHART_COLORS } from '../utils/formatters';
+import { pct, formatDateShort, CHANNEL_COLORS, EXPENSE_LABELS, EXPENSE_COLORS } from '../utils/formatters';
 import { KpiCard } from '../components/ui/KpiCard';
 import { Badge } from '../components/ui/Badge';
 import { FirstSteps } from '../components/FirstSteps';
 import { useModules } from '../hooks/useModules';
 import { useSegment } from '../hooks/useSegment';
+import { useChartTheme } from '../hooks/useChartTheme';
 import { allItems } from '@kza/shared';
 
 export function Dashboard() {
@@ -26,6 +27,7 @@ export function Dashboard() {
   const { fmt: MAD } = useCurrency();
   const { has } = useModules();
   const { terms, words } = useSegment();
+  const chart = useChartTheme();
   // Services-only businesses have no stock to watch.
   const tracksStock = has('stock');
   const { from, to } = dateRange;
@@ -117,18 +119,18 @@ export function Dashboard() {
     <div className="space-y-6 overflow-x-hidden">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="min-w-0">
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Dashboard</h1>
-          <p className="text-sm text-gray-500 mt-1">
+          <h1 className="text-xl sm:text-2xl font-bold text-fg">Dashboard</h1>
+          <p className="text-sm text-fg-3 mt-1">
             {selectedProduct ? `Vue détaillée — ${selectedProduct.name}` : "Vue d'ensemble de votre activité"}
           </p>
         </div>
         {/* Product filter */}
         <div className="flex items-center gap-2">
-          <Filter size={15} className="text-gray-400" />
+          <Filter size={15} className="text-fg-4" />
           <select
             value={selectedProductId}
             onChange={e => setSelectedProductId(e.target.value)}
-            className="border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
+            className="border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-300 bg-surface"
           >
             <option value="all">{allItems(terms)}</option>
             {products.map(p => (
@@ -141,7 +143,7 @@ export function Dashboard() {
       {selectedProductId === 'all' && <FirstSteps />}
 
       {/* KPI Row 1 */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 stagger">
         <KpiCard
           label="Chiffre d'affaires"
           value={MAD(kpis.totalRevenue)}
@@ -175,7 +177,7 @@ export function Dashboard() {
       </div>
 
       {/* KPI Row 2 */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 stagger">
         <KpiCard
           label="Panier moyen"
           value={MAD(kpis.avgOrderValue)}
@@ -211,42 +213,44 @@ export function Dashboard() {
       </div>
 
       {/* Charts Row 1 */}
-      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-        <div className="sm:col-span-2 lg:col-span-2 bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-          <h2 className="font-semibold text-gray-900 mb-4">CA & Profit — Évolution</h2>
+      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6 stagger">
+        <div className="sm:col-span-2 lg:col-span-2 card p-5">
+          <h2 className="font-semibold text-fg mb-4">CA & Profit — Évolution</h2>
           {timeSeries.length > 0 ? (
             <ResponsiveContainer width="100%" height={220}>
               <AreaChart data={timeSeries} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
                 <defs>
                   <linearGradient id="gradRevenue" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#6366f1" stopOpacity={0.15} />
-                    <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                    <stop offset="5%" stopColor={chart.brand} stopOpacity={0.25} />
+                    <stop offset="95%" stopColor={chart.brand} stopOpacity={0} />
                   </linearGradient>
                   <linearGradient id="gradProfit" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.15} />
-                    <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                    <stop offset="5%" stopColor={chart.success} stopOpacity={0.2} />
+                    <stop offset="95%" stopColor={chart.success} stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <XAxis dataKey="date" tickFormatter={formatAxisDate} tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `${Math.round(v / 1000)}k`} />
+                <CartesianGrid vertical={false} stroke={chart.grid} />
+                <XAxis dataKey="date" tickFormatter={formatAxisDate} tick={{ fontSize: chart.tickFontSize, fill: chart.axis }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: chart.tickFontSize, fill: chart.axis }} tickFormatter={v => `${Math.round(v / 1000)}k`} axisLine={false} tickLine={false} width={36} />
                 <Tooltip
+                  {...chart.tooltip}
                   formatter={(v: number, name: string) => [MAD(v), name === 'revenue' ? 'CA' : 'Profit']}
                   labelFormatter={formatAxisDate}
                 />
-                <Area type="monotone" dataKey="revenue" stroke="#6366f1" fill="url(#gradRevenue)" strokeWidth={2} name="revenue" />
-                <Area type="monotone" dataKey="profit" stroke="#10b981" fill="url(#gradProfit)" strokeWidth={2} name="profit" />
-                <Legend formatter={v => v === 'revenue' ? 'CA' : 'Profit'} />
+                <Area type="monotone" dataKey="revenue" stroke={chart.brand} fill="url(#gradRevenue)" strokeWidth={2} name="revenue" dot={false} activeDot={{ r: 5, strokeWidth: 2 }} />
+                <Area type="monotone" dataKey="profit" stroke={chart.success} fill="url(#gradProfit)" strokeWidth={2} name="profit" dot={false} activeDot={{ r: 5, strokeWidth: 2 }} />
+                <Legend formatter={v => v === 'revenue' ? 'CA' : 'Profit'} iconType="circle" wrapperStyle={{ fontSize: 12, color: chart.axis }} />
               </AreaChart>
             </ResponsiveContainer>
           ) : (
-            <div className="h-52 flex items-center justify-center text-gray-400 text-sm">
+            <div className="h-52 flex items-center justify-center text-fg-4 text-sm">
               Pas de ventes sur la période sélectionnée
             </div>
           )}
         </div>
 
-        <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-          <h2 className="font-semibold text-gray-900 mb-4">Dépenses par catégorie</h2>
+        <div className="card p-5">
+          <h2 className="font-semibold text-fg mb-4">Dépenses par catégorie</h2>
           {expenseBreakdown.length > 0 ? (
             <ResponsiveContainer width="100%" height={220}>
               <PieChart>
@@ -256,19 +260,23 @@ export function Dashboard() {
                   nameKey="name"
                   cx="50%"
                   cy="50%"
+                  innerRadius={48}
                   outerRadius={80}
+                  paddingAngle={2}
+                  stroke="none"
                   label={({ name, percent }) => `${EXPENSE_LABELS[name] ?? name} ${(percent * 100).toFixed(0)}%`}
                   labelLine={false}
+                  style={{ fontSize: 11, fill: chart.axis }}
                 >
-                  {expenseBreakdown.map((entry) => (
-                    <Cell key={entry.name} fill={EXPENSE_COLORS[entry.name] ?? CHART_COLORS[0]} />
+                  {expenseBreakdown.map((entry, i) => (
+                    <Cell key={entry.name} fill={EXPENSE_COLORS[entry.name] ?? chart.colors[i % chart.colors.length]} />
                   ))}
                 </Pie>
-                <Tooltip formatter={(v: number, name: string) => [MAD(v), EXPENSE_LABELS[name] ?? name]} />
+                <Tooltip {...chart.tooltip} formatter={(v: number, name: string) => [MAD(v), EXPENSE_LABELS[name] ?? name]} />
               </PieChart>
             </ResponsiveContainer>
           ) : (
-            <div className="h-52 flex items-center justify-center text-gray-400 text-sm">
+            <div className="h-52 flex items-center justify-center text-fg-4 text-sm">
               Aucune dépense sur la période
             </div>
           )}
@@ -277,16 +285,17 @@ export function Dashboard() {
 
       {/* Channel Revenue */}
       {channelData.length > 0 && (
-        <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-          <h2 className="font-semibold text-gray-900 mb-4">CA par canal de vente</h2>
+        <div className="card p-5">
+          <h2 className="font-semibold text-fg mb-4">CA par canal de vente</h2>
           <ResponsiveContainer width="100%" height={180}>
             <BarChart data={channelData} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
-              <XAxis dataKey="channel" tick={{ fontSize: 12 }} />
-              <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `${Math.round(v / 1000)}k`} />
-              <Tooltip formatter={(v: number) => MAD(v)} />
-              <Bar dataKey="revenue" radius={[6, 6, 0, 0]}>
+              <CartesianGrid vertical={false} stroke={chart.grid} />
+              <XAxis dataKey="channel" tick={{ fontSize: 12, fill: chart.axis }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: chart.tickFontSize, fill: chart.axis }} tickFormatter={v => `${Math.round(v / 1000)}k`} axisLine={false} tickLine={false} width={36} />
+              <Tooltip {...chart.tooltip} formatter={(v: number) => MAD(v)} />
+              <Bar dataKey="revenue" radius={[6, 6, 0, 0]} maxBarSize={48}>
                 {channelData.map((entry) => (
-                  <Cell key={entry.channel} fill={CHANNEL_COLORS[entry.channel] ?? '#6366f1'} />
+                  <Cell key={entry.channel} fill={CHANNEL_COLORS[entry.channel] ?? chart.brand} />
                 ))}
               </Bar>
             </BarChart>
@@ -298,23 +307,23 @@ export function Dashboard() {
       <div className="grid sm:grid-cols-2 gap-6">
         {/* Top Products — hidden when filtering a single product */}
         {selectedProductId === 'all' && (
-          <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-            <h2 className="font-semibold text-gray-900 mb-4">Top {terms.items} (CA)</h2>
+          <div className="card p-5">
+            <h2 className="font-semibold text-fg mb-4">Top {terms.items} (CA)</h2>
             <div className="space-y-3">
               {topProducts.map(({ product, rev }, i) => (
-                <div key={product!.id} className="flex items-center gap-3">
-                  <div className="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-600 text-xs font-bold flex items-center justify-center shrink-0">
+                <div key={product!.id} className="flex items-center gap-3 animate-fade-in-up" style={{ animationDelay: `${i * 50}ms` }}>
+                  <div className="w-7 h-7 rounded-lg bg-indigo-600/10 text-indigo-700 text-xs font-bold flex items-center justify-center shrink-0">
                     {i + 1}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-gray-900 truncate">{product!.name}</div>
-                    <div className="text-xs text-gray-500">{product!.sku}</div>
+                    <div className="text-sm font-medium text-fg truncate">{product!.name}</div>
+                    <div className="text-xs text-fg-3">{product!.sku}</div>
                   </div>
-                  <div className="text-sm font-semibold text-gray-900">{MAD(rev)}</div>
+                  <div className="text-sm font-semibold text-fg">{MAD(rev)}</div>
                 </div>
               ))}
               {topProducts.length === 0 && (
-                <p className="text-sm text-gray-400 text-center py-4">Aucune vente enregistrée</p>
+                <p className="text-sm text-fg-4 text-center py-4">Aucune vente enregistrée</p>
               )}
             </div>
           </div>
@@ -322,8 +331,8 @@ export function Dashboard() {
 
         {/* Product detail card when a product is selected */}
         {selectedProduct && productAnalytics && (
-          <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-            <h2 className="font-semibold text-gray-900 mb-4">Détail — {selectedProduct.name}</h2>
+          <div className="card p-5">
+            <h2 className="font-semibold text-fg mb-4">Détail — {selectedProduct.name}</h2>
             <div className="space-y-3">
               {[
                 { label: 'Unités vendues', value: `${productAnalytics.totalUnitsSold} unités` },
@@ -335,8 +344,8 @@ export function Dashboard() {
                 { label: 'Rotation stock', value: productAnalytics.stockRotationDays < 9999 ? `${productAnalytics.stockRotationDays}j` : '—' },
               ].map(row => (
                 <div key={row.label} className="flex justify-between text-sm">
-                  <span className="text-gray-500">{row.label}</span>
-                  <span className="font-semibold text-gray-900">{row.value}</span>
+                  <span className="text-fg-3">{row.label}</span>
+                  <span className="font-semibold text-fg">{row.value}</span>
                 </div>
               ))}
             </div>
@@ -344,8 +353,8 @@ export function Dashboard() {
         )}
 
         {/* Low Stock Alerts */}
-        {tracksStock && <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-          <h2 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+        {tracksStock && <div className="card p-5">
+          <h2 className="font-semibold text-fg mb-4 flex items-center gap-2">
             <AlertTriangle size={18} className="text-amber-500" />
             Alertes stock
           </h2>
@@ -354,19 +363,19 @@ export function Dashboard() {
               {lowStockProducts.map(p => (
                 <div key={p.id} className="flex items-center gap-3 p-3 bg-red-50 rounded-xl border border-red-100">
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-gray-900 truncate">{p.name}</div>
-                    <div className="text-xs text-gray-500">{p.supplier}</div>
+                    <div className="text-sm font-medium text-fg truncate">{p.name}</div>
+                    <div className="text-xs text-fg-3">{p.supplier}</div>
                   </div>
                   <div className="text-right shrink-0">
                     <div className="text-lg font-bold text-red-600">{p.quantity}</div>
-                    <div className="text-xs text-gray-400">seuil: {p.alertThreshold}</div>
+                    <div className="text-xs text-fg-4">seuil: {p.alertThreshold}</div>
                   </div>
                   <Badge color="red" size="sm">Critique</Badge>
                 </div>
               ))}
             </div>
           ) : (
-            <div className="flex flex-col items-center justify-center py-8 text-gray-400">
+            <div className="flex flex-col items-center justify-center py-8 text-fg-4">
               <Package size={36} className="mb-2 text-emerald-400" />
               <p className="text-sm">
                 {selectedProduct ? `Stock ${selectedProduct.name} OK` : 'Tous les stocks sont OK'}

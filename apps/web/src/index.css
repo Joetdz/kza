@@ -1,93 +1,233 @@
+@import './styles/tokens.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* ── Base ─────────────────────────────────────────────────────────────────── */
 @layer base {
   * {
     -webkit-tap-highlight-color: transparent;
   }
+  html {
+    color-scheme: light;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+  [data-theme="dark"] {
+    color-scheme: dark;
+  }
   body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    @apply bg-canvas text-fg font-sans;
+    /* Money everywhere: digits of equal width line up in every list and table. */
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'cv11', 'ss01', 'tnum';
+    /* A faint brand glow at the top: depth without a heavy gradient. */
+    background-image:
+      radial-gradient(900px 500px at 8% -10%, rgb(var(--indigo-500) / 0.10), transparent 60%),
+      radial-gradient(700px 400px at 100% 0%, rgb(var(--accent) / 0.07), transparent 55%);
+    background-attachment: fixed;
+    background-repeat: no-repeat;
   }
-}
-
-@layer utilities {
-  .scrollbar-hide::-webkit-scrollbar { display: none; }
-  .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
-}
-
-@layer utilities {
-  @keyframes slide-up {
-    from { transform: translateY(100%); opacity: 0; }
-    to   { transform: translateY(0);    opacity: 1; }
+  [data-theme="dark"] body {
+    background-image:
+      radial-gradient(900px 500px at 8% -10%, rgb(var(--indigo-500) / 0.16), transparent 60%),
+      radial-gradient(700px 400px at 100% 0%, rgb(var(--accent) / 0.06), transparent 55%);
   }
-  .animate-slide-up { animation: slide-up 0.35s cubic-bezier(0.34,1.56,0.64,1) both; }
+  /* Native fields follow the theme even where a page gives them no background class. */
+  input:not([type='checkbox']):not([type='radio']):not([type='range']), select, textarea {
+    @apply bg-surface text-fg;
+  }
+  ::placeholder {
+    @apply text-fg-4;
+  }
+  select option {
+    @apply bg-surface text-fg;
+  }
+  :focus-visible {
+    outline: 2px solid rgb(var(--indigo-500) / 0.6);
+    outline-offset: 2px;
+  }
+  /* Colours ease on every button; the press effect belongs to <Button> only, since many
+     buttons are positioned with a transform of their own. */
+  button, [role='button'] {
+    @apply transition-[background-color,color,border-color,box-shadow,opacity] duration-150;
+  }
+  /* Thin, quiet scrollbars. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--line-strong)) transparent;
+  }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb { background: rgb(var(--line-strong)); border-radius: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
 }
 
-@layer utilities {
-  /* Shimmer skeleton */
-  @keyframes shimmer {
-    0% { background-position: -400px 0; }
-    100% { background-position: 400px 0; }
+/* ── Components ───────────────────────────────────────────────────────────── */
+@layer components {
+  /* Glass: a translucent surface over the canvas, for bars, drawers and floating panels. */
+  .glass {
+    background-color: rgb(var(--glass) / 0.72);
+    -webkit-backdrop-filter: blur(18px) saturate(1.5);
+    backdrop-filter: blur(18px) saturate(1.5);
+    border-color: rgb(var(--line) / 0.7);
+  }
+  .glass-strong {
+    background-color: rgb(var(--glass) / 0.88);
+    -webkit-backdrop-filter: blur(24px) saturate(1.6);
+    backdrop-filter: blur(24px) saturate(1.6);
+    border-color: rgb(var(--line) / 0.8);
+  }
+  /* The card: solid, so figures stay readable, with a soft lift. */
+  .card {
+    @apply bg-surface rounded-2xl border border-line shadow-soft;
+  }
+  .card-hover {
+    @apply transition-[box-shadow,transform,border-color] duration-200 hover:shadow-card hover:border-line-strong hover:-translate-y-0.5;
   }
   .skeleton {
-    background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+    background: linear-gradient(90deg, rgb(var(--surface-2)) 25%, rgb(var(--surface-3)) 50%, rgb(var(--surface-2)) 75%);
     background-size: 400px 100%;
     animation: shimmer 1.4s ease infinite;
     border-radius: 0.75rem;
   }
-
-  /* Fade in up */
-  @keyframes fadeInUp {
-    from { opacity: 0; transform: translateY(12px); }
-    to   { opacity: 1; transform: none; }
-  }
-  .animate-fade-in-up {
-    animation: fadeInUp 0.3s ease both;
-  }
-
-  /* Fade in */
-  @keyframes fadeIn {
-    from { opacity: 0; }
-    to   { opacity: 1; }
-  }
-  .animate-fade-in {
-    animation: fadeIn 0.25s ease both;
-  }
-
-  /* Toast slide in from right */
-  @keyframes slideInRight {
-    from { opacity: 0; transform: translateX(100%); }
-    to   { opacity: 1; transform: translateX(0); }
-  }
-  .animate-slide-in-right {
-    animation: slideInRight 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) both;
-  }
-
-  /* Toast slide out */
-  @keyframes slideOutRight {
-    from { opacity: 1; transform: translateX(0); }
-    to   { opacity: 0; transform: translateX(100%); }
-  }
-  .animate-slide-out-right {
-    animation: slideOutRight 0.25s ease both;
-  }
-
-  /* Spinner */
-  @keyframes spin {
-    to { transform: rotate(360deg); }
-  }
   .spinner {
     width: 16px;
     height: 16px;
-    border: 2px solid rgba(255,255,255,0.3);
+    border: 2px solid rgba(255, 255, 255, 0.3);
     border-top-color: white;
     border-radius: 50%;
     animation: spin 0.7s linear infinite;
     display: inline-block;
   }
   .spinner-dark {
-    border-color: rgba(99,102,241,0.2);
-    border-top-color: #6366f1;
+    border-color: rgb(var(--indigo-500) / 0.2);
+    border-top-color: rgb(var(--indigo-500));
+  }
+}
+
+/* ── Charts (recharts): one look for every chart, in both themes ─────────── */
+/* Presentation attributes (fill="#666") lose to any CSS rule; the tooltip's inline
+   styles need !important. */
+.recharts-cartesian-axis-tick-value,
+.recharts-polar-angle-axis-tick-value,
+.recharts-label {
+  fill: rgb(var(--fg-3));
+  font-size: 11px;
+}
+.recharts-cartesian-axis-line,
+.recharts-cartesian-axis-tick-line {
+  stroke: rgb(var(--line));
+}
+.recharts-cartesian-grid line {
+  stroke: rgb(var(--line) / 0.8);
+}
+.recharts-legend-item-text {
+  color: rgb(var(--fg-2)) !important;
+  font-size: 12px;
+}
+.recharts-default-tooltip {
+  background: rgb(var(--glass) / 0.92) !important;
+  border: 1px solid rgb(var(--line)) !important;
+  border-radius: 14px !important;
+  box-shadow: 0 12px 40px -12px rgb(15 23 42 / 0.25);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  padding: 8px 12px !important;
+  font-size: 12px;
+}
+.recharts-tooltip-label {
+  color: rgb(var(--fg-2)) !important;
+  font-weight: 600;
+  margin-bottom: 4px !important;
+}
+.recharts-tooltip-item {
+  color: rgb(var(--fg)) !important;
+}
+.recharts-tooltip-cursor {
+  fill: rgb(var(--fg) / 0.04);
+}
+/* Lines and areas draw in from the left when a chart appears. */
+.recharts-area-curve,
+.recharts-line-curve {
+  stroke-dasharray: 12000;
+  stroke-dashoffset: 12000;
+  animation: chart-draw 0.9s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+@keyframes chart-draw {
+  to { stroke-dashoffset: 0; }
+}
+
+/* ── Utilities ────────────────────────────────────────────────────────────── */
+@layer utilities {
+  .scrollbar-hide::-webkit-scrollbar { display: none; }
+  .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+
+  @keyframes slide-up {
+    from { transform: translateY(100%); opacity: 0; }
+    to   { transform: translateY(0);    opacity: 1; }
+  }
+  .animate-slide-up { animation: slide-up 0.35s cubic-bezier(0.34,1.56,0.64,1) both; }
+
+  @keyframes shimmer {
+    0% { background-position: -400px 0; }
+    100% { background-position: 400px 0; }
+  }
+
+  @keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: none; }
+  }
+  .animate-fade-in-up { animation: fadeInUp 0.3s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+  .animate-fade-in { animation: fadeIn 0.25s ease both; }
+
+  @keyframes slideInRight {
+    from { opacity: 0; transform: translateX(100%); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+  .animate-slide-in-right { animation: slideInRight 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+
+  @keyframes slideOutRight {
+    from { opacity: 1; transform: translateX(0); }
+    to   { opacity: 0; transform: translateX(100%); }
+  }
+  .animate-slide-out-right { animation: slideOutRight 0.25s ease both; }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  /* Children appear one after the other: KPI rows, lists, grids. */
+  .stagger > * { animation: fadeInUp 0.35s cubic-bezier(0.22, 1, 0.36, 1) both; }
+  .stagger > *:nth-child(1)  { animation-delay: 0ms; }
+  .stagger > *:nth-child(2)  { animation-delay: 40ms; }
+  .stagger > *:nth-child(3)  { animation-delay: 80ms; }
+  .stagger > *:nth-child(4)  { animation-delay: 120ms; }
+  .stagger > *:nth-child(5)  { animation-delay: 160ms; }
+  .stagger > *:nth-child(6)  { animation-delay: 200ms; }
+  .stagger > *:nth-child(7)  { animation-delay: 240ms; }
+  .stagger > *:nth-child(8)  { animation-delay: 280ms; }
+  .stagger > *:nth-child(9)  { animation-delay: 320ms; }
+  .stagger > *:nth-child(10) { animation-delay: 360ms; }
+  .stagger > *:nth-child(11) { animation-delay: 400ms; }
+  .stagger > *:nth-child(12) { animation-delay: 440ms; }
+  .stagger > *:nth-child(n+13) { animation-delay: 480ms; }
+
+  /* Room for the mobile bottom bar, above the phone's home indicator. */
+  .pb-mobile-nav { padding-bottom: calc(5rem + env(safe-area-inset-bottom)); }
+}
+
+/* Motion is a courtesy: anyone who asked for less gets none. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

@@ -68,15 +68,17 @@ export const EXPENSE_LABELS: Record<string, string> = {
 };
 
 export const EXPENSE_COLORS: Record<string, string> = {
-  pub: '#6366f1',
+  pub: '#5B5FEA',
   transport: '#f59e0b',
   stock: '#10b981',
   other: '#6b7280',
 };
 
+// Categorical palette, validated for colour-vision deficiency and contrast on the light
+// surface (scripts: dataviz validate_palette). Fixed order, never cycled by rank.
 export const CHART_COLORS = [
-  '#6366f1', '#10b981', '#f59e0b', '#ef4444',
-  '#8b5cf6', '#06b6d4', '#f97316', '#ec4899',
+  '#5B5FEA', '#0D9488', '#D97706', '#E11D48',
+  '#0284C7', '#7C3AED', '#F97316', '#EC4899',
 ];
 
 export const CLASS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {

@@ -201,7 +201,7 @@ function AudioRecorder({ mediaId, existingAudioUrl, onSaved, onCancel }: {
             <span className="text-xs text-gray-400">Enregistrement...</span>
           </div>
           <button onClick={stopRecording}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gray-800 hover:bg-gray-900 text-white text-sm font-semibold transition-colors">
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-ink-2 hover:bg-ink text-white text-sm font-semibold transition-colors">
             <Square size={13} />
             Arrêter
           </button>
@@ -420,7 +420,7 @@ function JingleStudio({ mediaId, product, onSaved, onCancel }: {
           <div className="grid grid-cols-2 gap-1.5">
             {JINGLE_STYLES.map(s => (
               <button key={s.id} onClick={() => setStyle(s.id)}
-                className={`flex items-center gap-1.5 px-2.5 py-2 rounded-xl text-xs font-medium transition-all text-left ${style === s.id ? 'bg-indigo-600 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:border-indigo-300'}`}>
+                className={`flex items-center gap-1.5 px-2.5 py-2 rounded-xl text-xs font-medium transition-all text-left ${style === s.id ? 'bg-indigo-600 text-white' : 'bg-surface text-gray-600 border border-gray-200 hover:border-indigo-300'}`}>
                 <span>{s.emoji}</span>{s.label}
               </button>
             ))}
@@ -447,7 +447,7 @@ function JingleStudio({ mediaId, product, onSaved, onCancel }: {
             value={script}
             onChange={e => setScript(e.target.value)}
             rows={4}
-            className="w-full border border-indigo-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-400 resize-none bg-white text-gray-800"
+            className="w-full border border-indigo-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-400 resize-none bg-surface text-gray-800"
           />
           <p className="text-[10px] text-gray-400">{script.length} caractères · Tu peux éditer le script avant de synthétiser</p>
 
@@ -455,7 +455,7 @@ function JingleStudio({ mediaId, product, onSaved, onCancel }: {
           <div className="grid grid-cols-3 gap-1.5">
             {VOICES.map(v => (
               <button key={v.id} onClick={() => setVoice(v.id)}
-                className={`flex flex-col items-center px-2 py-2 rounded-xl text-[10px] font-medium transition-all border ${voice === v.id ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-200 hover:border-indigo-300'}`}>
+                className={`flex flex-col items-center px-2 py-2 rounded-xl text-[10px] font-medium transition-all border ${voice === v.id ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-surface text-gray-600 border-gray-200 hover:border-indigo-300'}`}>
                 <span className="text-base mb-0.5">{v.emoji}</span>
                 <span className="font-bold">{v.label}</span>
                 <span className={`${voice === v.id ? 'text-indigo-200' : 'text-gray-400'} text-[9px]`}>{v.desc}</span>
@@ -1002,11 +1002,11 @@ function PhotoToVideoStudio({
         {product.imageUrl && (
           <div className="flex gap-2 mb-2">
             <button onClick={() => setUseProductImg(true)}
-              className={`flex-1 py-1.5 rounded-xl text-[10px] font-medium transition-colors border ${useProductImg ? 'bg-pink-600 text-white border-pink-600' : 'bg-white text-gray-500 border-gray-200 hover:border-pink-300'}`}>
+              className={`flex-1 py-1.5 rounded-xl text-[10px] font-medium transition-colors border ${useProductImg ? 'bg-pink-600 text-white border-pink-600' : 'bg-surface text-gray-500 border-gray-200 hover:border-pink-300'}`}>
               Image {words.ofItem}
             </button>
             <button onClick={() => setUseProductImg(false)}
-              className={`flex-1 py-1.5 rounded-xl text-[10px] font-medium transition-colors border ${!useProductImg ? 'bg-pink-600 text-white border-pink-600' : 'bg-white text-gray-500 border-gray-200 hover:border-pink-300'}`}>
+              className={`flex-1 py-1.5 rounded-xl text-[10px] font-medium transition-colors border ${!useProductImg ? 'bg-pink-600 text-white border-pink-600' : 'bg-surface text-gray-500 border-gray-200 hover:border-pink-300'}`}>
               Charger une photo
             </button>
           </div>
@@ -1030,7 +1030,7 @@ function PhotoToVideoStudio({
         <div className="grid grid-cols-2 gap-1.5">
           {PTV_EFFECTS.map(ef => (
             <button key={ef.id} onClick={() => setEffect(ef.id)}
-              className={`flex items-center gap-1.5 px-2.5 py-2 rounded-xl text-[10px] font-medium transition-all border ${effect === ef.id ? 'bg-pink-600 text-white border-pink-600' : 'bg-white text-gray-600 border-gray-200 hover:border-pink-300'}`}>
+              className={`flex items-center gap-1.5 px-2.5 py-2 rounded-xl text-[10px] font-medium transition-all border ${effect === ef.id ? 'bg-pink-600 text-white border-pink-600' : 'bg-surface text-gray-600 border-gray-200 hover:border-pink-300'}`}>
               <span>{ef.emoji}</span>{ef.label}
             </button>
           ))}
@@ -1504,7 +1504,7 @@ export function StorePage() {
       <div className="flex gap-1 bg-gray-100 p-1 rounded-2xl mb-6 overflow-x-auto">
         {TABS.map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
-            className={`flex-shrink-0 py-2 px-3 rounded-xl text-sm font-medium transition-all ${tab === t.key ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+            className={`flex-shrink-0 py-2 px-3 rounded-xl text-sm font-medium transition-all ${tab === t.key ? 'bg-surface text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
             {t.label}
           </button>
         ))}
@@ -1512,7 +1512,7 @@ export function StorePage() {
 
       {/* ── CONFIG ── */}
       {tab === 'config' && (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-5">
+        <div className="bg-surface rounded-2xl border border-gray-100 shadow-sm p-6 space-y-5">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Nom de la boutique *</label>
             <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
@@ -1548,7 +1548,7 @@ export function StorePage() {
             <div className="flex flex-wrap gap-2">
               {(['CDF', 'USD', 'EUR', 'XAF', 'XOF'] as const).map(cur => (
                 <button key={cur} onClick={() => setForm(f => ({ ...f, currency: cur }))}
-                  className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all border ${form.currency === cur ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-200 hover:border-indigo-300'}`}>
+                  className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all border ${form.currency === cur ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-surface text-gray-600 border-gray-200 hover:border-indigo-300'}`}>
                   {cur}
                 </button>
               ))}
@@ -1653,7 +1653,7 @@ export function StorePage() {
                 className="text-xs text-gray-500 hover:underline">Tout désélectionner</button>
             </div>
           </div>
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm divide-y divide-gray-50">
+          <div className="bg-surface rounded-2xl border border-gray-100 shadow-sm divide-y divide-gray-50">
             {products.length === 0 && (
               <p className="text-sm text-gray-400 text-center py-8">{words.noItem}. Ajoutez-en dans la page {terms.catalogue}.</p>
             )}
@@ -1804,7 +1804,7 @@ export function StorePage() {
                 const imgUrl = resolveImg(p.imageUrl);
                 const isUploading = uploadingId === p.id;
                 return (
-                  <div key={p.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+                  <div key={p.id} className="bg-surface rounded-2xl border border-gray-100 shadow-sm p-4">
                     {/* Product header */}
                     <div className="flex items-center gap-3 mb-4">
                       <div className="w-11 h-11 rounded-xl bg-gray-100 overflow-hidden shrink-0 flex items-center justify-center">
@@ -1991,7 +1991,7 @@ export function StorePage() {
             </div>
           ) : (
             <>
-              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+              <div className="bg-surface rounded-2xl border border-gray-100 shadow-sm p-6">
                 <p className="text-sm font-medium text-gray-700 mb-2">Lien de votre boutique</p>
                 <div className="flex flex-wrap gap-2">
                   <input readOnly value={storeUrl}
@@ -2056,7 +2056,7 @@ export function StorePage() {
                   [followers.followers.length, 'Avec un compte'],
                   [followers.followers.filter(f => f.orders > 0).length, 'Déjà clients'],
                 ] as const).map(([n, label]) => (
-                  <div key={label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 text-center">
+                  <div key={label} className="bg-surface rounded-2xl border border-gray-100 shadow-sm p-3 text-center">
                     <p className="text-xl font-black text-gray-900">{n.toLocaleString('fr-FR')}</p>
                     <p className="text-[11px] text-gray-500">{label}</p>
                   </div>
@@ -2064,12 +2064,12 @@ export function StorePage() {
               </div>
 
               {followers.total === 0 ? (
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-8 text-center">
+                <div className="bg-surface rounded-2xl border border-gray-100 shadow-sm p-8 text-center">
                   <Users size={32} className="text-gray-200 mx-auto mb-2" />
                   <p className="text-sm text-gray-400">Pas encore d'abonnés. Partage tes vidéos pour en gagner.</p>
                 </div>
               ) : (
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm divide-y divide-gray-50">
+                <div className="bg-surface rounded-2xl border border-gray-100 shadow-sm divide-y divide-gray-50">
                   {followers.followers.map(f => (
                     <div key={f.id} className="flex items-center gap-3 p-3">
                       <div className="w-10 h-10 rounded-full bg-indigo-100 text-indigo-700 font-bold flex items-center justify-center shrink-0">
@@ -2110,7 +2110,7 @@ export function StorePage() {
       {tab === 'orders' && (
         <div className="space-y-3">
           {orders.length === 0 && (
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-8 text-center">
+            <div className="bg-surface rounded-2xl border border-gray-100 shadow-sm p-8 text-center">
               <ShoppingBag size={32} className="text-gray-200 mx-auto mb-2" />
               <p className="text-sm text-gray-400">Aucune commande pour l'instant</p>
             </div>
@@ -2119,7 +2119,7 @@ export function StorePage() {
             const { label, color, Icon } = STATUS_LABELS[order.status] ?? STATUS_LABELS.pending;
             const items = order.items as { name: string; qty: number; unitPrice: number }[];
             return (
-              <div key={order.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+              <div key={order.id} className="bg-surface rounded-2xl border border-gray-100 shadow-sm p-4">
                 <div className="flex items-start justify-between mb-3">
                   <div>
                     <p className="font-semibold text-gray-900 text-sm">

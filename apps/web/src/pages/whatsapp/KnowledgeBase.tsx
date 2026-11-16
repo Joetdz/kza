@@ -239,13 +239,13 @@ export function KnowledgeBase() {
       <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
         <button
           onClick={() => setActiveTab('manual')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${activeTab === 'manual' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${activeTab === 'manual' ? 'bg-surface text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
         >
           <BookOpen size={14} /> Entrées manuelles
         </button>
         <button
           onClick={() => setActiveTab('products')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${activeTab === 'products' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${activeTab === 'products' ? 'bg-surface text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
         >
           <Package size={14} /> {words.Items}
           <span className="bg-indigo-100 text-indigo-600 text-xs px-1.5 py-0.5 rounded-full">{products.length}</span>
@@ -259,7 +259,7 @@ export function KnowledgeBase() {
             Ajoutez un script de closing pour chaque {terms.item}. L'IA l'utilisera automatiquement quand un client s'y intéresse.
           </p>
           {products.length === 0 && (
-            <div className="text-center py-10 text-gray-400 text-sm bg-white rounded-2xl border border-gray-100">
+            <div className="text-center py-10 text-gray-400 text-sm bg-surface rounded-2xl border border-gray-100">
               {words.noItem} trouvé{words.e}.
             </div>
           )}
@@ -268,7 +268,7 @@ export function KnowledgeBase() {
             const isExpanded = expanded[product.id] ?? false;
             const hasScript = kb?.closingScript;
             return (
-              <div key={product.id} className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+              <div key={product.id} className="bg-surface rounded-2xl border border-gray-100 overflow-hidden">
                 {/* Product row */}
                 <div
                   className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors"
@@ -419,7 +419,7 @@ export function KnowledgeBase() {
 
           {/* Form */}
           {showForm && (
-            <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-4">
+            <div className="bg-surface rounded-2xl border border-gray-100 p-5 space-y-4">
               <h3 className="font-semibold text-gray-900 text-sm">
                 {editId ? "Modifier l'entrée" : 'Nouvelle entrée'}
               </h3>
@@ -513,7 +513,7 @@ export function KnowledgeBase() {
                   onClick={() => setForm({ ...form, enabled: !form.enabled })}
                   className={`w-9 h-5 rounded-full cursor-pointer transition-colors ${form.enabled ? 'bg-indigo-600' : 'bg-gray-200'}`}
                 >
-                  <div className={`w-4 h-4 bg-white rounded-full shadow transition-transform mt-0.5 ${form.enabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                  <div className={`w-4 h-4 bg-surface rounded-full shadow transition-transform mt-0.5 ${form.enabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
                 </div>
                 <span className="text-xs text-gray-500">Activée (utilisée par l'IA)</span>
               </div>
@@ -542,7 +542,7 @@ export function KnowledgeBase() {
             {CATEGORIES.map(c => {
               const count = entries.filter(e => e.category === c.value).length;
               return (
-                <div key={c.value} className="flex-1 min-w-[90px] bg-white rounded-xl border border-gray-100 px-3 py-2 text-center">
+                <div key={c.value} className="flex-1 min-w-[90px] bg-surface rounded-xl border border-gray-100 px-3 py-2 text-center">
                   <div className="text-lg font-bold text-gray-900">{count}</div>
                   <div className={`text-xs font-medium px-1.5 py-0.5 rounded-full inline-block ${c.color}`}>{c.label}</div>
                 </div>
@@ -553,7 +553,7 @@ export function KnowledgeBase() {
           {/* List */}
           <div className="space-y-3">
             {filtered.length === 0 && (
-              <div className="text-center py-12 text-gray-400 text-sm bg-white rounded-2xl border border-gray-100">
+              <div className="text-center py-12 text-gray-400 text-sm bg-surface rounded-2xl border border-gray-100">
                 {entries.length === 0
                   ? 'Aucune entrée. Clique sur "Nouvelle entrée" pour commencer.'
                   : 'Aucun résultat pour cette recherche.'}
@@ -562,7 +562,7 @@ export function KnowledgeBase() {
             {filtered.map(e => {
               const cat = catInfo(e.category);
               return (
-                <div key={e.id} className={`bg-white rounded-2xl border border-gray-100 px-4 py-3 ${!e.enabled ? 'opacity-50' : ''}`}>
+                <div key={e.id} className={`bg-surface rounded-2xl border border-gray-100 px-4 py-3 ${!e.enabled ? 'opacity-50' : ''}`}>
                   <div className="flex items-start gap-3">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
@@ -600,7 +600,7 @@ export function KnowledgeBase() {
                             onClick={() => toggleEnabled(e.id, !e.enabled)}
                             className={`w-8 h-4 rounded-full cursor-pointer transition-colors ${e.enabled ? 'bg-indigo-600' : 'bg-gray-200'}`}
                           >
-                            <div className={`w-3 h-3 bg-white rounded-full shadow transition-transform mt-0.5 ${e.enabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                            <div className={`w-3 h-3 bg-surface rounded-full shadow transition-transform mt-0.5 ${e.enabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
                           </div>
                           <button onClick={() => openEdit(e)} className="text-gray-400 hover:text-indigo-500 transition-colors p-1">
                             <Edit2 size={14} />

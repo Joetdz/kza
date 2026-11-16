@@ -112,15 +112,15 @@ export function Clients() {
         {/* Repeat-purchase summary */}
         {repeat.customers > 0 && (
           <div className="grid grid-cols-3 gap-3 mb-5">
-            <div className="bg-white rounded-2xl border border-gray-100 px-4 py-3">
+            <div className="bg-surface rounded-2xl border border-gray-100 px-4 py-3">
               <p className="text-[11px] text-gray-400 font-semibold">Clients</p>
               <p className="text-xl font-black text-gray-900">{repeat.customers}</p>
             </div>
-            <div className="bg-white rounded-2xl border border-gray-100 px-4 py-3">
+            <div className="bg-surface rounded-2xl border border-gray-100 px-4 py-3">
               <p className="text-[11px] text-gray-400 font-semibold">Ont recommandé</p>
               <p className="text-xl font-black text-amber-600">{repeat.returning}</p>
             </div>
-            <div className="bg-white rounded-2xl border border-gray-100 px-4 py-3">
+            <div className="bg-surface rounded-2xl border border-gray-100 px-4 py-3">
               <p className="text-[11px] text-gray-400 font-semibold">Taux de réachat</p>
               <p className="text-xl font-black text-indigo-600">{repeat.rate}%</p>
             </div>
@@ -133,7 +133,7 @@ export function Clients() {
           <input
             type="text" value={search} onChange={e => setSearch(e.target.value)}
             placeholder="Rechercher par nom, téléphone, adresse..."
-            className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-400 bg-white"
+            className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-400 bg-surface"
           />
         </div>
 
@@ -144,7 +144,7 @@ export function Clients() {
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all border
                 ${filter === f.value
                   ? 'border-indigo-400 bg-indigo-50 text-indigo-700 shadow-sm'
-                  : 'border-transparent bg-white text-gray-600 hover:bg-gray-100'
+                  : 'border-transparent bg-surface text-gray-600 hover:bg-gray-100'
                 }`}>
               {f.label}
               {counts[f.value] !== undefined && (
@@ -168,7 +168,7 @@ export function Clients() {
                 const st = STATUS_LABELS[o.status] ?? STATUS_LABELS.pending;
                 const isPostponed = !!o.scheduledAt && o.status !== 'delivered' && o.status !== 'cancelled';
                 return (
-                  <div key={o.id} className="bg-white rounded-2xl px-4 py-3 border border-gray-100 shadow-sm">
+                  <div key={o.id} className="bg-surface rounded-2xl px-4 py-3 border border-gray-100 shadow-sm">
                     <div className="flex items-start gap-3">
                       <div className="flex-1 min-w-0">
                         {/* Name + status */}

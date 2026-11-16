@@ -41,7 +41,7 @@ function LoginForm({ onSuccess }: { onSuccess: (token: string, investor: Investo
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
-      <form onSubmit={submit} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 max-w-sm w-full">
+      <form onSubmit={submit} className="bg-surface rounded-2xl shadow-sm border border-gray-100 p-8 max-w-sm w-full">
         <div className="flex items-center gap-2 mb-1">
           <PiggyBank className="text-indigo-600" size={28} />
           <span className="text-xl font-black text-gray-900">KZA</span>
@@ -105,7 +105,7 @@ function ChangePasswordModal({ token, onClose }: { token: string; onClose: () =>
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-2xl shadow-lg p-6 max-w-sm w-full">
+      <div className="bg-surface rounded-2xl shadow-lg p-6 max-w-sm w-full">
         <h2 className="font-semibold text-gray-900 mb-4">Changer mon mot de passe</h2>
         {success ? (
           <>
@@ -143,7 +143,7 @@ function InvestmentCard({ inv }: { inv: InvestorInvestment }) {
   const pct = inv.repaymentAmount > 0 ? Math.min(100, (inv.repaidAmount / inv.repaymentAmount) * 100) : 0;
 
   return (
-    <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+    <div className="bg-surface rounded-2xl p-5 shadow-sm border border-gray-100">
       <div className="flex items-start justify-between gap-2 mb-1">
         <div>
           <div className="font-semibold text-gray-900">{inv.campaign.name}</div>
@@ -243,7 +243,7 @@ export function InvestorPortal() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <header className="sticky top-0 z-10 bg-white/90 backdrop-blur-md border-b border-gray-200 px-5 py-4 flex items-center justify-between">
+      <header className="sticky top-0 z-10 bg-surface/90 backdrop-blur-md border-b border-gray-200 px-5 py-4 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <PiggyBank className="text-indigo-600" size={22} />
           <div>
@@ -263,15 +263,15 @@ export function InvestorPortal() {
 
       <main className="max-w-3xl mx-auto p-5 space-y-5">
         <div className="grid grid-cols-3 gap-3">
-          <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 text-center">
+          <div className="bg-surface rounded-2xl p-4 shadow-sm border border-gray-100 text-center">
             <div className="text-xs text-gray-400 mb-1">Investi</div>
             <div className="font-bold text-gray-900">{fmt(totals.invested)}</div>
           </div>
-          <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 text-center">
+          <div className="bg-surface rounded-2xl p-4 shadow-sm border border-gray-100 text-center">
             <div className="text-xs text-gray-400 mb-1">À recevoir</div>
             <div className="font-bold text-gray-900">{fmt(totals.toReceive)}</div>
           </div>
-          <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 text-center">
+          <div className="bg-surface rounded-2xl p-4 shadow-sm border border-gray-100 text-center">
             <div className="text-xs text-gray-400 mb-1">Reçu</div>
             <div className="font-bold text-emerald-600">{fmt(totals.received)}</div>
           </div>

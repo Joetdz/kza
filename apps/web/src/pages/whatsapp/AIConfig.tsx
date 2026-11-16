@@ -94,7 +94,7 @@ export function AIConfig() {
               onClick={() => setConfig({ ...config, enabled: !config.enabled })}
               className={`w-11 h-6 rounded-full transition-colors cursor-pointer ${config.enabled ? 'bg-indigo-600' : 'bg-gray-200'}`}
             >
-              <div className={`w-5 h-5 bg-white rounded-full shadow transition-transform mt-0.5 ${config.enabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+              <div className={`w-5 h-5 bg-surface rounded-full shadow transition-transform mt-0.5 ${config.enabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
             </div>
           </label>
           <button
@@ -109,7 +109,7 @@ export function AIConfig() {
       </div>
 
       {/* Identité */}
-      <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-4">
+      <div className="bg-surface rounded-2xl border border-gray-100 p-5 space-y-4">
         <h3 className="font-semibold text-gray-900 text-sm">Identité de l'agent</h3>
         <div>
           <label className="block text-xs text-gray-500 mb-1">Prompt système</label>
@@ -157,7 +157,7 @@ export function AIConfig() {
       </div>
 
       {/* Sujets exclus */}
-      <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-3">
+      <div className="bg-surface rounded-2xl border border-gray-100 p-5 space-y-3">
         <h3 className="font-semibold text-gray-900 text-sm">Sujets à éviter (liste noire)</h3>
         <div className="flex flex-wrap gap-2">
           {(config.blacklistTopics ?? []).map((topic: string, i: number) => (
@@ -187,7 +187,7 @@ export function AIConfig() {
       </div>
 
       {/* Escalade */}
-      <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-3">
+      <div className="bg-surface rounded-2xl border border-gray-100 p-5 space-y-3">
         <h3 className="font-semibold text-gray-900 text-sm">Escalade vers humain</h3>
         <div>
           <label className="block text-xs text-gray-500 mb-1">Mots-clés déclencheurs</label>
@@ -226,7 +226,7 @@ export function AIConfig() {
       </div>
 
       {/* Horaires */}
-      <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-3">
+      <div className="bg-surface rounded-2xl border border-gray-100 p-5 space-y-3">
         <div className="flex items-center gap-2">
           <Clock size={16} className="text-indigo-500" />
           <h3 className="font-semibold text-gray-900 text-sm">Horaires d'activation</h3>
@@ -268,7 +268,7 @@ export function AIConfig() {
       </div>
 
       {/* Comportement */}
-      <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-4">
+      <div className="bg-surface rounded-2xl border border-gray-100 p-5 space-y-4">
         <h3 className="font-semibold text-gray-900 text-sm">Comportement</h3>
         <div className="grid grid-cols-2 gap-4">
           <div>
@@ -315,7 +315,7 @@ export function AIConfig() {
       </div>
 
       {/* Apprentissage */}
-      <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-4">
+      <div className="bg-surface rounded-2xl border border-gray-100 p-5 space-y-4">
         <div>
           <h3 className="font-semibold text-gray-900 text-sm">Apprentissage depuis tes contenus</h3>
           <p className="text-xs text-gray-500 mt-0.5">

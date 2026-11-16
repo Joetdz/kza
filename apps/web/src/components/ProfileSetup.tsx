@@ -39,7 +39,7 @@ export function ProfileSetup({ onDone }: { onDone: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)' }}>
       <ScrollLock />
-      <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl max-h-[90vh] flex flex-col overflow-hidden">
+      <div className="w-full max-w-sm bg-surface rounded-2xl shadow-2xl max-h-[90vh] flex flex-col overflow-hidden">
         <div className="p-6 space-y-5 overflow-y-auto flex-1">
           <div>
             <div className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center mb-3">
@@ -68,7 +68,7 @@ export function ProfileSetup({ onDone }: { onDone: () => void }) {
               <select
                 value={country}
                 onChange={e => setCountry(e.target.value)}
-                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 bg-surface"
               >
                 {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
@@ -81,7 +81,7 @@ export function ProfileSetup({ onDone }: { onDone: () => void }) {
                 <select
                   value={sector}
                   onChange={e => setSector(e.target.value)}
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 bg-surface"
                 >
                   <option value="">Choisir...</option>
                   {sectors.map(s => <option key={s} value={s}>{s}</option>)}
@@ -102,7 +102,7 @@ export function ProfileSetup({ onDone }: { onDone: () => void }) {
               disabled={saving || !companyName.trim()}
               className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white py-3 rounded-xl text-sm font-semibold transition-colors"
             >
-              {saving && <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+              {saving && <span className="w-4 h-4 border-2 border-surface/30 border-t-white rounded-full animate-spin" />}
               Accéder au dashboard
             </button>
             <button

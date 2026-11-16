@@ -45,7 +45,7 @@ export function CustomerHistoryPanel({ phone, onClose }: { phone: string; onClos
       <ScrollLock />
       <div className="bg-gray-50 w-full sm:max-w-2xl sm:rounded-2xl rounded-t-2xl max-h-[92vh] sm:max-h-[85vh] flex flex-col shadow-xl">
         {/* Header */}
-        <div className="flex items-start justify-between gap-3 px-5 py-4 bg-white border-b border-gray-100 sm:rounded-t-2xl rounded-t-2xl shrink-0">
+        <div className="flex items-start justify-between gap-3 px-5 py-4 bg-surface border-b border-gray-100 sm:rounded-t-2xl rounded-t-2xl shrink-0">
           <div className="min-w-0">
             <h2 className="font-bold text-gray-900 truncate">
               {loading ? 'Chargement…' : data?.customerName ?? 'Client'}
@@ -70,15 +70,15 @@ export function CustomerHistoryPanel({ phone, onClose }: { phone: string; onClos
             <>
               {/* Key figures */}
               <div className="grid grid-cols-3 gap-3 mb-5">
-                <div className="bg-white rounded-2xl border border-gray-100 px-3 py-2.5">
+                <div className="bg-surface rounded-2xl border border-gray-100 px-3 py-2.5">
                   <p className="text-[11px] text-gray-400 font-semibold">Commandes</p>
                   <p className="text-lg font-black text-gray-900">{data.orderCount}</p>
                 </div>
-                <div className="bg-white rounded-2xl border border-gray-100 px-3 py-2.5">
+                <div className="bg-surface rounded-2xl border border-gray-100 px-3 py-2.5">
                   <p className="text-[11px] text-gray-400 font-semibold">Livrées</p>
                   <p className="text-lg font-black text-green-600">{data.deliveredCount}</p>
                 </div>
-                <div className="bg-white rounded-2xl border border-gray-100 px-3 py-2.5">
+                <div className="bg-surface rounded-2xl border border-gray-100 px-3 py-2.5">
                   <p className="text-[11px] text-gray-400 font-semibold">Total livré</p>
                   <p className="text-lg font-black text-indigo-600">{fmtMoney(data.totalSpent)}</p>
                 </div>
@@ -95,7 +95,7 @@ export function CustomerHistoryPanel({ phone, onClose }: { phone: string; onClos
                   <h3 className="text-xs font-bold text-gray-700 mb-2 flex items-center gap-1.5">
                     <TrendingUp size={13} className="text-indigo-600" /> Ce qu'il commande
                   </h3>
-                  <div className="bg-white rounded-2xl border border-gray-100 divide-y divide-gray-50">
+                  <div className="bg-surface rounded-2xl border border-gray-100 divide-y divide-gray-50">
                     {data.topProducts.map((p, i) => (
                       <div key={i} className="flex items-center gap-3 px-3 py-2.5">
                         {p.imageUrl
@@ -121,7 +121,7 @@ export function CustomerHistoryPanel({ phone, onClose }: { phone: string; onClos
                   {data.orders.map(o => {
                     const st = STATUS_LABELS[o.status] ?? STATUS_LABELS.pending;
                     return (
-                      <div key={o.id} className="bg-white rounded-2xl border border-gray-100 px-4 py-3">
+                      <div key={o.id} className="bg-surface rounded-2xl border border-gray-100 px-4 py-3">
                         <div className="flex items-center gap-2 flex-wrap mb-1.5">
                           <span className="font-black text-indigo-600 text-xs">
                             #{String(o.orderNumber).padStart(4, '0')}

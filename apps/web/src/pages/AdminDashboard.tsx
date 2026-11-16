@@ -61,7 +61,7 @@ function StatCard({ icon: Icon, label, value, sub, color = 'bg-indigo-500' }: {
   icon: React.ElementType; label: string; value: string | number; sub?: string; color?: string;
 }) {
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex items-start gap-4">
+    <div className="bg-surface rounded-2xl border border-gray-100 shadow-sm p-5 flex items-start gap-4">
       <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${color}`}>
         <Icon size={20} className="text-white" />
       </div>
@@ -125,7 +125,7 @@ function KpiCard({ icon: Icon, label, value, sub, color, trend, onClick, active 
   return (
     <div
       onClick={onClick}
-      className={`bg-white rounded-2xl border shadow-sm p-5 flex flex-col gap-3 transition-all
+      className={`bg-surface rounded-2xl border shadow-sm p-5 flex flex-col gap-3 transition-all
         ${onClick ? 'cursor-pointer hover:shadow-md' : ''}
         ${active ? 'ring-2 ring-indigo-500 border-indigo-200 shadow-md' : 'border-gray-100'}
       `}
@@ -161,7 +161,7 @@ function DetailShell({ title, icon: Icon, onClose, loading, children }: {
   loading: boolean; children: React.ReactNode;
 }) {
   return (
-    <div className="bg-white rounded-2xl border border-indigo-100 shadow-lg overflow-hidden">
+    <div className="bg-surface rounded-2xl border border-indigo-100 shadow-lg overflow-hidden">
       <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-100 bg-indigo-50/50">
         <div className="flex items-center gap-2">
           <Icon size={15} className="text-indigo-500" />
@@ -640,7 +640,7 @@ function TabOverview({ overview, refreshing, onRefresh, month, onShowAll }: {
           <div className="flex bg-gray-100 rounded-lg p-0.5 text-xs">
             {[{ all: false, label: 'Ce mois' }, { all: true, label: "Tout l'historique" }].map(o => (
               <button key={o.label} onClick={() => onShowAll(o.all)}
-                className={`px-3 py-1 rounded-md font-medium ${!month === o.all ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}>
+                className={`px-3 py-1 rounded-md font-medium ${!month === o.all ? 'bg-surface text-gray-900 shadow-sm' : 'text-gray-500'}`}>
                 {o.label}
               </button>
             ))}
@@ -692,7 +692,7 @@ function TabOverview({ overview, refreshing, onRefresh, month, onShowAll }: {
 
       {/* Charts */}
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-        <div className="sm:col-span-2 lg:col-span-2 bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+        <div className="sm:col-span-2 lg:col-span-2 bg-surface rounded-2xl border border-gray-100 shadow-sm p-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-semibold text-gray-900">CA — {month ? 'ce mois' : '30 derniers jours'}</h3>
             <button onClick={onRefresh} disabled={refreshing}
@@ -724,7 +724,7 @@ function TabOverview({ overview, refreshing, onRefresh, month, onShowAll }: {
           )}
         </div>
 
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+        <div className="bg-surface rounded-2xl border border-gray-100 shadow-sm p-5">
           <h3 className="font-semibold text-gray-900 mb-4">Ventes par statut</h3>
           {pieData.length > 0 ? (
             <>
@@ -755,7 +755,7 @@ function TabOverview({ overview, refreshing, onRefresh, month, onShowAll }: {
       </div>
 
       {/* Top businesses */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+      <div className="bg-surface rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
         <div className="px-5 py-4 border-b border-gray-100">
           <h3 className="font-semibold text-gray-900">Top businesses par CA</h3>
           <p className="text-xs text-gray-400 mt-0.5">Montants en devise locale, non convertis</p>
@@ -838,7 +838,7 @@ function TabAudience({ clients }: { clients: AdminClient[] }) {
   return (
     <div className="space-y-4">
       {/* Filters */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex flex-wrap gap-3 items-center">
+      <div className="bg-surface rounded-2xl border border-gray-100 shadow-sm p-4 flex flex-wrap gap-3 items-center">
         <div className="flex items-center gap-2 flex-1 min-w-[200px] bg-gray-50 rounded-lg px-3 py-2 border border-gray-200">
           <Search size={13} className="text-gray-400 shrink-0" />
           <input value={search} onChange={e => setSearch(e.target.value)}
@@ -846,19 +846,19 @@ function TabAudience({ clients }: { clients: AdminClient[] }) {
             className="flex-1 bg-transparent outline-none text-sm text-gray-700 placeholder-gray-400" />
         </div>
         <select value={filterClient} onChange={e => setFilterClient(e.target.value)}
-          className="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white text-gray-700 outline-none">
+          className="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-surface text-gray-700 outline-none">
           <option value="">Tous les clients</option>
           {clients.map(c => <option key={c.userId} value={c.userId}>{c.companyName ?? c.userId.slice(0, 12)}</option>)}
         </select>
         <select value={filterConsent} onChange={e => setFilterConsent(e.target.value)}
-          className="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white text-gray-700 outline-none">
+          className="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-surface text-gray-700 outline-none">
           <option value="">Consentement : Tous</option>
           <option value="unknown">Inconnu</option>
           <option value="granted">Accordé</option>
           <option value="revoked">Révoqué</option>
         </select>
         <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
-          className="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white text-gray-700 outline-none">
+          className="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-surface text-gray-700 outline-none">
           <option value="">Statut : Tous</option>
           <option value="active">Actif</option>
           <option value="blocked">Bloqué</option>
@@ -868,7 +868,7 @@ function TabAudience({ clients }: { clients: AdminClient[] }) {
       </div>
 
       {/* Table */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+      <div className="bg-surface rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
         {loading ? (
           <div className="flex items-center justify-center py-16 text-gray-400 text-sm gap-3">
             <span className="w-5 h-5 border-2 border-indigo-300 border-t-indigo-600 rounded-full animate-spin" />
@@ -1026,7 +1026,7 @@ function TabLeads({ clients }: { clients: AdminClient[] }) {
   return (
     <div className="space-y-4">
       {/* Filters */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex flex-wrap gap-3 items-center">
+      <div className="bg-surface rounded-2xl border border-gray-100 shadow-sm p-4 flex flex-wrap gap-3 items-center">
         <div className="flex items-center gap-2 flex-1 min-w-[200px] bg-gray-50 rounded-lg px-3 py-2 border border-gray-200">
           <Search size={13} className="text-gray-400 shrink-0" />
           <input value={search} onChange={e => setSearch(e.target.value)}
@@ -1034,12 +1034,12 @@ function TabLeads({ clients }: { clients: AdminClient[] }) {
             className="flex-1 bg-transparent outline-none text-sm text-gray-700 placeholder-gray-400" />
         </div>
         <select value={filterClient} onChange={e => setFilterClient(e.target.value)}
-          className="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white text-gray-700 outline-none">
+          className="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-surface text-gray-700 outline-none">
           <option value="">Tous les clients</option>
           {clients.map(c => <option key={c.userId} value={c.userId}>{c.companyName ?? c.userId.slice(0, 12)}</option>)}
         </select>
         <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
-          className="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white text-gray-700 outline-none">
+          className="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-surface text-gray-700 outline-none">
           <option value="">Statut : Tous</option>
           {['cold','warm','hot','converted','lost'].map(s => (
             <option key={s} value={s}>{FUNNEL_LABELS[s]}</option>
@@ -1049,7 +1049,7 @@ function TabLeads({ clients }: { clients: AdminClient[] }) {
       </div>
 
       {/* Table */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+      <div className="bg-surface rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
         {loading ? (
           <div className="flex items-center justify-center py-16 text-gray-400 text-sm gap-3">
             <span className="w-5 h-5 border-2 border-indigo-300 border-t-indigo-600 rounded-full animate-spin" />
@@ -1246,7 +1246,7 @@ function TabCategories() {
         </div>
       )}
 
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+      <div className="bg-surface rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
         <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-2">
             <Tag size={16} className="text-indigo-500" />
@@ -1403,7 +1403,7 @@ function TabBusinesses() {
 
   return (
     <div className="space-y-4">
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+      <div className="bg-surface rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
         <div className="px-5 py-4 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <Building2 size={16} className="text-indigo-500" />
@@ -1516,7 +1516,7 @@ function TabIkele() {
 
       <VisitorsChart days={data.days} title="Visiteurs d'Ikele par jour (30 jours)" />
 
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+      <div className="bg-surface rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
         <p className="text-sm font-bold text-gray-900 px-4 pt-4 pb-2">Boutiques les plus visitées (7 jours)</p>
         {data.topStores.length === 0 ? (
           <p className="text-sm text-gray-400 px-4 pb-4">Aucune visite de boutique pour l'instant.</p>

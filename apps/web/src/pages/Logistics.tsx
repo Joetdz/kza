@@ -50,7 +50,7 @@ function fmtDateTime(iso: string | null | undefined) {
 /** Where an online order was placed: the Ikele app, or the Kzion storefront. */
 function StoreOrderBadge({ source }: { source: string | null }) {
   return source === 'ikele'
-    ? <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gray-900 text-white" title="Commande passée sur l'app Ikele">📱 Ikele</span>
+    ? <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-ink text-white" title="Commande passée sur l'app Ikele">📱 Ikele</span>
     : <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-pink-100 text-pink-700" title="Commande passée sur la boutique en ligne">🛍️ Boutique</span>;
 }
 
@@ -646,7 +646,7 @@ export function Logistics() {
           {tabs.map(({ id, label, icon: Icon, ...rest }) => (
             <button key={id} onClick={() => setTab(id)}
               className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all
-                ${tab === id ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+                ${tab === id ? 'bg-surface text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
               <Icon size={15} />{label}
               {'badge' in rest && (rest as any).badge > 0 && (
                 <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-500 text-white">
@@ -671,7 +671,7 @@ export function Logistics() {
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               {locations.map(loc => (
-                <div key={loc.id} className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
+                <div key={loc.id} className="bg-surface rounded-2xl p-4 border border-gray-100 shadow-sm">
                   <div className="flex items-start justify-between">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1 flex-wrap">
@@ -725,7 +725,7 @@ export function Logistics() {
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               {partners.map(p => (
-                <div key={p.id} className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
+                <div key={p.id} className="bg-surface rounded-2xl p-4 border border-gray-100 shadow-sm">
                   <div className="flex items-start justify-between">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1 flex-wrap">
@@ -772,7 +772,7 @@ export function Logistics() {
                           ) : (
                             <select value={selectedGroupId}
                               onChange={e => setSelectedGroupId(e.target.value)}
-                              className="w-full border border-indigo-300 rounded-lg px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-indigo-400 bg-white">
+                              className="w-full border border-indigo-300 rounded-lg px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-indigo-400 bg-surface">
                               <option value="">— Aucun groupe (envoyer au numéro)</option>
                               {waGroups.map(g => (
                                 <option key={g.id} value={g.id}>{g.name} ({g.participants} membres)</option>
@@ -862,11 +862,11 @@ export function Logistics() {
                   <button key={s} onClick={() => setStatusFilter(s)}
                     className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${statusFilter === s ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
                     {s === 'all' ? 'Tous' : s === 'draft' ? 'Brouillons' : STATUS_LABELS[s]?.label ?? s}
-                    <span className={`px-1.5 rounded-full text-[10px] leading-4 ${statusFilter === s ? 'bg-white/25 text-white' : 'bg-gray-200 text-gray-600'}`}>{count}</span>
+                    <span className={`px-1.5 rounded-full text-[10px] leading-4 ${statusFilter === s ? 'bg-surface/25 text-white' : 'bg-gray-200 text-gray-600'}`}>{count}</span>
                   </button>
                 );
               })}
-              <div className="flex items-center gap-1.5 flex-1 min-w-[180px] border border-gray-200 rounded-xl px-3 py-1.5 bg-white focus-within:ring-2 focus-within:ring-indigo-400">
+              <div className="flex items-center gap-1.5 flex-1 min-w-[180px] border border-gray-200 rounded-xl px-3 py-1.5 bg-surface focus-within:ring-2 focus-within:ring-indigo-400">
                 <Search size={13} className="text-gray-400 shrink-0" />
                 <input type="text" placeholder="Nom, ville, #commande…" value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
@@ -904,7 +904,7 @@ export function Logistics() {
                 return filteredOrders.map(o => {
                 const st = STATUS_LABELS[o.status] ?? STATUS_LABELS.pending;
                 return (
-                  <div key={o.id} className={`bg-white rounded-2xl p-4 border shadow-sm ${o.isDraft ? 'border-amber-200 bg-amber-50/30' : 'border-gray-100'}`}>
+                  <div key={o.id} className={`bg-surface rounded-2xl p-4 border shadow-sm ${o.isDraft ? 'border-amber-200 bg-amber-50/30' : 'border-gray-100'}`}>
                     {statusFilter === 'draft' && o.isDraft && (
                       <label className="flex items-center gap-2 mb-2 text-xs text-gray-500 cursor-pointer w-fit">
                         <input type="checkbox" checked={selectedDrafts.has(o.id)} onChange={() => toggleDraft(o.id)} className="accent-amber-600" />
@@ -937,7 +937,7 @@ export function Logistics() {
                                       ? { ...it, productId: e.target.value, unitPrice: p ? String(p.sellingPrice) : it.unitPrice }
                                       : it));
                                   }}
-                                  className="flex-1 border border-gray-200 rounded-lg px-2 py-1.5 text-xs outline-none focus:ring-1 focus:ring-indigo-400 bg-white">
+                                  className="flex-1 border border-gray-200 rounded-lg px-2 py-1.5 text-xs outline-none focus:ring-1 focus:ring-indigo-400 bg-surface">
                                   <option value="">— Produit</option>
                                   {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                                 </select>
@@ -1007,7 +1007,7 @@ export function Logistics() {
                           onClick={() => handleConfirmDraft(o.id)}
                           disabled={confirmingDraft === o.id}
                           className="w-full py-2 bg-green-600 text-white rounded-xl text-xs font-bold hover:bg-green-700 disabled:opacity-60 flex items-center justify-center gap-2">
-                          {confirmingDraft === o.id ? <><span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />Confirmation…</> : '✓ Confirmer la commande'}
+                          {confirmingDraft === o.id ? <><span className="w-3 h-3 border-2 border-surface/30 border-t-white rounded-full animate-spin" />Confirmation…</> : '✓ Confirmer la commande'}
                         </button>
                       </div>
                     ) : (!o.isDraft && editOrderId === o.id) ? (
@@ -1032,7 +1032,7 @@ export function Logistics() {
                                     ? { ...it, productId: e.target.value, unitPrice: p ? String(p.sellingPrice) : it.unitPrice }
                                     : it));
                                 }}
-                                className="flex-1 border border-gray-200 rounded-lg px-2 py-1.5 text-xs outline-none focus:ring-1 focus:ring-indigo-400 bg-white">
+                                className="flex-1 border border-gray-200 rounded-lg px-2 py-1.5 text-xs outline-none focus:ring-1 focus:ring-indigo-400 bg-surface">
                                 <option value="">— Produit</option>
                                 {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                               </select>
@@ -1307,7 +1307,7 @@ export function Logistics() {
               </div>
 
               {/* ── Relance non-livrées ── */}
-              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
+              <div className="bg-surface rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="font-bold text-gray-900">Relance commandes non livrées</h3>
@@ -1317,7 +1317,7 @@ export function Logistics() {
                     <input type="checkbox" checked={!!cfg.relanceEnabled}
                       onChange={e => setFollowUpConfigDraft(d => ({ ...d, relanceEnabled: e.target.checked }))}
                       className="sr-only peer" />
-                    <div className="w-10 h-5 bg-gray-200 peer-focus:ring-2 peer-focus:ring-indigo-300 rounded-full peer peer-checked:bg-indigo-600 transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-5" />
+                    <div className="w-10 h-5 bg-gray-200 peer-focus:ring-2 peer-focus:ring-indigo-300 rounded-full peer peer-checked:bg-indigo-600 transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-surface after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-5" />
                   </label>
                 </div>
 
@@ -1372,17 +1372,17 @@ export function Logistics() {
                       <>
                         <div className="flex flex-wrap gap-2 mb-2">
                           <button onClick={() => setSelectedRelance(new Set(relanceOrders.filter(o => o.relanceAction !== 'hold').map(o => o.id)))}
-                            className="px-2.5 py-1 rounded-lg bg-white border border-amber-200 text-xs font-semibold text-amber-800">Tout</button>
+                            className="px-2.5 py-1 rounded-lg bg-surface border border-amber-200 text-xs font-semibold text-amber-800">Tout</button>
                           <button onClick={() => setSelectedRelance(new Set(relanceOrders.filter(o => o.status === 'pending' && o.relanceAction !== 'hold').map(o => o.id)))}
-                            className="px-2.5 py-1 rounded-lg bg-white border border-amber-200 text-xs font-semibold text-amber-800">En attente seulement</button>
+                            className="px-2.5 py-1 rounded-lg bg-surface border border-amber-200 text-xs font-semibold text-amber-800">En attente seulement</button>
                           <button onClick={() => setSelectedRelance(new Set())}
-                            className="px-2.5 py-1 rounded-lg bg-white border border-amber-200 text-xs font-semibold text-amber-800">Aucune</button>
+                            className="px-2.5 py-1 rounded-lg bg-surface border border-amber-200 text-xs font-semibold text-amber-800">Aucune</button>
                         </div>
                         <div className="space-y-2 max-h-52 overflow-y-auto mb-3">
                           {relanceOrders.map(o => {
                             const st = STATUS_LABELS[o.status] ?? STATUS_LABELS.pending;
                             return (
-                              <label key={o.id} className={`flex items-center gap-3 bg-white rounded-lg px-3 py-2 border border-amber-100 ${o.relanceAction === 'hold' ? 'opacity-60' : 'cursor-pointer'}`}>
+                              <label key={o.id} className={`flex items-center gap-3 bg-surface rounded-lg px-3 py-2 border border-amber-100 ${o.relanceAction === 'hold' ? 'opacity-60' : 'cursor-pointer'}`}>
                                 <input type="checkbox" className="accent-amber-600 shrink-0" disabled={o.relanceAction === 'hold'}
                                   checked={selectedRelance.has(o.id)}
                                   onChange={() => setSelectedRelance(prev => {
@@ -1412,7 +1412,7 @@ export function Logistics() {
                         <button onClick={() => triggerFollowUp('relance')} disabled={!!followUpTriggerLoading || selectedRelance.size === 0}
                           className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-amber-600 text-white text-sm font-semibold hover:bg-amber-700 disabled:opacity-50 transition-colors">
                           {followUpTriggerLoading === 'relance'
-                            ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                            ? <span className="w-4 h-4 border-2 border-surface/30 border-t-white rounded-full animate-spin" />
                             : <Bell size={14} />}
                           Traiter la sélection ({selectedRelance.size})
                         </button>
@@ -1423,7 +1423,7 @@ export function Logistics() {
               </div>
 
               {/* ── Fidélisation livrées ── */}
-              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
+              <div className="bg-surface rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="font-bold text-gray-900">Message de fidélisation (après livraison)</h3>
@@ -1433,7 +1433,7 @@ export function Logistics() {
                     <input type="checkbox" checked={!!cfg.loyaltyEnabled}
                       onChange={e => setFollowUpConfigDraft(d => ({ ...d, loyaltyEnabled: e.target.checked }))}
                       className="sr-only peer" />
-                    <div className="w-10 h-5 bg-gray-200 peer-focus:ring-2 peer-focus:ring-indigo-300 rounded-full peer peer-checked:bg-indigo-600 transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-5" />
+                    <div className="w-10 h-5 bg-gray-200 peer-focus:ring-2 peer-focus:ring-indigo-300 rounded-full peer peer-checked:bg-indigo-600 transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-surface after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-5" />
                   </label>
                 </div>
 
@@ -1488,7 +1488,7 @@ export function Logistics() {
                       <>
                         <div className="space-y-2 max-h-52 overflow-y-auto mb-3">
                           {followUpPreview.orders.map(o => (
-                            <div key={o.id} className="flex items-center gap-3 bg-white rounded-lg px-3 py-2 border border-green-100">
+                            <div key={o.id} className="flex items-center gap-3 bg-surface rounded-lg px-3 py-2 border border-green-100">
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2 flex-wrap">
                                   <span className="font-bold text-xs text-indigo-600">{orderNum(o.orderNumber)}</span>
@@ -1506,7 +1506,7 @@ export function Logistics() {
                         <button onClick={() => triggerFollowUp('loyalty')} disabled={!!followUpTriggerLoading}
                           className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-green-600 text-white text-sm font-semibold hover:bg-green-700 disabled:opacity-50 transition-colors">
                           {followUpTriggerLoading === 'loyalty'
-                            ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                            ? <span className="w-4 h-4 border-2 border-surface/30 border-t-white rounded-full animate-spin" />
                             : <Bell size={14} />}
                           Envoyer à tous ({followUpPreview.orders.length})
                         </button>
@@ -1517,7 +1517,7 @@ export function Logistics() {
               </div>
 
               {/* ── Historique ── */}
-              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+              <div className="bg-surface rounded-2xl border border-gray-100 shadow-sm p-5">
                 <h3 className="font-bold text-gray-900 mb-3">Historique des envois ({followUpHistory.length})</h3>
                 {followUpHistory.length === 0 ? (
                   <p className="text-sm text-gray-400 text-center py-6">Aucun envoi pour l'instant.</p>
@@ -1565,7 +1565,7 @@ export function Logistics() {
           <div>
             <label className="block text-xs font-semibold text-gray-600 mb-1">Type</label>
             <select value={partnerForm.type} onChange={e => setPartnerForm(f => ({ ...f, type: e.target.value }))}
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-400 bg-white">
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-400 bg-surface">
               <option value="COMPANY">Entreprise</option>
               <option value="INDEPENDENT">Livreur indépendant</option>
             </select>
@@ -1598,7 +1598,7 @@ export function Logistics() {
                           ? { ...it, productId: e.target.value, unitPrice: p ? String(p.sellingPrice) : it.unitPrice }
                           : it));
                       }}
-                      className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-400 bg-white">
+                      className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-400 bg-surface">
                       <option value="">— Produit</option>
                       {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                     </select>
@@ -1661,7 +1661,7 @@ export function Logistics() {
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1">Commune</label>
                 <select value={orderForm.commune} onChange={e => setOrderForm(f => ({ ...f, commune: e.target.value }))}
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-400 bg-white">
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-400 bg-surface">
                   <option value="">— Choisir</option>
                   {CITY_COMMUNES[orderForm.city].map((c: string) => <option key={c} value={c}>{c}</option>)}
                 </select>
@@ -1677,7 +1677,7 @@ export function Logistics() {
               </label>
               <input type="datetime-local" value={orderForm.scheduledAt}
                 onChange={e => setOrderForm(f => ({ ...f, scheduledAt: e.target.value }))}
-                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-400 bg-white" />
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-400 bg-surface" />
             </div>
           </div>
           <ModalFooter onClose={() => { setShowOrderModal(false); resetOrderForm(); }} onConfirm={handleCreateOrder} loading={submitting} label="Créer la commande" />
@@ -1724,7 +1724,7 @@ export function Logistics() {
           <div>
             <label className="block text-xs font-semibold text-gray-600 mb-1">Partenaire de livraison</label>
             <select value={dispatchPartnerId} onChange={e => setDispatchPartnerId(e.target.value)}
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-400 bg-white">
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-400 bg-surface">
               <option value="">— Choisir un partenaire</option>
               {partners.map(p => (
                 <option key={p.id} value={p.id}>{p.name}{p.city ? ` · ${p.city}` : ''}</option>
@@ -1749,7 +1749,7 @@ export function Logistics() {
             </label>
             <input type="datetime-local" value={rescheduleDate}
               onChange={e => setRescheduleDate(e.target.value)}
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-400 bg-white" />
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-400 bg-surface" />
           </div>
           <ModalFooter
             onClose={() => { setRescheduleModal(null); setRescheduleDate(''); }}
@@ -2036,7 +2036,7 @@ function Modal({ title, onClose, children, wide }: { title: string; onClose: () 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
       <ScrollLock />
-      <div className={`bg-white rounded-2xl shadow-2xl w-full ${wide ? 'max-w-2xl' : 'max-w-md'} max-h-[90vh] flex flex-col`}>
+      <div className={`bg-surface rounded-2xl shadow-2xl w-full ${wide ? 'max-w-2xl' : 'max-w-md'} max-h-[90vh] flex flex-col`}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <h2 className="font-bold text-gray-900">{title}</h2>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100"><X size={18} className="text-gray-500" /></button>

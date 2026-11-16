@@ -262,7 +262,7 @@ export function Analytics() {
           <p className="text-sm text-gray-500">KPIs par {terms.item} — Période sélectionnée</p>
         </div>
         {/* CPA threshold control */}
-        <div className="flex items-center gap-3 bg-white border border-gray-200 rounded-xl px-4 py-2.5 shadow-sm">
+        <div className="flex items-center gap-3 bg-surface border border-gray-200 rounded-xl px-4 py-2.5 shadow-sm">
           <AlertTriangle size={16} className="text-amber-500" />
           <span className="text-sm text-gray-600">Seuil CPA:</span>
           {editingThreshold ? (
@@ -284,7 +284,7 @@ export function Analytics() {
 
       {/* Charts */}
       <div className="grid sm:grid-cols-2 gap-6">
-        <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+        <div className="bg-surface rounded-2xl p-5 shadow-sm border border-gray-100">
           <h2 className="font-semibold text-gray-900 mb-4">Marges par {terms.item} (%)</h2>
           {marginData.length > 0 ? (
             <ResponsiveContainer width="100%" height={220}>
@@ -303,7 +303,7 @@ export function Analytics() {
           )}
         </div>
 
-        <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+        <div className="bg-surface rounded-2xl p-5 shadow-sm border border-gray-100">
           <h2 className="font-semibold text-gray-900 mb-4">Profit net par {terms.item} ({currency})</h2>
           {profitData.length > 0 ? (
             <ResponsiveContainer width="100%" height={220}>
@@ -329,7 +329,7 @@ export function Analytics() {
       <div className="flex gap-2 bg-gray-100 p-1 rounded-xl w-fit overflow-x-auto">
         {(['table', 'strategy', 'zones', 'pnl'] as Tab[]).map(t => (
           <button key={t} onClick={() => setTab(t)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${tab === t ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${tab === t ? 'bg-surface text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
             {t === 'table' ? '📊 Tableau' : t === 'strategy' ? '🎯 Stratégie' : t === 'zones' ? '📍 Zones' : '📒 Compte de résultat'}
           </button>
         ))}
@@ -337,7 +337,7 @@ export function Analytics() {
 
       {/* TABLE TAB */}
       {tab === 'table' && (
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div className="bg-surface rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
           <div className="p-5 border-b border-gray-100">
             <h2 className="font-semibold text-gray-900 mb-3">Tableau analytique détaillé</h2>
             <div className="flex flex-wrap gap-2">
@@ -442,16 +442,16 @@ export function Analytics() {
         <div className="space-y-6">
           {/* KPI cards */}
           <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-            <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm">
+            <div className="bg-surface rounded-2xl border border-gray-100 p-4 shadow-sm">
               <div className="text-xs text-gray-500 mb-1">Zones actives</div>
               <div className="text-3xl font-black text-gray-900">{zoneStats.length}</div>
             </div>
-            <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm">
+            <div className="bg-surface rounded-2xl border border-gray-100 p-4 shadow-sm">
               <div className="text-xs text-gray-500 mb-1">Zone top CA</div>
               <div className="text-lg font-bold text-indigo-700 truncate">{zoneStats[0]?.zone ?? '—'}</div>
               <div className="text-xs text-gray-400">{MAD(zoneStats[0]?.revenue ?? 0)}</div>
             </div>
-            <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm">
+            <div className="bg-surface rounded-2xl border border-gray-100 p-4 shadow-sm">
               <div className="text-xs text-gray-500 mb-1">Zone top commandes</div>
               <div className="text-lg font-bold text-emerald-700 truncate">
                 {[...zoneStats].sort((a, b) => b.count - a.count)[0]?.zone ?? '—'}
@@ -464,7 +464,7 @@ export function Analytics() {
 
           {/* Bar chart */}
           {zoneStats.length > 0 && (
-            <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+            <div className="bg-surface rounded-2xl p-5 shadow-sm border border-gray-100">
               <h2 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
                 <MapPin size={16} className="text-indigo-500" /> CA par zone ({currency})
               </h2>
@@ -491,7 +491,7 @@ export function Analytics() {
           )}
 
           {/* Ranking table */}
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="bg-surface rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
             <div className="px-5 py-4 border-b border-gray-100">
               <h2 className="font-semibold text-gray-900">Classement des zones</h2>
             </div>
@@ -641,7 +641,7 @@ export function Analytics() {
           })}
 
           {/* Stock rotation */}
-          <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+          <div className="bg-surface rounded-2xl p-5 shadow-sm border border-gray-100">
             <h2 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
               <Clock size={18} className="text-blue-500" /> Rotation de stock
             </h2>
@@ -681,7 +681,7 @@ export function Analytics() {
 
       {/* PNL TAB — Compte de résultat */}
       {tab === 'pnl' && (
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div className="bg-surface rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
           <div className="p-5 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="font-semibold text-gray-900">Compte de résultat</h2>
@@ -691,7 +691,7 @@ export function Analytics() {
               <div className="flex gap-1 bg-gray-100 p-1 rounded-lg">
                 {(['monthly', 'annual'] as const).map(v => (
                   <button key={v} onClick={() => setPnlView(v)}
-                    className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${pnlView === v ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+                    className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${pnlView === v ? 'bg-surface text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
                     {v === 'monthly' ? 'Mensuel' : 'Annuel'}
                   </button>
                 ))}
@@ -709,7 +709,7 @@ export function Analytics() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100">
-                  <th className="text-left font-medium text-gray-500 px-5 py-3 sticky left-0 bg-white">Ligne</th>
+                  <th className="text-left font-medium text-gray-500 px-5 py-3 sticky left-0 bg-surface">Ligne</th>
                   {pnlPeriods.map(p => (
                     <th key={p.label} className="text-right font-medium text-gray-500 px-3 py-3 whitespace-nowrap min-w-[90px]">{p.label}</th>
                   ))}
@@ -718,12 +718,12 @@ export function Analytics() {
               </thead>
               <tbody>
                 <tr className="border-b border-gray-50">
-                  <td className="px-5 py-2.5 font-medium text-gray-800 sticky left-0 bg-white">Chiffre d'affaires</td>
+                  <td className="px-5 py-2.5 font-medium text-gray-800 sticky left-0 bg-surface">Chiffre d'affaires</td>
                   {pnlPeriods.map(p => <td key={p.label} className="text-right px-3 py-2.5 text-gray-800">{MAD(p.totalRevenue)}</td>)}
                   <td className="text-right px-5 py-2.5 font-semibold text-gray-900 bg-gray-50">{MAD(pnlTotal.totalRevenue)}</td>
                 </tr>
                 <tr className="border-b border-gray-50">
-                  <td className="px-5 py-2.5 text-gray-600 sticky left-0 bg-white">Coût des marchandises vendues</td>
+                  <td className="px-5 py-2.5 text-gray-600 sticky left-0 bg-surface">Coût des marchandises vendues</td>
                   {pnlPeriods.map(p => <td key={p.label} className="text-right px-3 py-2.5 text-red-600">−{MAD(p.totalCOGS)}</td>)}
                   <td className="text-right px-5 py-2.5 font-semibold text-red-600 bg-gray-50">−{MAD(pnlTotal.totalCOGS)}</td>
                 </tr>
@@ -735,7 +735,7 @@ export function Analytics() {
 
                 {pnlOpexCategories.map(cat => (
                   <tr key={cat} className="border-b border-gray-50">
-                    <td className="px-5 py-2 pl-8 text-gray-500 text-xs sticky left-0 bg-white">{pnlCatLabel(cat)}</td>
+                    <td className="px-5 py-2 pl-8 text-gray-500 text-xs sticky left-0 bg-surface">{pnlCatLabel(cat)}</td>
                     {pnlPeriods.map(p => (
                       <td key={p.label} className="text-right px-3 py-2 text-gray-500 text-xs">
                         {p.opexByCategory[cat] ? `−${MAD(p.opexByCategory[cat])}` : '—'}
@@ -747,7 +747,7 @@ export function Analytics() {
                   </tr>
                 ))}
                 <tr className="border-b border-gray-100">
-                  <td className="px-5 py-2.5 font-medium text-gray-700 sticky left-0 bg-white">Total OPEX</td>
+                  <td className="px-5 py-2.5 font-medium text-gray-700 sticky left-0 bg-surface">Total OPEX</td>
                   {pnlPeriods.map(p => <td key={p.label} className="text-right px-3 py-2.5 font-medium text-red-600">−{MAD(p.totalExpenses)}</td>)}
                   <td className="text-right px-5 py-2.5 font-semibold text-red-600 bg-gray-50">−{MAD(pnlTotal.totalExpenses)}</td>
                 </tr>

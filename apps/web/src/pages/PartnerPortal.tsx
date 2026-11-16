@@ -148,7 +148,7 @@ function LoginScreen({ token, hasPin, onSuccess }: { token: string; hasPin: bool
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-slate-100 flex items-center justify-center p-4">
-      <div className="bg-white rounded-3xl shadow-xl w-full max-w-sm mx-auto p-8">
+      <div className="bg-surface rounded-3xl shadow-xl w-full max-w-sm mx-auto p-8">
         <div className="flex justify-center mb-6">
           <div className="w-16 h-16 bg-indigo-100 rounded-2xl flex items-center justify-center">
             <KeyRound size={28} className="text-indigo-600" />
@@ -293,7 +293,7 @@ function Portal({ data: initialData, token, onLogout }: {
               <div className="flex items-center gap-2 mb-0.5">
                 <Truck size={20} />
                 <h1 className="text-lg font-black">{data.name}</h1>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/20">
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-surface/20">
                   {data.type === 'COMPANY' ? 'Entreprise' : 'Indépendant'}
                 </span>
               </div>
@@ -318,7 +318,7 @@ function Portal({ data: initialData, token, onLogout }: {
                 {label}
                 {count !== undefined && (
                   <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full
-                    ${tab === id ? 'bg-indigo-100 text-indigo-600' : 'bg-white/20'}`}>
+                    ${tab === id ? 'bg-indigo-100 text-indigo-600' : 'bg-surface/20'}`}>
                     {count}
                   </span>
                 )}
@@ -365,7 +365,7 @@ function Portal({ data: initialData, token, onLogout }: {
         <ModalPortal>
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
           <ScrollLock />
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm max-h-[90vh] flex flex-col">
+          <div className="bg-surface rounded-2xl shadow-2xl w-full max-w-sm max-h-[90vh] flex flex-col">
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
               <h2 className="font-bold text-gray-900">Confirmer la livraison</h2>
               <button onClick={() => { setDeliverModal(null); setCollectedUsd(''); setCollectedCdf(''); }}
@@ -511,7 +511,7 @@ function OrdersTab({ orders, agents, token, partnerName, businessName, updatingI
   return (
     <div className="space-y-3">
       {/* Filters */}
-      <div className="bg-white rounded-2xl p-3 border border-gray-100 shadow-sm">
+      <div className="bg-surface rounded-2xl p-3 border border-gray-100 shadow-sm">
         <div className="flex gap-2 flex-wrap items-center">
           <div className="flex items-center gap-1.5 flex-1 min-w-[130px]">
             <Calendar size={13} className="text-gray-400 shrink-0" />
@@ -519,13 +519,13 @@ function OrdersTab({ orders, agents, token, partnerName, businessName, updatingI
               type="date"
               value={filterDate}
               onChange={e => setFilterDate(e.target.value)}
-              className="w-full border border-gray-200 rounded-xl px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-indigo-400 bg-white"
+              className="w-full border border-gray-200 rounded-xl px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-indigo-400 bg-surface"
             />
           </div>
           <select
             value={filterStatus}
             onChange={e => setFilterStatus(e.target.value)}
-            className="flex-1 min-w-[130px] border border-gray-200 rounded-xl px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-indigo-400 bg-white"
+            className="flex-1 min-w-[130px] border border-gray-200 rounded-xl px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-indigo-400 bg-surface"
           >
             <option value="">Tous les statuts</option>
             {ALL_STATUSES.map(s => (
@@ -552,7 +552,7 @@ function OrdersTab({ orders, agents, token, partnerName, businessName, updatingI
         const currentAgent = agents.find(a => a.id === o.agentId);
 
         return (
-          <div key={o.id} className={`bg-white rounded-2xl p-4 border border-gray-100 shadow-sm transition-opacity ${updatingId === o.id || assigningId === o.id ? 'opacity-60' : ''}`}>
+          <div key={o.id} className={`bg-surface rounded-2xl p-4 border border-gray-100 shadow-sm transition-opacity ${updatingId === o.id || assigningId === o.id ? 'opacity-60' : ''}`}>
             {/* Header */}
             <div className="flex items-start justify-between gap-2 mb-2">
               <div className="flex items-center gap-2 flex-wrap">
@@ -636,7 +636,7 @@ function OrdersTab({ orders, agents, token, partnerName, businessName, updatingI
                   <select
                     value={currentAgentId}
                     onChange={e => setSelectedAgent(s => ({ ...s, [o.id]: e.target.value }))}
-                    className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-400 bg-white"
+                    className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-400 bg-surface"
                   >
                     <option value="">— Aucun agent</option>
                     {agents.map(a => (
@@ -670,7 +670,7 @@ function OrdersTab({ orders, agents, token, partnerName, businessName, updatingI
                     value={o.status}
                     disabled={updatingId === o.id}
                     onChange={e => onStatusChange(o.id, e.target.value)}
-                    className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-400 bg-white"
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-400 bg-surface"
                   >
                     {ALL_STATUSES.map(s => (
                       <option key={s.value} value={s.value}>{s.label}</option>
@@ -694,7 +694,7 @@ function OrdersTab({ orders, agents, token, partnerName, businessName, updatingI
         <ModalPortal>
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
           <ScrollLock />
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm max-h-[90vh] flex flex-col">
+          <div className="bg-surface rounded-2xl shadow-xl w-full max-w-sm max-h-[90vh] flex flex-col">
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
               <h3 className="font-bold text-gray-900 flex items-center gap-2"><Calendar size={16} /> Reporter la livraison</h3>
               <button onClick={() => { setRescheduleOrderId(null); setRescheduleDate(''); }} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
@@ -766,7 +766,7 @@ function TeamTab({ token, agents, onAgentsChange }: {
       </div>
 
       {showForm && (
-        <form onSubmit={addAgent} className="bg-white rounded-2xl p-4 border border-indigo-200 shadow-sm space-y-3">
+        <form onSubmit={addAgent} className="bg-surface rounded-2xl p-4 border border-indigo-200 shadow-sm space-y-3">
           <p className="text-xs font-bold text-gray-700">Nouvel agent</p>
           <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="Nom complet *" required
             className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-400" />
@@ -787,7 +787,7 @@ function TeamTab({ token, agents, onAgentsChange }: {
 
       <div className="space-y-2">
         {agents.map(agent => (
-          <div key={agent.id} className="bg-white rounded-2xl px-4 py-3 border border-gray-100 shadow-sm flex items-center gap-3">
+          <div key={agent.id} className="bg-surface rounded-2xl px-4 py-3 border border-gray-100 shadow-sm flex items-center gap-3">
             <div className="w-9 h-9 bg-indigo-100 rounded-full flex items-center justify-center shrink-0">
               <span className="text-indigo-600 font-bold text-sm">{agent.name[0].toUpperCase()}</span>
             </div>
@@ -829,7 +829,7 @@ function StockTab({ location }: { location: PartnerData['location'] }) {
       </p>
       <div className="grid grid-cols-2 gap-2">
         {location.stocks.map(s => (
-          <div key={s.id} className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
+          <div key={s.id} className="bg-surface rounded-xl p-4 border border-gray-100 shadow-sm">
             <p className="text-xs text-gray-500 mb-1 truncate">{s.product.name}</p>
             <p className="text-3xl font-black text-gray-900">{s.quantity}</p>
             <p className="text-[10px] text-gray-400 mt-0.5">unités disponibles</p>
@@ -989,7 +989,7 @@ function ReportsTab({ token, partnerName }: { token: string; partnerName: string
         {(['daily','history'] as const).map(v => (
           <button key={v} onClick={() => setView(v)}
             className={`px-4 py-1.5 rounded-xl text-xs font-semibold transition-all
-              ${view === v ? 'bg-white text-indigo-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+              ${view === v ? 'bg-surface text-indigo-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
             {v === 'daily' ? 'Rapport journalier' : 'Historique'}
           </button>
         ))}
@@ -1000,10 +1000,10 @@ function ReportsTab({ token, partnerName }: { token: string; partnerName: string
         <div className="space-y-4">
           <div className="flex gap-2 items-center flex-wrap">
             <input type="date" value={date} onChange={e => setDate(e.target.value)}
-              className="border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-400 bg-white" />
+              className="border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-400 bg-surface" />
             <button onClick={generateReport} disabled={loading}
               className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50">
-              {loading ? <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> : <FileText size={14} />}
+              {loading ? <span className="w-4 h-4 border-2 border-surface/40 border-t-white rounded-full animate-spin" /> : <FileText size={14} />}
               Générer
             </button>
             {report && (
@@ -1162,7 +1162,7 @@ function ReportsTab({ token, partnerName }: { token: string; partnerName: string
             {PERIOD_CHIPS.map(c => (
               <button key={c.id} onClick={() => { setPeriod(c.id); if (c.id !== 'custom') loadHistory(c.id); }}
                 className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all border
-                  ${period === c.id ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>
+                  ${period === c.id ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-surface text-gray-600 border-gray-200 hover:bg-gray-50'}`}>
                 {c.label}
               </button>
             ))}
@@ -1171,10 +1171,10 @@ function ReportsTab({ token, partnerName }: { token: string; partnerName: string
           {period === 'custom' && (
             <div className="flex gap-2 items-center flex-wrap">
               <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
-                className="border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-400 bg-white" />
+                className="border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-400 bg-surface" />
               <span className="text-gray-400 text-sm">→</span>
               <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
-                className="border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-400 bg-white" />
+                className="border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-400 bg-surface" />
               <button onClick={() => loadHistory('custom', customFrom, customTo)}
                 className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700">
                 Appliquer
@@ -1322,11 +1322,11 @@ function FinancesTab({ token }: { token: string }) {
       <div>
         <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2">Montants encaissés — USD</p>
         <div className="grid grid-cols-3 gap-2">
-          <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm text-center">
+          <div className="bg-surface rounded-2xl p-4 border border-gray-100 shadow-sm text-center">
             <p className="text-[10px] font-semibold text-gray-400 mb-1">Collecté</p>
             <p className="text-base font-black text-gray-900">${Number(owedUsd).toLocaleString('fr-FR')}</p>
           </div>
-          <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm text-center">
+          <div className="bg-surface rounded-2xl p-4 border border-gray-100 shadow-sm text-center">
             <p className="text-[10px] font-semibold text-gray-400 mb-1">Versé</p>
             <p className="text-base font-black text-green-700">${Number(paidUsd).toLocaleString('fr-FR')}</p>
           </div>
@@ -1342,11 +1342,11 @@ function FinancesTab({ token }: { token: string }) {
       <div>
         <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2">Montants encaissés — FC</p>
         <div className="grid grid-cols-3 gap-2">
-          <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm text-center">
+          <div className="bg-surface rounded-2xl p-4 border border-gray-100 shadow-sm text-center">
             <p className="text-[10px] font-semibold text-gray-400 mb-1">Collecté</p>
             <p className="text-base font-black text-gray-900">{Number(owedCdf).toLocaleString('fr-FR')} FC</p>
           </div>
-          <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm text-center">
+          <div className="bg-surface rounded-2xl p-4 border border-gray-100 shadow-sm text-center">
             <p className="text-[10px] font-semibold text-gray-400 mb-1">Versé</p>
             <p className="text-base font-black text-green-700">{Number(paidCdf).toLocaleString('fr-FR')} FC</p>
           </div>
@@ -1360,7 +1360,7 @@ function FinancesTab({ token }: { token: string }) {
       </div>
 
       {/* New versement form */}
-      <div className="bg-white rounded-2xl p-4 border border-indigo-200 shadow-sm">
+      <div className="bg-surface rounded-2xl p-4 border border-indigo-200 shadow-sm">
         <h3 className="font-bold text-gray-900 mb-3 flex items-center gap-2">
           <DollarSign size={15} className="text-indigo-600" /> Déclarer un versement
         </h3>
@@ -1373,7 +1373,7 @@ function FinancesTab({ token }: { token: string }) {
               className="flex-1 border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-400"
             />
             <select value={currency} onChange={e => setCurrency(e.target.value)}
-              className="border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-400 bg-white">
+              className="border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-400 bg-surface">
               <option value="FC">FC</option>
               <option value="USD">USD</option>
             </select>
@@ -1407,7 +1407,7 @@ function FinancesTab({ token }: { token: string }) {
           <h3 className="text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">Commandes livrées</h3>
           <div className="space-y-2">
             {finances.deliveredOrders?.map(o => (
-              <div key={o.id} className="bg-white rounded-xl px-4 py-3 border border-gray-100 shadow-sm flex items-center justify-between gap-2">
+              <div key={o.id} className="bg-surface rounded-xl px-4 py-3 border border-gray-100 shadow-sm flex items-center justify-between gap-2">
                 <div>
                   <p className="text-sm font-semibold text-gray-900">#{String(o.orderNumber).padStart(4, '0')} — {o.customerName}</p>
                   <p className="text-xs text-gray-400">{new Date(o.createdAt).toLocaleDateString('fr-FR')}</p>
@@ -1432,7 +1432,7 @@ function FinancesTab({ token }: { token: string }) {
         ) : (
           <div className="space-y-2">
             {finances.payments?.map(p => (
-              <div key={p.id} className="bg-white rounded-xl px-4 py-3 border border-gray-100 shadow-sm">
+              <div key={p.id} className="bg-surface rounded-xl px-4 py-3 border border-gray-100 shadow-sm">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${paymentBadge(p.status)}`}>

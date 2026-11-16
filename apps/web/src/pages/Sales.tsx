@@ -250,7 +250,7 @@ export function Sales() {
             key={ch}
             onClick={() => { setChannelFilter(channelFilter === ch ? '' : ch); setPage(1); }}
             className={`flex-none flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-medium transition-all ${
-              channelFilter === ch ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white border-gray-200 text-gray-700 hover:border-indigo-300'
+              channelFilter === ch ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-surface border-gray-200 text-gray-700 hover:border-indigo-300'
             }`}
           >
             <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: CHANNEL_COLORS[ch] ?? '#6b7280' }} />
@@ -270,7 +270,7 @@ export function Sales() {
             placeholder={`Rechercher par ${terms.item}, canal ou client...`}
             value={search}
             onChange={e => { setSearch(e.target.value); setPage(1); }}
-            className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
+            className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-300 bg-surface"
           />
         </div>
         {(search || channelFilter) && (
@@ -301,7 +301,7 @@ export function Sales() {
           const msg = sendMsg?.id === sale.id ? sendMsg : null;
 
           return (
-            <div key={sale.id} className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+            <div key={sale.id} className="bg-surface rounded-2xl p-4 shadow-sm border border-gray-100">
               <div className="flex items-start justify-between mb-3">
                 <div className="flex items-center gap-2 flex-wrap">
                   <Badge color={CHANNEL_BADGE[sale.channel] ?? 'gray'} size="sm">{sale.channel}</Badge>
@@ -493,7 +493,7 @@ export function Sales() {
                 className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300"
               />
               {showSuggestions && (
-                <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+                <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-surface border border-gray-200 rounded-xl shadow-lg overflow-hidden">
                   {suggestions.map((s, i) => (
                     <button key={i} type="button"
                       onMouseDown={() => pickSuggestion(s)}
@@ -575,7 +575,7 @@ export function Sales() {
                         : s === 'pending' ? 'bg-amber-500 text-white border-amber-500'
                         : s === 'credit' ? 'bg-indigo-600 text-white border-indigo-600'
                         : 'bg-red-500 text-white border-red-500'
-                      : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                      : 'bg-surface text-gray-600 border-gray-200 hover:bg-gray-50'
                   }`}>
                   {STATUS_BADGE[s].label}
                 </button>

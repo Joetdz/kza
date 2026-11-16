@@ -238,7 +238,7 @@ function ConnectScreen({
               className="w-full py-3 rounded-xl font-semibold text-sm transition-opacity disabled:opacity-50 flex items-center justify-center gap-2"
               style={{ background: '#00a884', color: 'white' }}>
               {connecting
-                ? <><span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Génération...</>
+                ? <><span className="w-4 h-4 border-2 border-surface/40 border-t-white rounded-full animate-spin" /> Génération...</>
                 : 'Obtenir le code de liaison'}
             </button>
           </>
@@ -280,7 +280,7 @@ function ConnectScreen({
               className="w-full py-3 rounded-xl font-semibold text-sm transition-opacity disabled:opacity-50 flex items-center justify-center gap-2"
               style={{ background: '#00a884', color: 'white' }}>
               {connecting
-                ? <><span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Génération...</>
+                ? <><span className="w-4 h-4 border-2 border-surface/40 border-t-white rounded-full animate-spin" /> Génération...</>
                 : 'Générer le QR Code'}
             </button>
           </div>
@@ -995,7 +995,7 @@ export function Inbox() {
               <div onClick={() => updateContact(selectedContact.id, { aiEnabled: !selectedContact.aiEnabled })}
                 className="w-10 h-5 rounded-full cursor-pointer transition-colors"
                 style={{ background: selectedContact.aiEnabled ? '#00a884' : '#374045' }}>
-                <div className={`w-4 h-4 bg-white rounded-full shadow transition-transform mt-0.5 ${selectedContact.aiEnabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                <div className={`w-4 h-4 bg-surface rounded-full shadow transition-transform mt-0.5 ${selectedContact.aiEnabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
               </div>
             </div>
 

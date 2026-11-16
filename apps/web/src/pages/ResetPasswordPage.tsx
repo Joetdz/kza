@@ -26,7 +26,7 @@ export function ResetPasswordPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-      <div className="w-full max-w-sm bg-white rounded-2xl shadow-xl p-6 space-y-5">
+      <div className="w-full max-w-sm bg-surface rounded-2xl shadow-xl p-6 space-y-5">
         <div className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center">
           <span className="text-white font-black text-lg">K</span>
         </div>
@@ -61,7 +61,7 @@ export function ResetPasswordPage() {
               type="submit" disabled={loading}
               className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white py-3 rounded-xl text-sm font-semibold transition-colors"
             >
-              {loading && <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+              {loading && <span className="w-4 h-4 border-2 border-surface/30 border-t-white rounded-full animate-spin" />}
               Mettre à jour
             </button>
           </form>

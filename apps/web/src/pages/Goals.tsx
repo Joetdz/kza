@@ -375,7 +375,7 @@ export function Goals() {
       <div className="flex gap-2 bg-gray-100 p-1 rounded-xl w-fit">
         {([['objectifs', '🎯 Objectifs'], ['budget', '📈 Budget prévisionnel']] as const).map(([t, label]) => (
           <button key={t} onClick={() => setMainTab(t)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${mainTab === t ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${mainTab === t ? 'bg-surface text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
             {label}
           </button>
         ))}
@@ -394,7 +394,7 @@ export function Goals() {
       )}
 
       {mainTab === 'objectifs' && range && (
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-3 sm:p-4">
+        <div className="bg-surface rounded-2xl shadow-sm border border-gray-100 p-3 sm:p-4">
           <div className="flex items-center justify-between gap-3 mb-3">
             <div className="min-w-0">
               <h2 className="font-semibold text-gray-900 text-sm capitalize">{monthLabel(selectedMonth)}</h2>
@@ -502,9 +502,9 @@ export function Goals() {
             <span className="font-semibold">Progression globale {periodName}</span>
           </div>
           <div className="text-4xl font-black mb-2">{Math.round(globalProgressPct)}%</div>
-          <div className="w-full bg-white/20 rounded-full h-2">
+          <div className="w-full bg-surface/20 rounded-full h-2">
             <div
-              className="h-2 rounded-full bg-white transition-all"
+              className="h-2 rounded-full bg-surface transition-all"
               style={{ width: `${Math.min(100, globalProgressPct)}%` }}
             />
           </div>
@@ -515,7 +515,7 @@ export function Goals() {
         </div>
       )}
 
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+      <div className="bg-surface rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="p-4 pb-3">
           <h2 className="font-semibold text-gray-900 text-sm">Budget prévisionnel vs Réalisé</h2>
           <p className="text-xs text-gray-400">
@@ -560,7 +560,7 @@ export function Goals() {
         )}
       </div>
 
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+      <div className="bg-surface rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="p-4 pb-3 flex items-center justify-between gap-3">
           <div>
             <h2 className="font-semibold text-gray-900 text-sm">Dépenses : Prévu vs Réalisé</h2>
@@ -675,7 +675,7 @@ export function Goals() {
         ) : (
         <div className="space-y-5">
           {/* Settings */}
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+          <div className="bg-surface rounded-2xl shadow-sm border border-gray-100 p-4">
             <div className="flex items-center gap-2 mb-3">
               <Calculator size={16} className="text-indigo-500" />
               <h2 className="font-semibold text-gray-900 text-sm">Paramètres de projection</h2>
@@ -713,7 +713,7 @@ export function Goals() {
           </div>
 
           {/* Projected quantities + ad budget per product, month by month */}
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="bg-surface rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
             <div className="flex items-center justify-between p-4 pb-3">
               <div>
                 <h2 className="font-semibold text-gray-900 text-sm">Quantité et budget pub projetés, par mois</h2>
@@ -734,7 +734,7 @@ export function Goals() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-gray-100">
-                      <th className="text-left font-medium text-gray-500 px-4 py-2 sticky left-0 bg-white">{words.Item}</th>
+                      <th className="text-left font-medium text-gray-500 px-4 py-2 sticky left-0 bg-surface">{words.Item}</th>
                       {forecastMonths.map(m => (
                         <th key={m.monthKey} className="text-right font-medium text-gray-500 px-3 py-2 whitespace-nowrap min-w-[90px]">{m.label}</th>
                       ))}
@@ -745,7 +745,7 @@ export function Goals() {
                       const computedAdBudget = (Number(qtyMap[p.id]) || 0) * (adSpendPerUnit[p.id] ?? 0);
                       return (
                         <tr key={p.id} className="border-b border-gray-50">
-                          <td className="px-4 py-1.5 text-gray-700 truncate sticky left-0 bg-white max-w-[160px]">{p.name}</td>
+                          <td className="px-4 py-1.5 text-gray-700 truncate sticky left-0 bg-surface max-w-[160px]">{p.name}</td>
                           <td className="px-2 py-1.5">
                             <div className="flex flex-col gap-1">
                               <div className="flex items-center gap-1">
@@ -796,7 +796,7 @@ export function Goals() {
           </div>
 
           {/* Manual forecast OPEX lines */}
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+          <div className="bg-surface rounded-2xl shadow-sm border border-gray-100 p-4">
             <div className="flex items-center justify-between mb-3">
               <h2 className="font-semibold text-gray-900 text-sm">Autres OPEX du budget (ajoutées manuellement)</h2>
               <button onClick={openAddExpense}
@@ -826,7 +826,7 @@ export function Goals() {
           </div>
 
           {/* History of closed months — frozen at each month's end */}
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="bg-surface rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
             <div className="p-4 pb-3 flex items-center gap-2">
               <Lock size={15} className="text-gray-400" />
               <div>
@@ -869,7 +869,7 @@ export function Goals() {
           </div>
 
           {/* Projected P&L */}
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="bg-surface rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
             <div className="p-5 border-b border-gray-100">
               <h2 className="font-semibold text-gray-900">Compte de résultat prévisionnel</h2>
               <p className="text-xs text-gray-500">Même structure que le vrai compte de résultat (onglet Analyse)</p>
@@ -878,7 +878,7 @@ export function Goals() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-100">
-                    <th className="text-left font-medium text-gray-500 px-5 py-3 sticky left-0 bg-white">Ligne</th>
+                    <th className="text-left font-medium text-gray-500 px-5 py-3 sticky left-0 bg-surface">Ligne</th>
                     {forecastMonths.map(m => (
                       <th key={m.monthKey} className="text-right font-medium text-gray-500 px-3 py-3 whitespace-nowrap min-w-[90px]">{m.label}</th>
                     ))}
@@ -886,11 +886,11 @@ export function Goals() {
                 </thead>
                 <tbody>
                   <tr className="border-b border-gray-50">
-                    <td className="px-5 py-2.5 font-medium text-gray-800 sticky left-0 bg-white">Chiffre d'affaires</td>
+                    <td className="px-5 py-2.5 font-medium text-gray-800 sticky left-0 bg-surface">Chiffre d'affaires</td>
                     {forecastMonths.map(m => <td key={m.monthKey} className="text-right px-3 py-2.5 text-gray-800">{fmt(m.revenue)}</td>)}
                   </tr>
                   <tr className="border-b border-gray-50">
-                    <td className="px-5 py-2.5 text-gray-600 sticky left-0 bg-white">Coût des marchandises vendues</td>
+                    <td className="px-5 py-2.5 text-gray-600 sticky left-0 bg-surface">Coût des marchandises vendues</td>
                     {forecastMonths.map(m => <td key={m.monthKey} className="text-right px-3 py-2.5 text-red-600">−{fmt(m.cogs)}</td>)}
                   </tr>
                   <tr className="border-b border-gray-100 bg-indigo-50/40">
@@ -899,12 +899,12 @@ export function Goals() {
                   </tr>
 
                   <tr className="border-b border-gray-50">
-                    <td className="px-5 py-2 pl-8 text-gray-500 text-xs sticky left-0 bg-white">Budget publicité (projeté)</td>
+                    <td className="px-5 py-2 pl-8 text-gray-500 text-xs sticky left-0 bg-surface">Budget publicité (projeté)</td>
                     {forecastMonths.map(m => <td key={m.monthKey} className="text-right px-3 py-2 text-gray-500 text-xs">{m.adBudget ? `−${fmt(m.adBudget)}` : '—'}</td>)}
                   </tr>
                   {forecastOpexCategories.map(cat => (
                     <tr key={cat} className="border-b border-gray-50">
-                      <td className="px-5 py-2 pl-8 text-gray-500 text-xs sticky left-0 bg-white">{catLabel(cat)}</td>
+                      <td className="px-5 py-2 pl-8 text-gray-500 text-xs sticky left-0 bg-surface">{catLabel(cat)}</td>
                       {forecastMonths.map(m => (
                         <td key={m.monthKey} className="text-right px-3 py-2 text-gray-500 text-xs">
                           {m.knownOpexByCategory[cat] ? `−${fmt(m.knownOpexByCategory[cat])}` : '—'}
@@ -914,13 +914,13 @@ export function Goals() {
                   ))}
                   {forecast.expenses.length > 0 && (
                     <tr className="border-b border-gray-50">
-                      <td className="px-5 py-2 pl-8 text-gray-500 text-xs sticky left-0 bg-white">Autres OPEX (manuel)</td>
+                      <td className="px-5 py-2 pl-8 text-gray-500 text-xs sticky left-0 bg-surface">Autres OPEX (manuel)</td>
                       {forecastMonths.map(m => <td key={m.monthKey} className="text-right px-3 py-2 text-gray-500 text-xs">{m.manualOpexTotal ? `−${fmt(m.manualOpexTotal)}` : '—'}</td>)}
                     </tr>
                   )}
 
                   <tr className="border-b border-gray-100">
-                    <td className="px-5 py-2.5 font-medium text-gray-700 sticky left-0 bg-white">Total OPEX</td>
+                    <td className="px-5 py-2.5 font-medium text-gray-700 sticky left-0 bg-surface">Total OPEX</td>
                     {forecastMonths.map(m => <td key={m.monthKey} className="text-right px-3 py-2.5 font-medium text-red-600">−{fmt(m.totalOpex)}</td>)}
                   </tr>
 

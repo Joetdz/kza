@@ -17,7 +17,7 @@ export function VisitorsChart({ days, title = 'Visiteurs par jour' }: { days: Vi
   const shown = active !== null ? days[active] : null;
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+    <div className="bg-surface rounded-2xl border border-gray-100 shadow-sm p-4">
       <div className="flex items-baseline justify-between mb-3 gap-2">
         <p className="text-sm font-bold text-gray-900">{title}</p>
         {/* The figures of the day pointed at; the scale's top otherwise. */}
@@ -63,7 +63,7 @@ export function VisitorsChart({ days, title = 'Visiteurs par jour' }: { days: Vi
 /** A headline number with its label, for the totals above the chart. */
 export function StatTile({ value, label, hint }: { value: number | string; label: string; hint?: string }) {
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3">
+    <div className="bg-surface rounded-2xl border border-gray-100 shadow-sm p-3">
       <p className="text-2xl font-black text-gray-900 leading-tight">{typeof value === 'number' ? value.toLocaleString('fr-FR') : value}</p>
       <p className="text-xs text-gray-500">{label}</p>
       {hint && <p className="text-[10px] text-gray-400 mt-0.5">{hint}</p>}

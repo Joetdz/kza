@@ -82,16 +82,16 @@ export function Credit() {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div className="bg-white rounded-2xl border border-gray-100 p-4">
+        <div className="bg-surface rounded-2xl border border-gray-100 p-4">
           <div className="flex items-center gap-2 text-xs text-gray-500"><Wallet size={14} /> Reste à encaisser</div>
           <div className="text-xl font-black text-gray-900 mt-1">{fmt(stats.total)}</div>
         </div>
-        <div className={`rounded-2xl border p-4 ${stats.lateCount ? 'bg-red-50 border-red-100' : 'bg-white border-gray-100'}`}>
+        <div className={`rounded-2xl border p-4 ${stats.lateCount ? 'bg-red-50 border-red-100' : 'bg-surface border-gray-100'}`}>
           <div className="flex items-center gap-2 text-xs text-gray-500"><AlertTriangle size={14} /> En retard</div>
           <div className={`text-xl font-black mt-1 ${stats.lateCount ? 'text-red-600' : 'text-gray-900'}`}>{fmt(stats.lateTotal)}</div>
           <div className="text-[11px] text-gray-400">{stats.lateCount} vente{stats.lateCount > 1 ? 's' : ''}</div>
         </div>
-        <div className="bg-white rounded-2xl border border-gray-100 p-4">
+        <div className="bg-surface rounded-2xl border border-gray-100 p-4">
           <div className="flex items-center gap-2 text-xs text-gray-500"><Users size={14} /> Clients concernés</div>
           <div className="text-xl font-black text-gray-900 mt-1">{stats.customers}</div>
         </div>
@@ -105,7 +105,7 @@ export function Credit() {
       {loading ? (
         <div className="text-center py-12 text-gray-400 text-sm">Chargement…</div>
       ) : items.length === 0 ? (
-        <div className="text-center py-12 text-gray-400 bg-white rounded-2xl border border-gray-100">
+        <div className="text-center py-12 text-gray-400 bg-surface rounded-2xl border border-gray-100">
           <Wallet size={28} className="mx-auto mb-2 text-gray-300" />
           <p className="text-sm">Aucune créance en cours</p>
         </div>
@@ -116,7 +116,7 @@ export function Credit() {
             const phone = r.customerPhone?.replace(/@.*$/, '');
             const isOpen = open[r.id] ?? false;
             return (
-              <div key={r.id} className={`bg-white rounded-2xl border px-4 py-3 ${r.overdueDays > 0 ? 'border-red-200' : 'border-gray-100'}`}>
+              <div key={r.id} className={`bg-surface rounded-2xl border px-4 py-3 ${r.overdueDays > 0 ? 'border-red-200' : 'border-gray-100'}`}>
                 <div className="flex items-start gap-3">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -255,7 +255,7 @@ function PaymentModal({ receivable: r, currency, onClose, onSaved }: {
           </div>
           <div>
             <label className="text-xs font-medium text-gray-600 mb-1 block">Moyen</label>
-            <select value={method} onChange={e => setMethod(e.target.value as PaymentMethod)} className={`${input} bg-white`}>
+            <select value={method} onChange={e => setMethod(e.target.value as PaymentMethod)} className={`${input} bg-surface`}>
               {Object.entries(METHODS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
           </div>
@@ -321,7 +321,7 @@ function ScheduleModal({ receivable: r, currency, onClose, onSaved }: {
           <div className="flex items-center justify-between mb-1.5">
             <p className="text-xs font-semibold text-gray-700">Paiement en plusieurs fois</p>
             <div className="flex items-center gap-1.5 text-xs">
-              <select value={parts} onChange={e => setParts(Number(e.target.value))} className={`${input} bg-white py-1`}>
+              <select value={parts} onChange={e => setParts(Number(e.target.value))} className={`${input} bg-surface py-1`}>
                 {[2, 3, 4, 5, 6, 9, 10, 12].map(n => <option key={n} value={n}>{n} fois</option>)}
               </select>
               <button type="button" onClick={split} className="text-indigo-600 font-medium">Répartir</button>

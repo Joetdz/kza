@@ -52,7 +52,7 @@ export function RemittancesList({ lines }: { lines: Remittance[] | null }) {
         </div>
         {partners.length > 1 && (
           <select value={partnerId} onChange={e => { setPartnerId(e.target.value); setShown(PAGE); }}
-            className="border border-gray-200 rounded-xl px-2.5 py-1.5 text-xs bg-white">
+            className="border border-gray-200 rounded-xl px-2.5 py-1.5 text-xs bg-surface">
             <option value="">Tous les partenaires</option>
             {partners.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
           </select>
@@ -71,7 +71,7 @@ export function RemittancesList({ lines }: { lines: Remittance[] | null }) {
             <span className="text-gray-600">{visible.length} commande{visible.length > 1 ? 's' : ''}</span>
             <span className="font-black text-gray-900">Reste : {both(restUsd, restCdf)}</span>
           </div>
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm divide-y divide-gray-50">
+          <div className="bg-surface rounded-2xl border border-gray-100 shadow-sm divide-y divide-gray-50">
             {visible.slice(0, shown).map(l => (
               <div key={l.orderId} className="flex items-center gap-3 p-3">
                 <div className="flex-1 min-w-0">

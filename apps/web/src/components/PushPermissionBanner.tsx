@@ -38,7 +38,7 @@ export function PushPermissionBanner() {
 
   return (
     <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 w-full max-w-sm px-4 animate-slide-up">
-      <div className="bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden">
+      <div className="bg-surface rounded-2xl shadow-2xl border border-gray-100 overflow-hidden">
         {/* Indigo accent bar */}
         <div className="h-1 bg-gradient-to-r from-indigo-500 to-violet-500" />
 

@@ -43,13 +43,13 @@ export function Login() {
         </div>
 
         {/* Card */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+        <div className="bg-surface rounded-2xl shadow-sm border border-gray-100 p-6">
           {/* Tabs */}
           <div className="flex gap-1 bg-gray-100 p-1 rounded-xl mb-6">
             <button
               onClick={() => { setMode('login'); setError(null); setInfo(null); }}
               className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
-                mode === 'login' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                mode === 'login' ? 'bg-surface text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
               }`}
             >
               Connexion
@@ -57,7 +57,7 @@ export function Login() {
             <button
               onClick={() => { setMode('register'); setError(null); setInfo(null); }}
               className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
-                mode === 'register' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                mode === 'register' ? 'bg-surface text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
               }`}
             >
               Créer un compte
@@ -108,7 +108,7 @@ export function Login() {
               className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed text-white py-2.5 rounded-xl text-sm font-medium transition-colors"
             >
               {loading && (
-                <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                <span className="w-4 h-4 border-2 border-surface/30 border-t-white rounded-full animate-spin" />
               )}
               {mode === 'login' ? 'Se connecter' : 'Créer mon compte'}
             </button>

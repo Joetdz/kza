@@ -319,7 +319,7 @@ export function BusinessAdvisor() {
             style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)' }}
           >
             <div className="flex items-center gap-2">
-              <div className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center font-bold text-white text-sm">
+              <div className="w-9 h-9 rounded-full bg-surface/20 flex items-center justify-center font-bold text-white text-sm">
                 KZ
               </div>
               <div>
@@ -331,7 +331,7 @@ export function BusinessAdvisor() {
               {mode === 'chat' && (
                 <button
                   onClick={clearHistory}
-                  className="p-1.5 rounded-full hover:bg-white/20 transition-colors"
+                  className="p-1.5 rounded-full hover:bg-surface/20 transition-colors"
                   title="Effacer la conversation"
                 >
                   <Trash2 size={15} color="white" opacity={0.8} />
@@ -339,7 +339,7 @@ export function BusinessAdvisor() {
               )}
               <button
                 onClick={handleClose}
-                className="p-1.5 rounded-full hover:bg-white/20 transition-colors"
+                className="p-1.5 rounded-full hover:bg-surface/20 transition-colors"
               >
                 {isMobile ? <X size={18} color="white" /> : <ChevronDown size={18} color="white" />}
               </button>

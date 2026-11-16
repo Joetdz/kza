@@ -118,7 +118,7 @@ export function Agenda() {
       )}
 
       {/* Week strip */}
-      <div className="bg-white rounded-2xl border border-gray-100 p-3 flex items-center gap-2">
+      <div className="bg-surface rounded-2xl border border-gray-100 p-3 flex items-center gap-2">
         <button onClick={() => setSelected(addDays(selected, -7))} className="p-2 rounded-lg hover:bg-gray-100 text-gray-500" title="Semaine précédente">
           <ChevronLeft size={16} />
         </button>
@@ -151,7 +151,7 @@ export function Agenda() {
         {loading ? (
           <div className="text-center py-12 text-gray-400 text-sm">Chargement…</div>
         ) : dayAppointments.length === 0 ? (
-          <div className="text-center py-12 text-gray-400 bg-white rounded-2xl border border-gray-100">
+          <div className="text-center py-12 text-gray-400 bg-surface rounded-2xl border border-gray-100">
             <CalendarDays size={28} className="mx-auto mb-2 text-gray-300" />
             <p className="text-sm">Aucun rendez-vous ce jour-là</p>
           </div>
@@ -161,7 +161,7 @@ export function Agenda() {
           const st = STATUS[a.status];
           const phone = a.customerPhone?.replace(/@.*$/, '');
           return (
-            <div key={a.id} className={`bg-white rounded-2xl border border-gray-100 px-4 py-3 flex items-start gap-3 ${a.status === 'cancelled' ? 'opacity-50' : ''}`}>
+            <div key={a.id} className={`bg-surface rounded-2xl border border-gray-100 px-4 py-3 flex items-start gap-3 ${a.status === 'cancelled' ? 'opacity-50' : ''}`}>
               <div className="w-16 shrink-0 text-center">
                 <div className="text-sm font-bold text-gray-900">{start}</div>
                 <div className="text-[11px] text-gray-400">{end}</div>
@@ -299,7 +299,7 @@ function NewAppointmentModal({ settings, initialDate, today, services, onClose, 
           {services.length > 0 && (
             <div>
               <label className="text-xs font-medium text-gray-600 mb-1 block">Service</label>
-              <select value={form.productId} onChange={e => setForm(f => ({ ...f, productId: e.target.value }))} className={`${input} bg-white`}>
+              <select value={form.productId} onChange={e => setForm(f => ({ ...f, productId: e.target.value }))} className={`${input} bg-surface`}>
                 <option value="">— Aucun —</option>
                 {services.map(s => (
                   <option key={s.id} value={s.id}>{s.name} ({s.durationMinutes ?? settings.defaultDurationMinutes} min)</option>
@@ -310,7 +310,7 @@ function NewAppointmentModal({ settings, initialDate, today, services, onClose, 
           {settings.resources.length > 0 && (
             <div>
               <label className="text-xs font-medium text-gray-600 mb-1 block">Avec</label>
-              <select value={form.resource} onChange={e => setForm(f => ({ ...f, resource: e.target.value }))} className={`${input} bg-white`}>
+              <select value={form.resource} onChange={e => setForm(f => ({ ...f, resource: e.target.value }))} className={`${input} bg-surface`}>
                 <option value="">Peu importe</option>
                 {settings.resources.map(r => <option key={r} value={r}>{r}</option>)}
               </select>
@@ -431,13 +431,13 @@ function SettingsModal({ settings, onClose, onSaved }: {
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="text-xs font-medium text-gray-600 mb-1 block">Créneaux toutes les</label>
-            <select value={slotMinutes} onChange={e => setSlotMinutes(Number(e.target.value))} className={`${input} w-full bg-white`}>
+            <select value={slotMinutes} onChange={e => setSlotMinutes(Number(e.target.value))} className={`${input} w-full bg-surface`}>
               {[10, 15, 20, 30, 45, 60, 90, 120].map(m => <option key={m} value={m}>{m} min</option>)}
             </select>
           </div>
           <div>
             <label className="text-xs font-medium text-gray-600 mb-1 block">Durée par défaut</label>
-            <select value={duration} onChange={e => setDuration(Number(e.target.value))} className={`${input} w-full bg-white`}>
+            <select value={duration} onChange={e => setDuration(Number(e.target.value))} className={`${input} w-full bg-surface`}>
               {[15, 20, 30, 45, 60, 90, 120, 180, 240].map(m => <option key={m} value={m}>{m} min</option>)}
             </select>
           </div>
@@ -458,7 +458,7 @@ function SettingsModal({ settings, onClose, onSaved }: {
 
         <div>
           <label className="text-xs font-medium text-gray-600 mb-1 block">Rappel WhatsApp au client</label>
-          <select value={reminderHours} onChange={e => setReminderHours(Number(e.target.value))} className={`${input} bg-white`}>
+          <select value={reminderHours} onChange={e => setReminderHours(Number(e.target.value))} className={`${input} bg-surface`}>
             <option value={0}>Pas de rappel</option>
             <option value={2}>2 h avant</option>
             <option value={3}>3 h avant</option>

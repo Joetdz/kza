@@ -109,7 +109,7 @@ export function Documents() {
       <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit">
         {(['quote', 'invoice'] as const).map(t => (
           <button key={t} onClick={() => setTab(t)}
-            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${tab === t ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}>
+            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${tab === t ? 'bg-surface text-gray-900 shadow-sm' : 'text-gray-500'}`}>
             {t === 'quote' ? 'Devis' : 'Factures'} ({docs.filter(d => d.type === t).length})
           </button>
         ))}
@@ -118,7 +118,7 @@ export function Documents() {
       {loading ? (
         <div className="text-center py-12 text-gray-400 text-sm">Chargement…</div>
       ) : shown.length === 0 ? (
-        <div className="text-center py-12 text-gray-400 bg-white rounded-2xl border border-gray-100">
+        <div className="text-center py-12 text-gray-400 bg-surface rounded-2xl border border-gray-100">
           <FileText size={28} className="mx-auto mb-2 text-gray-300" />
           <p className="text-sm">{tab === 'quote' ? 'Aucun devis' : 'Aucune facture'} pour l'instant</p>
         </div>
@@ -127,7 +127,7 @@ export function Documents() {
           {shown.map(d => {
             const st = STATUS[d.status] ?? STATUS.draft;
             return (
-              <div key={d.id} className="bg-white rounded-2xl border border-gray-100 px-4 py-3">
+              <div key={d.id} className="bg-surface rounded-2xl border border-gray-100 px-4 py-3">
                 <div className="flex items-start gap-3">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -319,7 +319,7 @@ function DocumentEditor({ type, doc, onClose, onSaved }: {
                     const p = products.find(x => x.id === e.target.value);
                     setLine(i, p ? { productId: p.id, description: p.name } : { productId: null }, true);
                   }}
-                  className={`${input} col-span-12 sm:col-span-3 bg-white`}>
+                  className={`${input} col-span-12 sm:col-span-3 bg-surface`}>
                   <option value="">Texte libre</option>
                   {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>

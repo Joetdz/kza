@@ -55,11 +55,13 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
-        manualChunks: {
-          'react-core': ['react', 'react-dom', 'react-router-dom'],
-          'charts': ['recharts'],
-          'export-libs': ['xlsx', 'jspdf', 'jspdf-autotable'],
-          'store': ['zustand'],
+        // Only what the start-up needs is split by hand. The charts and the export
+        // libraries are imported by pages loaded on demand: Rollup puts them with those
+        // pages (a manual chunk would also pull in helpers the start-up needs, making the
+        // start-up download them).
+        manualChunks(id) {
+          if (/[\/]node_modules[\/](react|react-dom|react-router|react-router-dom|scheduler)[\/]/.test(id)) return 'react-core';
+          if (/[\/]node_modules[\/]zustand[\/]/.test(id)) return 'store';
         },
       },
     },

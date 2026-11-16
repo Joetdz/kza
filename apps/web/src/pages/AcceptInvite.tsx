@@ -59,7 +59,7 @@ export function AcceptInvite({ token }: { token: string }) {
     }
   }
 
-  const card = 'bg-white rounded-2xl shadow-sm border border-gray-200 p-7 w-full max-w-md';
+  const card = 'bg-surface rounded-2xl shadow-sm border border-gray-200 p-7 w-full max-w-md';
   const shell = 'min-h-screen bg-gray-50 flex items-center justify-center p-4';
 
   if (loading || authLoading) {

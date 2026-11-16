@@ -62,7 +62,7 @@ export function CitySelect({ value, onChange, label = 'Ville', required }: Props
       <select
         value={valueInList ? value : (value ? value : '')}
         onChange={e => handleSelect(e.target.value)}
-        className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-400 bg-white"
+        className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-400 bg-surface"
       >
         <option value="">— Sélectionner</option>
         {allCities.map(c => (

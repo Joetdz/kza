@@ -80,12 +80,12 @@ export function AuthModal({ initialMode, onClose }: { initialMode: AuthMode; onC
     setLoading(false);
   };
 
-  const inp = 'w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 bg-white';
+  const inp = 'w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 bg-surface';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(15,13,11,0.5)', backdropFilter: 'blur(12px)' }}>
       <ScrollLock />
-      <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl max-h-[90vh] flex flex-col">
+      <div className="w-full max-w-sm bg-surface rounded-2xl shadow-2xl max-h-[90vh] flex flex-col">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: '#5148E8' }}>
@@ -106,7 +106,7 @@ export function AuthModal({ initialMode, onClose }: { initialMode: AuthMode; onC
                     <input type="email" required value={resetEmail} onChange={e => setResetEmail(e.target.value)} placeholder="votre@email.com" className={inp} />
                     {error && <div className="bg-red-50 border border-red-100 rounded-xl px-3 py-2 text-sm text-red-600">{error}</div>}
                     <button type="submit" disabled={loading} className="w-full flex items-center justify-center gap-2 text-white py-2.5 rounded-xl text-sm font-medium" style={{ background: '#5148E8' }}>
-                      {loading && <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />}Envoyer le lien
+                      {loading && <span className="w-4 h-4 border-2 border-surface/30 border-t-white rounded-full animate-spin" />}Envoyer le lien
                     </button>
                   </form>
               }
@@ -115,7 +115,7 @@ export function AuthModal({ initialMode, onClose }: { initialMode: AuthMode; onC
             <div className="space-y-4">
               <div className="flex gap-1 bg-gray-100 p-1 rounded-xl">
                 {(['login', 'register'] as AuthMode[]).map(m => (
-                  <button key={m} onClick={() => switchMode(m)} className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${mode === m ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+                  <button key={m} onClick={() => switchMode(m)} className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${mode === m ? 'bg-surface text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
                     {m === 'login' ? 'Connexion' : 'Créer un compte'}
                   </button>
                 ))}
@@ -127,7 +127,7 @@ export function AuthModal({ initialMode, onClose }: { initialMode: AuthMode; onC
               <div className="flex items-center gap-3"><div className="flex-1 h-px bg-gray-200" /><span className="text-xs text-gray-400">ou</span><div className="flex-1 h-px bg-gray-200" /></div>
               <div className="flex gap-1 p-1 rounded-xl bg-gray-100">
                 {(['email', 'phone'] as InputMethod[]).map(m => (
-                  <button key={m} onClick={() => { setInputMethod(m); setError(null); setOtpSent(false); }} className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors ${inputMethod === m ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}>
+                  <button key={m} onClick={() => { setInputMethod(m); setError(null); setOtpSent(false); }} className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors ${inputMethod === m ? 'bg-surface text-gray-900 shadow-sm' : 'text-gray-500'}`}>
                     {m === 'email' ? 'Email' : 'Téléphone'}
                   </button>
                 ))}
@@ -142,7 +142,7 @@ export function AuthModal({ initialMode, onClose }: { initialMode: AuthMode; onC
                   {error && <div className="bg-red-50 border border-red-100 rounded-xl px-3 py-2 text-sm text-red-600">{error}</div>}
                   {info && <div className="bg-emerald-50 border border-emerald-100 rounded-xl px-3 py-2 text-sm text-emerald-700">{info}</div>}
                   <button type="submit" disabled={loading} className="w-full flex items-center justify-center gap-2 text-white py-2.5 rounded-xl text-sm font-medium" style={{ background: '#5148E8' }}>
-                    {loading && <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+                    {loading && <span className="w-4 h-4 border-2 border-surface/30 border-t-white rounded-full animate-spin" />}
                     {mode === 'login' ? 'Se connecter' : 'Créer mon compte'}
                   </button>
                 </form>
@@ -152,14 +152,14 @@ export function AuthModal({ initialMode, onClose }: { initialMode: AuthMode; onC
                   {!otpSent ? (
                     <>
                       <div className="flex gap-2">
-                        <select value={dialCode} onChange={e => setDialCode(e.target.value)} className="border border-gray-200 rounded-xl px-2 py-2.5 text-sm outline-none bg-white shrink-0">
+                        <select value={dialCode} onChange={e => setDialCode(e.target.value)} className="border border-gray-200 rounded-xl px-2 py-2.5 text-sm outline-none bg-surface shrink-0">
                           {PHONE_COUNTRIES.map(c => <option key={c.dial} value={c.dial}>{c.name} ({c.dial})</option>)}
                         </select>
                         <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="8XXXXXXXX" className={inp} />
                       </div>
                       {error && <div className="bg-red-50 border border-red-100 rounded-xl px-3 py-2 text-sm text-red-600">{error}</div>}
                       <button onClick={handleSendOtp} disabled={loading || phone.length < 7} className="w-full flex items-center justify-center gap-2 text-white py-2.5 rounded-xl text-sm font-medium disabled:opacity-60" style={{ background: '#5148E8' }}>
-                        {loading && <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />}Envoyer le code SMS
+                        {loading && <span className="w-4 h-4 border-2 border-surface/30 border-t-white rounded-full animate-spin" />}Envoyer le code SMS
                       </button>
                     </>
                   ) : (
@@ -168,7 +168,7 @@ export function AuthModal({ initialMode, onClose }: { initialMode: AuthMode; onC
                       <input type="text" value={otp} onChange={e => setOtp(e.target.value)} placeholder="Code à 6 chiffres" maxLength={6} className={`${inp} text-center text-xl tracking-widest font-mono`} />
                       {error && <div className="bg-red-50 border border-red-100 rounded-xl px-3 py-2 text-sm text-red-600">{error}</div>}
                       <button onClick={handleVerifyOtp} disabled={loading || otp.length !== 6} className="w-full flex items-center justify-center gap-2 text-white py-2.5 rounded-xl text-sm font-medium disabled:opacity-60" style={{ background: '#5148E8' }}>
-                        {loading && <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />}Confirmer le code
+                        {loading && <span className="w-4 h-4 border-2 border-surface/30 border-t-white rounded-full animate-spin" />}Confirmer le code
                       </button>
                       <button onClick={() => { setOtpSent(false); setOtp(''); setError(null); setInfo(null); }} className="text-xs text-gray-400 hover:text-gray-600 text-center w-full">Changer de numéro</button>
                     </>

@@ -104,7 +104,7 @@ export function OnboardingTour({ userId, onClose }: Props) {
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4"
       style={{ background: 'rgba(15, 23, 42, 0.75)', backdropFilter: 'blur(4px)' }}>
-      <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl overflow-hidden">
+      <div className="w-full max-w-md bg-surface rounded-3xl shadow-2xl overflow-hidden">
 
         {/* Progress bar */}
         <div className="h-1 w-full bg-gray-100">

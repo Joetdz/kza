@@ -152,7 +152,7 @@ function BusinessModalContent({ business, onClose, isFirstBusiness = false }: Pr
   }
 
   // ─── Shared classes ──────────────────────────────────────────────────────────
-  const inputCls = 'w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-indigo-500 transition-colors bg-white';
+  const inputCls = 'w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-indigo-500 transition-colors bg-surface';
   const primaryCls = 'w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white px-4 py-3 rounded-xl text-sm font-semibold transition-colors';
 
   // ─── EDIT MODE — all fields visible ─────────────────────────────────────────
@@ -160,7 +160,7 @@ function BusinessModalContent({ business, onClose, isFirstBusiness = false }: Pr
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
         <ScrollLock />
-        <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] flex flex-col">
+        <div className="bg-surface rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] flex flex-col">
           <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
             <h2 className="text-lg font-bold text-gray-900">Modifier le business</h2>
             <button onClick={onClose} className="p-2 rounded-xl text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
@@ -192,7 +192,7 @@ function BusinessModalContent({ business, onClose, isFirstBusiness = false }: Pr
 
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-1.5">Secteur d'activité</label>
-              <select value={form.sector} onChange={set('sector')} className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+              <select value={form.sector} onChange={set('sector')} className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-surface">
                 <option value="">-- Choisir --</option>
                 {/* A business from before segments keeps its old label until it picks one */}
                 {form.sector && form.sector !== OTHER_SEGMENT_KEY && !segmentByKey(form.sector) && (
@@ -210,13 +210,13 @@ function BusinessModalContent({ business, onClose, isFirstBusiness = false }: Pr
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-semibold text-gray-700 mb-1.5"><span className="flex items-center gap-1.5"><Globe size={13} /> Pays *</span></label>
-                <select value={form.country} onChange={e => handleCountryChange(e.target.value)} className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+                <select value={form.country} onChange={e => handleCountryChange(e.target.value)} className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-surface">
                   {COUNTRIES.map(c => <option key={c.code} value={c.code}>{c.flag} {c.label}</option>)}
                 </select>
               </div>
               <div>
                 <label className="block text-xs font-semibold text-gray-700 mb-1.5"><span className="flex items-center gap-1.5"><DollarSign size={13} /> Devise *</span></label>
-                <select value={form.currency} onChange={set('currency')} className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+                <select value={form.currency} onChange={set('currency')} className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-surface">
                   {CURRENCIES.map(c => <option key={c.code} value={c.code}>{c.code}</option>)}
                 </select>
               </div>
@@ -270,7 +270,7 @@ function BusinessModalContent({ business, onClose, isFirstBusiness = false }: Pr
                       {m.available && (
                         <button type="button" role="switch" aria-checked={on} aria-label={m.label} onClick={() => toggleModule(m.key)}
                           className={`relative w-9 h-5 rounded-full transition-colors shrink-0 mt-0.5 ${on ? 'bg-indigo-600' : 'bg-gray-300'}`}>
-                          <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${on ? 'translate-x-4' : 'translate-x-0'}`} />
+                          <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-surface rounded-full shadow-sm transition-transform ${on ? 'translate-x-4' : 'translate-x-0'}`} />
                         </button>
                       )}
                     </div>
@@ -320,7 +320,7 @@ function BusinessModalContent({ business, onClose, isFirstBusiness = false }: Pr
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
       <ScrollLock />
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[92vh] flex flex-col overflow-hidden">
+      <div className="bg-surface rounded-2xl shadow-2xl w-full max-w-md max-h-[92vh] flex flex-col overflow-hidden">
 
         {/* Progress bar */}
         <div className="h-1 bg-gray-100 shrink-0">

@@ -97,11 +97,11 @@ export function Treasury() {
 
       {/* Where the money is */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div className="bg-gray-900 text-white rounded-2xl p-4">
+        <div className="bg-ink text-white rounded-2xl p-4">
           <p className="text-xs text-white/60">Disponible dans tes comptes</p>
           <MoneyByCurrency sums={totals} className="block text-2xl font-black mt-1" />
         </div>
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+        <div className="bg-surface rounded-2xl border border-gray-100 shadow-sm p-4">
           <p className="text-xs text-gray-500 flex items-center gap-1.5"><Truck size={13} /> Encore chez les partenaires de livraison</p>
           <p className="text-2xl font-black text-gray-900 mt-1">
             {fmtMoney(atPartners.USD, 'USD')} · {fmtMoney(atPartners.CDF, 'CDF')}
@@ -112,7 +112,7 @@ export function Treasury() {
 
       {/* Accounts */}
       {accounts.length === 0 ? (
-        <div className="bg-white rounded-2xl border border-dashed border-gray-200 p-8 text-center">
+        <div className="bg-surface rounded-2xl border border-dashed border-gray-200 p-8 text-center">
           <Wallet size={32} className="text-gray-300 mx-auto mb-2" />
           <p className="text-sm text-gray-600 font-medium">Crée tes comptes pour suivre ton argent</p>
           <p className="text-xs text-gray-400 mt-1">Une banque, un compte mobile money (M-Pesa, Orange Money, Airtel Money) ou une caisse physique, en $ ou en FC, avec son solde d'aujourd'hui.</p>
@@ -124,7 +124,7 @@ export function Treasury() {
             const Icon = KIND_ICONS[a.kind] ?? Wallet;
             const selected = accountFilter === a.id;
             return (
-              <div key={a.id} className={`relative text-left p-4 rounded-2xl border bg-white transition-all ${selected ? 'ring-2 ring-indigo-400 border-indigo-300' : 'border-gray-100 shadow-sm'} ${a.archived ? 'opacity-50' : ''}`}>
+              <div key={a.id} className={`relative text-left p-4 rounded-2xl border bg-surface transition-all ${selected ? 'ring-2 ring-indigo-400 border-indigo-300' : 'border-gray-100 shadow-sm'} ${a.archived ? 'opacity-50' : ''}`}>
                 <button onClick={() => setAccountFilter(selected ? '' : a.id)} className="block w-full text-left">
                   <div className="flex items-center gap-1.5 text-xs text-gray-500 mb-1 pr-6">
                     <Icon size={13} /> <span className="truncate">{ACCOUNT_KIND_LABELS[a.kind]}{a.archived ? ' · archivé' : ''}</span>
@@ -175,17 +175,17 @@ export function Treasury() {
           </div>
 
           <div className="grid grid-cols-2 gap-2">
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3">
+            <div className="bg-surface rounded-2xl border border-gray-100 shadow-sm p-3">
               <p className="text-xs text-gray-500">Entrées{accountFilter ? ' (ce compte)' : ''}</p>
               <MoneyByCurrency sums={inflow} className="block text-base font-black text-green-700" />
             </div>
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3">
+            <div className="bg-surface rounded-2xl border border-gray-100 shadow-sm p-3">
               <p className="text-xs text-gray-500">Sorties{accountFilter ? ' (ce compte)' : ''}</p>
               <MoneyByCurrency sums={outflow} className="block text-base font-black text-red-600" />
             </div>
           </div>
 
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm divide-y divide-gray-50">
+          <div className="bg-surface rounded-2xl border border-gray-100 shadow-sm divide-y divide-gray-50">
             {movements.length === 0 && <p className="text-sm text-gray-400 text-center py-10">Aucun mouvement sur cette période.</p>}
             {movements.map(m => (
               <div key={m.id} className="flex items-center gap-3 p-3">
