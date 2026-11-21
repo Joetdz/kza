@@ -1,8 +1,7 @@
 import { BadRequestException, Controller, Get, Post, Patch, Delete, Body, Param, Query, Inject, forwardRef } from '@nestjs/common';
-import { join } from 'path';
 import { PrismaService } from '../prisma/prisma.service';
 import { Public } from '../auth/public.decorator';
-import { WhatsAppService } from '../whatsapp/whatsapp.service';
+import { WhatsAppService, orderPhotos } from '../whatsapp/whatsapp.service';
 import { LogisticsService } from './logistics.service';
 
 @Controller('partner-portal')
@@ -159,11 +158,7 @@ export class PartnerPortalController {
       const deliveryDate = order.scheduledAt ? new Date(order.scheduledAt) : new Date();
       const dayOfWeek = deliveryDate.toLocaleDateString('fr-FR', { weekday: 'long' });
 
-      const uploadsRoot = join(process.cwd(), 'uploads');
-      const firstWithImage = (order.items as any[]).find((i: any) => i.product?.imageUrl);
-      const imagePath = firstWithImage
-        ? join(uploadsRoot, (firstWithImage.product.imageUrl as string).replace(/^\/uploads\//, ''))
-        : undefined;
+      const photos = orderPhotos(order.items);
 
       // ── 1. Message groupe (format inchangé) ──────────────────────────
       const groupMsg = [
@@ -182,7 +177,7 @@ export class PartnerPortalController {
       ].filter(l => l !== null).join('\n');
 
       if ((partner as any).whatsappGroupId) {
-        await this.whatsapp.notifyOrder(order.userId, order.businessId ?? null, (partner as any).whatsappGroupId, groupMsg, imagePath);
+        await this.whatsapp.notifyOrder(order.userId, order.businessId ?? null, (partner as any).whatsappGroupId, groupMsg, photos);
       }
 
       // ── 2. Message personnel au livreur ──────────────────────────────
@@ -205,7 +200,7 @@ export class PartnerPortalController {
           order.notes ? `📝 Notes : ${order.notes}` : null,
         ].filter(l => l !== null).join('\n');
 
-        await this.whatsapp.notifyOrder(order.userId, order.businessId ?? null, agent.phone, agentMsg, imagePath);
+        await this.whatsapp.notifyOrder(order.userId, order.businessId ?? null, agent.phone, agentMsg, photos);
       }
     }
 

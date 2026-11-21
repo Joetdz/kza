@@ -86,6 +86,22 @@ function extractAdContext(msg: proto.IMessage | null | undefined): AdContext | n
 }
 
 // Baileys JID (@s.whatsapp.net) → legacy @c.us format stored in DB
+/** A photo attached to an order message: a URL or an /uploads path, and its caption. */
+export type OrderPhoto = { src: string; caption?: string };
+
+/** One photo per product of the order (in order, without repeats). */
+export function orderPhotos(items: { product?: { name?: string | null; imageUrl?: string | null } | null }[]): OrderPhoto[] {
+  const seen = new Set<string>();
+  const photos: OrderPhoto[] = [];
+  for (const i of items) {
+    const src = i.product?.imageUrl?.trim();
+    if (!src || seen.has(src)) continue;
+    seen.add(src);
+    photos.push({ src, caption: i.product?.name ?? undefined });
+  }
+  return photos;
+}
+
 function jidToDb(jid: string): string {
   if (!jid) return jid;
   return jid.replace('@s.whatsapp.net', '@c.us').replace('@lid', '@c.us');
@@ -2253,12 +2269,43 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
     await this.sendMessage(userId, businessId, phone, text, contactId, false);
   }
 
+  /**
+   * Loads a product photo, wherever it is stored: a Supabase/http URL or a file under
+   * /uploads. Null when it cannot be read, so the message still goes out.
+   */
+  private async loadPhoto(src: string): Promise<{ buffer: Buffer; mimetype: string } | null> {
+    try {
+      if (/^https?:\/\//i.test(src)) {
+        const res = await fetch(src, { signal: AbortSignal.timeout(15_000) });
+        if (!res.ok) return null;
+        const type = res.headers.get('content-type') ?? '';
+        if (!type.startsWith('image/')) return null;
+        return { buffer: Buffer.from(await res.arrayBuffer()), mimetype: type.split(';')[0] };
+      }
+      const full = path.join(process.cwd(), 'uploads', src.replace(/^\/?uploads\//, ''));
+      if (!fs.existsSync(full)) return null;
+      const ext = path.extname(full).toLowerCase();
+      const mimetype = ext === '.png' ? 'image/png'
+        : ext === '.webp' ? 'image/webp'
+        : ext === '.gif' ? 'image/gif'
+        : 'image/jpeg';
+      return { buffer: fs.readFileSync(full), mimetype };
+    } catch (err: any) {
+      this.logger.warn(`loadPhoto failed for ${src}: ${err?.message}`);
+      return null;
+    }
+  }
+
+  /**
+   * Sends an order message. With photos, the first one carries the full text as its
+   * caption and each other one is captioned with its product's name.
+   */
   async notifyOrder(
     userId: string,
     businessId: string | null,
     toPhone: string,
     text: string,
-    imagePath?: string,
+    photos: OrderPhoto[] = [],
   ): Promise<boolean> {
     const key = this.waKey(userId, businessId);
     const sock = this.sockets.get(key);
@@ -2284,17 +2331,22 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
 
           const jid = toJid(toPhone);
 
-          if (imagePath && fs.existsSync(imagePath)) {
-            // Single message: image + full details as caption
-            this.logger.log(`notifyOrder [${key}]: sending image+caption to ${jid}`);
-            const buffer = fs.readFileSync(imagePath);
-            const ext = path.extname(imagePath).toLowerCase();
-            const mimetype = ext === '.png' ? 'image/png'
-              : ext === '.webp' ? 'image/webp'
-              : ext === '.gif' ? 'image/gif'
-              : 'image/jpeg';
-            const sent = await currentSock.sendMessage(jid, { image: buffer, caption: text, mimetype });
-            if (sent?.key?.id) this.systemSendIds.add(sent.key.id);
+          const loaded = (await Promise.all(photos.slice(0, 6).map(async p => {
+            const img = await this.loadPhoto(p.src);
+            return img ? { ...img, caption: p.caption } : null;
+          }))).filter((p): p is NonNullable<typeof p> => p !== null);
+
+          if (loaded.length) {
+            this.logger.log(`notifyOrder [${key}]: sending ${loaded.length} photo(s) + caption to ${jid}`);
+            for (const [i, img] of loaded.entries()) {
+              if (i > 0) await this.jitter(800, 1600);
+              const sent = await currentSock.sendMessage(jid, {
+                image: img.buffer,
+                mimetype: img.mimetype,
+                caption: i === 0 ? text : img.caption,
+              });
+              if (sent?.key?.id) this.systemSendIds.add(sent.key.id);
+            }
           } else {
             // No image — plain text
             this.logger.log(`notifyOrder [${key}]: sending text to ${jid}`);

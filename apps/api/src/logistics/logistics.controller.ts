@@ -1,13 +1,12 @@
 import { Controller, Get, Post, Patch, Delete, Body, Param, Query, Headers, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CurrentUser, AuthUser } from '../auth/current-user.decorator';
-import { WhatsAppService } from '../whatsapp/whatsapp.service';
+import { WhatsAppService, orderPhotos } from '../whatsapp/whatsapp.service';
 import { FollowUpService } from './followup.service';
 import { CustomerHistoryService } from '../common/customer-history.service';
 import { detachStoreOrders, LogisticsService } from './logistics.service';
 import { TreasuryService, normalizeCurrency } from '../treasury/treasury.service';
 import { phoneKey } from '../common/phone';
-import { join } from 'path';
 
 function webOrigin(value?: string): string | null {
   if (!value) return null;
@@ -478,14 +477,8 @@ export class LogisticsController {
           portalLink,
         ].filter(l => l !== null).join('\n');
 
-        // First product image as the WA image (single message = image + caption)
-        const uploadsRoot = join(process.cwd(), 'uploads');
-        const firstWithImage = (order.items as any[]).find((i: any) => i.product?.imageUrl);
-        const imagePath = firstWithImage
-          ? join(uploadsRoot, (firstWithImage.product.imageUrl as string).replace(/^\/uploads\//, ''))
-          : undefined;
-
-        this.whatsapp.notifyOrder(order.userId, order.businessId ?? null, destination, msg, imagePath)
+        // Every product's photo goes with the message, the first one carrying the text
+        this.whatsapp.notifyOrder(order.userId, order.businessId ?? null, destination, msg, orderPhotos(order.items))
           .then(sent => this.logger.log(`[dispatch] WA sent=${sent} for order=${id}`))
           .catch(err => this.logger.warn(`[dispatch] WA error: ${err?.message}`));
       }
@@ -528,13 +521,7 @@ export class LogisticsController {
       order.notes ? `📝 Notes : ${order.notes}` : null,
     ].filter(l => l !== null).join('\n');
 
-    const uploadsRoot = join(process.cwd(), 'uploads');
-    const firstWithImage = (order.items as any[]).find((i: any) => i.product?.imageUrl);
-    const imagePath = firstWithImage
-      ? join(uploadsRoot, (firstWithImage.product.imageUrl as string).replace(/^\/uploads\//, ''))
-      : undefined;
-
-    const sent = await this.whatsapp.notifyOrder(user.ownerId, user.businessId || null, destination, msg, imagePath);
+    const sent = await this.whatsapp.notifyOrder(user.ownerId, user.businessId || null, destination, msg, orderPhotos(order.items));
     return { sent };
   }
 
